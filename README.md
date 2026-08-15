@@ -1,104 +1,131 @@
-# 星职 · AI 职业导航与终身学习伙伴系统
+# 星职 · AI Career Navigator & Lifelong Learning Companion
 
-> 基于《基于 AI 的大学生职业规划智能体》（国赛 A13，全国三等奖）迁移至省赛 A02 赛题《面向未来工作的 AI 职业导航或终身学习伙伴系统设计》的参赛作品。
-> 更新时间：2026-08-15
+> A provincial competition (A02) entry adapted from the national competition (A13, 3rd prize) project *AI Career Planning Agent for College Students*.
+> Updated: 2026-08-15
 
-## 一、项目简介
+## 1. Introduction
 
-星职（StarCareer）是一套面向未来工作的 **AI 职业导航与终身学习伙伴系统**。系统以职业知识库为底座、以大模型智能体为核心，围绕"感知 → 认知 → 决策 → 生成 → 执行 → 反馈"全技术闭环，为高校学生及职场新人提供个性化职业规划、人岗精准匹配、成长路径拆解与长期陪伴服务。
+**StarCareer (星职)** is an AI-powered **career navigation & lifelong learning companion system** for the future of work. Built on a career knowledge base with LLM agents at its core, it implements the full closed loop of *Sense → Recognize → Decide → Generate → Execute → Feedback* to deliver personalized career planning, precise job-person matching, growth path decomposition, and long-term companionship for college students and early-career professionals.
 
-系统前身《基于 AI 的大学生职业规划智能体》（国赛 A13，获全国三等奖），现按省赛 A02 赛题要求（蚂蚁百宝箱企业版平台、MCP 协议、多端发布、AI 伦理设计）进行适配演进。
+For the provincial A02 competition, the system is being adapted to the **Ant Tbox (蚂蚁百宝箱) Enterprise platform**: knowledge base + multi-agent workflow orchestration, MCP protocol integration, multi-platform publishing, and AI ethics design.
 
-### 核心价值
+### Core Value
 
-- **懂学生**：10 维能力画像 + 动态职业画像，量化自我认知
-- **懂岗位**：10000+ 真实岗位数据构建职业认知知识底座
-- **懂成长**：垂直晋升图谱 + 横向换岗图谱 + 3-5 年职业路径
-- **懂陪伴**：情绪感知、目标监督激励、计划动态调整（开发中）
+- **Knows the student**: 10-dimension ability profile + dynamic career profile
+- **Knows the job**: 10,000+ real job postings forming the career knowledge base
+- **Knows growth**: vertical promotion graph + lateral transfer graph + 3–5 year career path
+- **Knows companionship**: emotion awareness, goal supervision & motivation, dynamic plan adjustment (in development)
 
-## 二、系统架构
+## 2. Architecture
 
 ```
 ┌─────────────────────────────────────────────────┐
-│  表现交互层  Vue3 + Vite + ECharts（玻璃拟态 UI）  │
-│  对话流式（SSE 打字机）· 职业星图 · 能力雷达 · 大盘   │
+│  Presentation Layer  Vue3 + Vite + ECharts       │
+│  Streaming chat (SSE) · Career Star Map · Radar  │
 └──────────────┬──────────────────────────────────┘
-               │ REST / SSE / 加密传输
+               │ REST / SSE / encrypted transport
 ┌──────────────▼──────────────────────────────────┐
-│  后端（Spring Boot + MyBatis-Plus，含两模块）      │
-│  业务服务：用户/画像/测评/匹配/报告/对话/场景模拟     │
-│  岗位知识库：岗位数据/图谱/AI 分析                  │
-└──────────────┬──────────────────────────────────┘
-┌──────────────▼──────────────────────────────────┐
-│  AI 能力  蚂蚁百宝箱开放 API（A02 改造后）          │
-│  知识库（岗位/职业知识）· 多智能体工作流编排          │
+│  Backend (single Spring Boot app, merged)        │
+│  Business: user/profile/assessment/match/report  │
+│  Job KB: job data/graphs/AI analysis             │
 └──────────────┬──────────────────────────────────┘
 ┌──────────────▼──────────────────────────────────┐
-│  数据层  MySQL · Redis                            │
+│  AI Capability  Ant Tbox Open API (A02)          │
+│  Knowledge base · Multi-agent workflow           │
+└──────────────┬──────────────────────────────────┘
+┌──────────────▼──────────────────────────────────┐
+│  Data Layer  MySQL · Redis                       │
 └─────────────────────────────────────────────────┘
 ```
 
-> 🔄 A02 改造方向：原自研 AI 服务（LangChain4j + PGVector）已退役，知识库与多智能体能力迁移至蚂蚁百宝箱企业版（开放 API 对接，链路：前端 → 后端 → 百宝箱）。
+> 🔄 A02 migration: the former in-house AI service (LangChain4j + PGVector) is retired; knowledge base & multi-agent capabilities move to Ant Tbox Enterprise (API integration: frontend → backend → Tbox).
 
-## 三、技术栈
+## 3. Tech Stack
 
-| 层 | 技术 |
+| Layer | Technology |
 |---|---|
-| 前端 | Vue 3、Vite、Axios、ECharts、Glassmorphism 设计 |
-| 后端 | Spring Boot 3.x、MyBatis-Plus、JWT、RSA 加密 |
-| AI（A02 改造后） | 蚂蚁百宝箱企业版：知识库 + 多智能体工作流编排（开放 API 对接） |
-| 数据 | MySQL（业务）、Redis（缓存）、Excel 知识库 |
-| 部署 | Maven Wrapper、Node 20+（Vite 7） |
+| Frontend | Vue 3, Vite, Axios, ECharts, Glassmorphism UI |
+| Backend | Spring Boot 3.x, MyBatis-Plus, JWT, RSA encryption |
+| AI (A02) | Ant Tbox Enterprise: knowledge base + multi-agent workflow (Open API) |
+| Data | MySQL (business), Redis (cache), Excel knowledge base |
+| Deploy | Nginx (reverse proxy), Maven Wrapper, Node 20+ (Vite 7) |
 
-## 四、代码仓库结构
+## 4. Repository Structure
 
 ```
-星职/
-├── 前端/                        # Vue3 前端（Career Plannning）
-├── 后端/
-│   ├── 业务服务/                # 主业务后端（用户/画像/测评/匹配/报告/对话）
-│   └── 岗位知识库服务/           # 岗位知识库后端（岗位数据/图谱/AI 分析）
-├── 数据库/数据库结构.sql         # MySQL youthpath 库（31 张表）
-├── 作品材料/                     # 项目介绍材料（概要/PPT/详细方案/知识库/原始知识库材料）
-├── docs/                        # 项目文档（差异分析与开发待办清单）
+├── 前端/                        # Vue 3 frontend
+├── 后端/                        # Merged Spring Boot backend (single project)
+│   ├── src/main/java/           #   com.xingzhi + org.example.web + wwy.example.springboot
+│   ├── src/main/resources/      #   application.yml (${ENV} placeholders) + mapper XMLs
+│   ├── .env / .env.example      #   environment config (secrets, gitignored)
+│   └── sql/                     #   invitation-code SQL scripts
+├── 数据库/数据库结构.sql         # MySQL youthpath schema (31 tables)
+├── nginx/conf/nginx.conf        # reverse proxy config (prod)
+├── manage.py                    # CLI service manager
+├── manage_gui.py                # Tkinter visual service manager
+├── 作品材料/                     # competition materials (PPT, docs, knowledge base)
+├── docs/                        # project docs (A13→A02 diff & backlog)
 └── README.md
 ```
 
-## 五、主要功能
+## 5. Features
 
-1. **智能体对话**：职业规划智能问答，SSE 流式输出 + 打字机体验（A02 改造后对话能力由百宝箱开放 API 提供）
-2. **职业星图**：垂直晋升链路 + 横向换岗路径的可视化宇宙星图
-3. **AI 能力测评**：多维能力量化评估（能力测评/评分历史）
-4. **人岗匹配**：10 维双向画像匹配，输出匹配度与差距分析
-5. **生涯报告**：职业探索→目标设定→路径规划→行动计划，支持润色/编辑/导出
-6. **职场场景模拟训练（新增，A02 要求）**：模拟面试 / 跨岗位沟通 / AI 辅助办公，训练结果反哺学生能力画像
-7. **学生就业大盘（B 端）**：班级/院系就业数据看板（当前为静态展示）
-8. **岗位管理（B 端）**：岗位数据维护、AI 自动分析入库
+1. **Agent Chat**: career Q&A with SSE streaming + typewriter effect (AI via Tbox Open API after A02 migration)
+2. **Career Star Map**: visual vertical promotion & horizontal transfer path graph
+3. **AI Ability Assessment**: multi-dimension quantitative evaluation
+4. **Job-Person Matching**: 10-dimension bidirectional profile matching with gap analysis
+5. **Career Report**: exploration → goal → path → action plan, editable & exportable
+6. **Workplace Simulation Training** (new, A02): mock interview / cross-role communication / AI-assisted office, results feed back into the student profile
+7. **Tutor Dashboard (B-side)**: class/department employment data dashboard
+8. **Job Admin (B-side)**: job data maintenance & AI analysis
 
-## 六、本地启动指引（概要）
+## 6. Quick Start
 
-| 模块 | 端口 | 启动方式 | 依赖 |
+### Prerequisites
+
+- JDK 17+, Maven wrapper (bundled), Node 20+, MySQL (import `数据库/数据库结构.sql` into a `youthpath` schema), Redis (optional)
+- Python 3 for the service manager
+
+### Configure environment
+
+```bash
+cd 后端
+cp .env.example .env     # fill in DB / mail / RSA / AES values
+```
+
+### Start services (recommended)
+
+```bash
+python manage.py start all     # start backend + frontend + nginx
+python manage.py status        # check status
+python manage.py logs backend  # view logs
+python manage.py gui           # visual manager (Tkinter)
+```
+
+### Start manually
+
+| Module | Port | Command | Depends on |
 |---|---|---|---|
-| 后端-业务服务 | 8080 | `mvnw spring-boot:run` | MySQL（youthpath）、Redis |
-| 后端-岗位知识库 | 8082 | `mvnw spring-boot:run` | MySQL（youthpath） |
-| 前端 | 5173 | `npm install && npm run dev` | 后端地址（见 `src/config/api.js`） |
+| Backend | 8080 | `cd 后端 && mvnw spring-boot:run` | MySQL (`youthpath`), `.env` |
+| Frontend | 5173 | `cd 前端 && npm install && npm run dev` | — |
+| Nginx (prod) | 80 | `python manage.py start nginx` | `前端/dist` build |
 
-> ⚠️ A02 改造后：对话/多智能体能力由**蚂蚁百宝箱开放 API** 提供（报名后配置 API Key 于后端）；原自研 AI 服务已退役。数据库初始化：导入 `数据库/数据库结构.sql`；大文件（演示视频、向量化知识库 CSV 等）不随仓库分发，走网盘/本地存储。
+> ⚠️ Production: build the frontend first (`npm run build` → `前端/dist`), then Nginx serves it and proxies `/api/*` to the backend. See `nginx/README.md`.
 
-## 七、当前状态与演进方向
+## 7. Status & Roadmap
 
-**已完成**：用户体系、学生画像、能力测评、人岗匹配、生涯报告、岗位知识库、SSE 流式基础链路、前端全页面。
+**Done**: user system, student profile, ability assessment, job-person matching, career report, job knowledge base, SSE streaming base chain, full frontend pages.
 
-**开发中（对应省赛 A02 要求）**：
-- 百宝箱侧：知识库迁移（向量库/岗位知识上传）、多智能体工作流编排（意图路由 / 教练 / 规划 / 情绪）、场景模拟评分节点
-- 后端改造：对话转发目标切换为百宝箱开放 API、MCP 双数据源对接（招聘→职业画像，学习资源→学生画像）、评分落库
-- 动态调整方案（计划重构 / 动态排期 / 情绪联动）——待实现
-- 职场场景模拟训练（模拟面试 / 跨岗位沟通 / AI 辅助办公 + 画像提升闭环）——新增
-- 流式输出完整化（心跳、重连、JSON 清洗、Markdown、流式图表、落库）
-- AI 伦理设计、用户测试记录、多端发布（可选）
+**In progress (A02 requirements)**:
+- Tbox side: knowledge base migration, multi-agent workflow (Router / Coach / Planner / Emotion), scenario scoring nodes
+- Backend: switch chat forwarding to Tbox Open API, MCP dual data sources (jobs → career profile; learning resources → student profile), scoring persistence
+- Dynamic adjustment (plan rebuild / dynamic scheduling / emotion-triggered fallback)
+- Workplace simulation training (mock interview / cross-role / AI-assisted office + profile improvement loop)
+- Streaming completeness (heartbeat, reconnect, JSON cleaning, Markdown, streaming charts, persistence)
+- AI ethics design, user testing records, multi-platform publishing (optional)
 
-## 八、免责与合规
+## 8. Disclaimer
 
-- 本项目为参赛作品，代码中的 API Key 等敏感信息已脱敏，请勿提交真实密钥
-- 岗位数据来源于竞赛主办方提供，仅用于参赛与学习
-- 参赛作品遵循各赛题"开源代码约定"与 AI 伦理要求
+- Competition entry; API keys and secrets are redacted — never commit real credentials (use `.env`, which is gitignored)
+- Job data is provided by the competition organizer for competition/learning use only
+- The project follows the competition's open-source code conventions and AI ethics requirements

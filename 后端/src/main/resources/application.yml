@@ -1,0 +1,95 @@
+# ============================================================
+# 星职统一后端配置（业务服务 + 岗位知识库服务 合并）
+# 敏感配置统一从环境变量 / .env 读取（由 manage.py 加载注入），
+# 默认值仅用于本地快速启动，生产环境请在 .env 中覆盖。
+# ============================================================
+
+server:
+  port: ${SERVER_PORT:8080}
+  servlet:
+    context-path: /api          # 统一前缀：控制器不再写 /api
+    session:
+      timeout: 30m
+      cookie:
+        same-site: lax
+        secure: false
+        http-only: true
+        max-age: 1800
+        path: /api
+
+spring:
+  application:
+    name: xingzhi-backend
+
+  # ── 数据源（youthpath 库含全部 31 张表，见 数据库/数据库结构.sql）──
+  datasource:
+    type: com.zaxxer.hikari.HikariDataSource
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: ${DB_URL:jdbc:mysql://localhost:3306/youthpath?allowPublicKeyRetrieval=true&useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=UTC}
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:}
+    hikari:
+      connection-test-query: SELECT 1
+      connection-timeout: 30000
+      maximum-pool-size: 10
+      minimum-idle: 5
+
+  # ── 邮件（业务服务：验证码/忘记密码）──
+  mail:
+    host: ${MAIL_HOST:smtp.qq.com}
+    port: ${MAIL_PORT:587}
+    default-encoding: utf-8
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+            required: true
+          connectiontimeout: 50000
+          timeout: 50000
+          writetimeout: 50000
+
+  session:
+    timeout: 1800
+    cookie:
+      same-site: lax
+      secure: false
+      http-only: true
+      path: /api
+
+# ── MyBatis-Plus（兼容普通 MyBatis Mapper 与 MP BaseMapper）──
+mybatis-plus:
+  mapper-locations: classpath*:mapper/*.xml,classpath*:mappers/*.xml
+  type-aliases-package: org.example.web.entity,wwy.example.springboot.entity
+  configuration:
+    map-underscore-to-camel-case: true
+  global-config:
+    db-config:
+      logic-delete-field: isDeleted   # 逻辑删除实体字段名（仅作用于 MP BaseMapper 生成 SQL）
+      logic-delete-value: 1
+      logic-not-delete-value: 0
+      id-type: assign_id              # 雪花 ID
+
+# ── RSA 加密（前端登录传输加密，.env 中配置）──
+rsa:
+  private-key: ${RSA_PRIVATE_KEY:}
+  public-key: ${RSA_PUBLIC_KEY:}
+
+# ── 数据库存储 AES 密钥（.env 中配置，永久不改）──
+aes-storage:
+  key: ${AES_KEY:}
+  iv: ${AES_IV:}
+
+# ── 蚂蚁百宝箱开放 API（A02 改造后对话/多智能体能力，待配置）──
+tbox:
+  api-url: ${TBOX_API_URL:}
+  api-key: ${TBOX_API_KEY:}
+  agent-id: ${TBOX_AGENT_ID:}
+
+# ── 日志 ──
+logging:
+  level:
+    root: info
