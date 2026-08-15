@@ -1,0 +1,224 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="org.example.web.mapper.StudentProfileMapper">
+    <!-- 全字段结果映射（1:1匹配数据库表结构） -->
+    <resultMap id="StudentProfileMap" type="org.example.web.entity.StudentProfile">
+        <!-- 按照数据库表字段顺序映射 -->
+        <id column="id" property="id"/>
+        <result column="user_id" property="userId"/>
+        <result column="version" property="version"/>
+        <result column="user_name" property="userName"/>
+        <result column="gender" property="gender"/>
+        <result column="phone" property="phone"/>
+        <result column="email" property="email"/>
+        <result column="college" property="college"/>
+        <result column="major" property="major"/>
+        <result column="grade" property="grade"/>
+        <result column="profile_status" property="profileStatus"/>
+        <result column="age" property="age"/>
+        <result column="graduation_date" property="graduationDate"/>
+        <result column="career_intentions" property="careerIntentions"/>
+        <result column="job_intention_detail" property="jobIntentionDetail"/>
+        <result column="target_city" property="targetCity"/>
+        <result column="expected_salary" property="expectedSalary"/>
+        <result column="industry_preference" property="industryPreference"/>
+        <result column="work_type_preference" property="workTypePreference"/>
+        <result column="max_learning_cycle" property="maxLearningCycle"/>
+        <result column="education" property="education"/>
+        <result column="work_experience" property="workExperience"/>
+        <result column="project_experience" property="projectExperience"/>
+        <result column="skill" property="skill"/>
+        <result column="certificate" property="certificate"/>
+        <result column="student_group" property="studentGroup"/>
+        <result column="privacy_level" property="privacyLevel"/>
+        <result column="create_time" property="createTime"/>
+        <result column="update_time" property="updateTime"/>
+        <result column="is_deleted" property="isDeleted"/>
+    </resultMap>
+
+    <!-- 公共表名片段 -->
+    <sql id="baseTable">student_profile</sql>
+
+    <!-- 1. 全部查询（自动过滤已删除数据） -->
+    <select id="selectAll" resultMap="StudentProfileMap">
+        select * from <include refid="baseTable" /> where is_deleted = 0
+    </select>
+
+    <!-- 2. 多条件查询（自动过滤已删除数据） -->
+    <select id="selectByCondition" resultMap="StudentProfileMap">
+        select * from <include refid="baseTable" />
+        <where>
+            is_deleted = 0
+            <if test="id != null">and id = #{id}</if>
+            <if test="userId != null">and user_id = #{userId}</if>
+            <if test="version != null">and version = #{version}</if>
+            <if test="userName != null and userName != ''">and user_name like concat('%', #{userName}, '%')</if>
+            <if test="gender != null">and gender = #{gender}</if>
+            <if test="phone != null and phone != ''">and phone = #{phone}</if>
+            <if test="email != null and email != ''">and email = #{email}</if>
+            <if test="college != null and college != ''">and college like concat('%', #{college}, '%')</if>
+            <if test="major != null and major != ''">and major like concat('%', #{major}, '%')</if>
+            <if test="grade != null and grade != ''">and grade = #{grade}</if>
+            <if test="profileStatus != null">and profile_status = #{profileStatus}</if>
+            <if test="age != null">and age = #{age}</if>
+            <if test="targetCity != null and targetCity != ''">and target_city like concat('%', #{targetCity}, '%')</if>
+            <if test="studentGroup != null">and student_group = #{studentGroup}</if>
+            <if test="privacyLevel != null">and privacy_level = #{privacyLevel}</if>
+        </where>
+    </select>
+
+    <!-- 3. 新增学生（先插入→自动注入主键→返回新增完整记录） -->
+    <select id="insert"  >
+        insert into <include refid="baseTable" />
+        <trim prefix="(" suffix=")" suffixOverrides=",">
+            <if test="id != null">id,</if>
+            <if test="userId != null">user_id,</if>
+            <if test="version != null">version,</if>
+            <if test="userName != null">user_name,</if>
+            <if test="gender != null">gender,</if>
+            <if test="phone != null">phone,</if>
+            <if test="email != null">email,</if>
+            <if test="college != null">college,</if>
+            <if test="major != null">major,</if>
+            <if test="grade != null">grade,</if>
+            <if test="profileStatus != null">profile_status,</if>
+            <if test="age != null">age,</if>
+            <if test="graduationDate != null">graduation_date,</if>
+            <if test="careerIntentions != null">career_intentions,</if>
+            <if test="jobIntentionDetail != null">job_intention_detail,</if>
+            <if test="targetCity != null">target_city,</if>
+            <if test="expectedSalary != null">expected_salary,</if>
+            <if test="industryPreference != null">industry_preference,</if>
+            <if test="workTypePreference != null">work_type_preference,</if>
+            <if test="maxLearningCycle != null">max_learning_cycle,</if>
+            <if test="education != null">education,</if>
+            <if test="workExperience != null">work_experience,</if>
+            <if test="projectExperience != null">project_experience,</if>
+            <if test="skill != null">skill,</if>
+            <if test="certificate != null">certificate,</if>
+            <if test="studentGroup != null">student_group,</if>
+            <if test="privacyLevel != null">privacy_level,</if>
+        </trim>
+        <trim prefix="values (" suffix=")" suffixOverrides=",">
+            <if test="id != null">#{id},</if>
+            <if test="userId != null">#{userId},</if>
+            <if test="version != null">#{version},</if>
+            <if test="userName != null">#{userName},</if>
+            <if test="gender != null">#{gender},</if>
+            <if test="phone != null">#{phone},</if>
+            <if test="email != null">#{email},</if>
+            <if test="college != null">#{college},</if>
+            <if test="major != null">#{major},</if>
+            <if test="grade != null">#{grade},</if>
+            <if test="profileStatus != null">#{profileStatus},</if>
+            <if test="age != null">#{age},</if>
+            <if test="graduationDate != null">#{graduationDate},</if>
+            <if test="careerIntentions != null">#{careerIntentions},</if>
+            <if test="jobIntentionDetail != null">#{jobIntentionDetail},</if>
+            <if test="targetCity != null">#{targetCity},</if>
+            <if test="expectedSalary != null">#{expectedSalary},</if>
+            <if test="industryPreference != null">#{industryPreference},</if>
+            <if test="workTypePreference != null">#{workTypePreference},</if>
+            <if test="maxLearningCycle != null">#{maxLearningCycle},</if>
+            <if test="education != null">#{education},</if>
+            <if test="workExperience != null">#{workExperience},</if>
+            <if test="projectExperience != null">#{projectExperience},</if>
+            <if test="skill != null">#{skill},</if>
+            <if test="certificate != null">#{certificate},</if>
+            <if test="studentGroup != null">#{studentGroup},</if>
+            <if test="privacyLevel != null">#{privacyLevel},</if>
+        </trim>;
+        select * from <include refid="baseTable" /> where id = #{id};
+    </select>
+
+    <!-- 4. 更新学生（先查原记录→执行更新→自动刷新update_time→返回更新后最新记录） -->
+    <select id="update">
+        select * from <include refid="baseTable" /> where id = #{id} and is_deleted = 0;
+        update <include refid="baseTable" />
+        <set>
+            <if test="userId != null">user_id = #{userId},</if>
+            <if test="version != null">version = #{version},</if>
+            <if test="userName != null">user_name = #{userName},</if>
+            <if test="gender != null">gender = #{gender},</if>
+            <if test="phone != null">phone = #{phone},</if>
+            <if test="email != null">email = #{email},</if>
+            <if test="college != null">college = #{college},</if>
+            <if test="major != null">major = #{major},</if>
+            <if test="grade != null">grade = #{grade},</if>
+            <if test="profileStatus != null">profile_status = #{profileStatus},</if>
+            <if test="age != null">age = #{age},</if>
+            <if test="graduationDate != null">graduation_date = #{graduationDate},</if>
+            <if test="careerIntentions != null">career_intentions = #{careerIntentions},</if>
+            <if test="jobIntentionDetail != null">job_intention_detail = #{jobIntentionDetail},</if>
+            <if test="targetCity != null">target_city = #{targetCity},</if>
+            <if test="expectedSalary != null">expected_salary = #{expectedSalary},</if>
+            <if test="industryPreference != null">industry_preference = #{industryPreference},</if>
+            <if test="workTypePreference != null">work_type_preference = #{workTypePreference},</if>
+            <if test="maxLearningCycle != null">max_learning_cycle = #{maxLearningCycle},</if>
+            <if test="education != null">education = #{education},</if>
+            <if test="workExperience != null">work_experience = #{workExperience},</if>
+            <if test="projectExperience != null">project_experience = #{projectExperience},</if>
+            <if test="skill != null">skill = #{skill},</if>
+            <if test="certificate != null">certificate = #{certificate},</if>
+            <if test="studentGroup != null">student_group = #{studentGroup},</if>
+            <if test="privacyLevel != null">privacy_level = #{privacyLevel},</if>
+            update_time = now(),
+        </set>
+        where id = #{id} and is_deleted = 0;
+        select * from <include refid="baseTable" /> where id = #{id};
+    </select>
+
+    <!-- 5. 根据ID删除（先查要删除的记录→逻辑删除→返回删除前原记录） -->
+    <delete id="deleteById">
+        select * from <include refid="baseTable" /> where id = #{studentId} and is_deleted = 0;
+        update <include refid="baseTable" /> set is_deleted = 1, update_time = now() where id = #{studentId} and is_deleted = 0;
+    </delete>
+
+    <!-- 6. 批量查询（自动过滤已删除数据） -->
+    <select id="batchSelect" resultMap="StudentProfileMap">
+        select * from <include refid="baseTable" />
+        where is_deleted = 0 and id in
+        <foreach collection="ids" open="(" close=")" separator="," item="id">
+            #{id}
+        </foreach>
+    </select>
+
+    <!-- 7. 条件选择查询（自动过滤已删除数据） -->
+    <select id="chooseSelect" resultMap="StudentProfileMap">
+        select * from <include refid="baseTable" />
+        <where>
+            and is_deleted = 0
+            <choose>
+                <when test="grade != null and grade != ''">and grade = #{grade}</when>
+                <when test="college != null and college != ''">and college like concat('%', #{college}, '%')</when>
+                <otherwise>and user_name like concat('%', #{userName}, '%')</otherwise>
+            </choose>
+        </where>
+    </select>
+
+    <!-- 8. 批量删除（先查所有要删除的记录→批量逻辑删除→返回删除前记录集合） -->
+    <select id="batchDelete">
+        select * from <include refid="baseTable" />
+        where is_deleted = 0 and id in
+        <foreach collection="ids" open="(" close=")" separator="," item="id">
+            #{id}
+        </foreach>;
+        update <include refid="baseTable" /> set is_deleted = 1, update_time = now()
+        where is_deleted = 0 and id in
+        <foreach collection="ids" open="(" close=")" separator="," item="id">
+            #{id}
+        </foreach>;
+    </select>
+
+    <!-- 8. 根据ID查询（自动过滤已删除数据） -->
+    <select id="selectById" resultMap="StudentProfileMap">
+        select * from <include refid="baseTable" /> where id = #{id} and is_deleted = 0
+    </select>
+
+    <!-- 9. 根据用户ID查询（自动过滤已删除数据） -->
+    <select id="selectByUserId" resultMap="StudentProfileMap">
+        select * from <include refid="baseTable" /> where user_id = #{userId} and is_deleted = 0
+    </select>
+</mapper>

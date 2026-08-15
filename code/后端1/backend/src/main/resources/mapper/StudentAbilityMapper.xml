@@ -1,0 +1,152 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="org.example.web.mapper.StudentAbilityMapper">
+    <!-- 全字段结果映射 -->
+    <resultMap id="StudentAbilityMap" type="org.example.web.entity.StudentAbility">
+        <id column="id" property="id"/>
+        <result column="user_id" property="userId"/>
+        <result column="profile_id" property="profileId"/>
+        <result column="education_requirement" property="educationRequirement"/>
+        <result column="internship_ability" property="internshipAbility"/>
+        <result column="professional_skill" property="professionalSkill"/>
+        <result column="certificate_requirement" property="certificateRequirement"/>
+        <result column="innovation_ability" property="innovationAbility"/>
+        <result column="learning_ability" property="learningAbility"/>
+        <result column="pressure_resistance" property="pressureResistance"/>
+        <result column="communication_ability" property="communicationAbility"/>
+        <result column="problem_solving" property="problemSolving"/>
+        <result column="teamwork_ability" property="teamworkAbility"/>
+        <result column="create_time" property="createTime"/>
+        <result column="update_time" property="updateTime"/>
+        <result column="is_deleted" property="isDeleted"/>
+    </resultMap>
+
+    <!-- 公共表名片段 -->
+    <sql id="baseTable">student_ability</sql>
+
+    <!-- 1. 全部查询（自动过滤已删除数据） -->
+    <select id="selectAll" resultMap="StudentAbilityMap">
+        select * from <include refid="baseTable" /> where is_deleted = 0
+    </select>
+
+    <!-- 2. 多条件查询（自动过滤已删除数据） -->
+    <select id="selectByCondition" resultMap="StudentAbilityMap">
+        select * from <include refid="baseTable" />
+        <where>
+            and is_deleted = 0
+            <if test="id != null">and id = #{id}</if>
+            <if test="userId != null">and user_id = #{userId}</if>
+            <if test="profileId != null">and profile_id = #{profileId}</if>
+            <if test="educationRequirement != null and educationRequirement != ''">and education_requirement like concat('%', #{educationRequirement}, '%')</if>
+            <if test="internshipAbility != null and internshipAbility != ''">and internship_ability like concat('%', #{internshipAbility}, '%')</if>
+            <if test="professionalSkill != null and professionalSkill != ''">and professional_skill like concat('%', #{professionalSkill}, '%')</if>
+            <if test="certificateRequirement != null and certificateRequirement != ''">and certificate_requirement like concat('%', #{certificateRequirement}, '%')</if>
+            <if test="innovationAbility != null and innovationAbility != ''">and innovation_ability like concat('%', #{innovationAbility}, '%')</if>
+            <if test="learningAbility != null and learningAbility != ''">and learning_ability like concat('%', #{learningAbility}, '%')</if>
+            <if test="pressureResistance != null and pressureResistance != ''">and pressure_resistance like concat('%', #{pressureResistance}, '%')</if>
+            <if test="communicationAbility != null and communicationAbility != ''">and communication_ability like concat('%', #{communicationAbility}, '%')</if>
+            <if test="problemSolving != null and problemSolving != ''">and problem_solving like concat('%', #{problemSolving}, '%')</if>
+            <if test="teamworkAbility != null and teamworkAbility != ''">and teamwork_ability like concat('%', #{teamworkAbility}, '%')</if>
+        </where>
+    </select>
+
+    <!-- 3. 新增能力（先插入→自动注入主键→返回新增完整记录） -->
+    <select id="insert" resultMap="StudentAbilityMap">
+        insert into <include refid="baseTable" />
+        <trim prefix="(" suffix=")" suffixOverrides=",">
+            <if test="id != null">id,</if>
+            <if test="userId != null">user_id,</if>
+            <if test="profileId != null">profile_id,</if>
+            <if test="educationRequirement != null">education_requirement,</if>
+            <if test="internshipAbility != null">internship_ability,</if>
+            <if test="professionalSkill != null">professional_skill,</if>
+            <if test="certificateRequirement != null">certificate_requirement,</if>
+            <if test="innovationAbility != null">innovation_ability,</if>
+            <if test="learningAbility != null">learning_ability,</if>
+            <if test="pressureResistance != null">pressure_resistance,</if>
+            <if test="communicationAbility != null">communication_ability,</if>
+            <if test="problemSolving != null">problem_solving,</if>
+            <if test="teamworkAbility != null">teamwork_ability,</if>
+        </trim>
+        <trim prefix="values (" suffix=")" suffixOverrides=",">
+            <if test="id != null">#{id},</if>
+            <if test="userId != null">#{userId},</if>
+            <if test="profileId != null">#{profileId},</if>
+            <if test="educationRequirement != null">#{educationRequirement},</if>
+            <if test="internshipAbility != null">#{internshipAbility},</if>
+            <if test="professionalSkill != null">#{professionalSkill},</if>
+            <if test="certificateRequirement != null">#{certificateRequirement},</if>
+            <if test="innovationAbility != null">#{innovationAbility},</if>
+            <if test="learningAbility != null">#{learningAbility},</if>
+            <if test="pressureResistance != null">#{pressureResistance},</if>
+            <if test="communicationAbility != null">#{communicationAbility},</if>
+            <if test="problemSolving != null">#{problemSolving},</if>
+            <if test="teamworkAbility != null">#{teamworkAbility},</if>
+        </trim>;
+        select * from <include refid="baseTable" /> where id = #{id};
+    </select>
+
+    <!-- 4. 更新能力（先查原记录→执行更新→自动刷新update_time→返回更新后最新记录） -->
+    <select id="update" resultMap="StudentAbilityMap">
+        select * from <include refid="baseTable" /> where id = #{id} and is_deleted = 0;
+        update <include refid="baseTable" />
+        <set>
+            <if test="userId != null">user_id = #{userId},</if>
+            <if test="profileId != null">profile_id = #{profileId},</if>
+            <if test="educationRequirement != null">education_requirement = #{educationRequirement},</if>
+            <if test="internshipAbility != null">internship_ability = #{internshipAbility},</if>
+            <if test="professionalSkill != null">professional_skill = #{professionalSkill},</if>
+            <if test="certificateRequirement != null">certificate_requirement = #{certificateRequirement},</if>
+            <if test="innovationAbility != null">innovation_ability = #{innovationAbility},</if>
+            <if test="learningAbility != null">learning_ability = #{learningAbility},</if>
+            <if test="pressureResistance != null">pressure_resistance = #{pressureResistance},</if>
+            <if test="communicationAbility != null">communication_ability = #{communicationAbility},</if>
+            <if test="problemSolving != null">problem_solving = #{problemSolving},</if>
+            <if test="teamworkAbility != null">teamwork_ability = #{teamworkAbility},</if>
+            update_time = now(),
+        </set>
+        where id = #{id} and is_deleted = 0;
+        select * from <include refid="baseTable" /> where id = #{id};
+    </select>
+
+    <!-- 5. 根据ID删除（先查要删除的记录→逻辑删除→返回删除前原记录） -->
+    <delete id="deleteById">
+        select * from <include refid="baseTable" /> where id = #{id} and is_deleted = 0;
+        update <include refid="baseTable" /> set is_deleted = 1, update_time = now() where id = #{id} and is_deleted = 0;
+    </delete>
+
+    <!-- 6. 批量查询（自动过滤已删除数据） -->
+    <select id="batchSelect" resultMap="StudentAbilityMap">
+        select * from <include refid="baseTable" />
+        where is_deleted = 0 and id in
+        <foreach collection="ids" open="(" close=")" separator="," item="id">
+            #{id}
+        </foreach>
+    </select>
+
+    <!-- 7. 根据用户ID查询（自动过滤已删除数据） -->
+    <select id="selectByUserId" resultMap="StudentAbilityMap">
+        select * from <include refid="baseTable" /> where user_id = #{userId} and is_deleted = 0
+    </select>
+
+    <!-- 8. 根据ID查询（自动过滤已删除数据） -->
+    <select id="selectById" resultMap="StudentAbilityMap">
+        select * from <include refid="baseTable" /> where id = #{id} and is_deleted = 0
+    </select>
+
+    <!-- 9. 批量删除（先查所有要删除的记录→批量逻辑删除→返回删除前记录集合） -->
+    <select id="batchDelete">
+        select * from <include refid="baseTable" />
+        where is_deleted = 0 and id in
+        <foreach collection="ids" open="(" close=")" separator="," item="id">
+            #{id}
+        </foreach>;
+        update <include refid="baseTable" /> set is_deleted = 1, update_time = now()
+        where is_deleted = 0 and id in
+        <foreach collection="ids" open="(" close=")" separator="," item="id">
+            #{id}
+        </foreach>;
+    </select>
+</mapper>

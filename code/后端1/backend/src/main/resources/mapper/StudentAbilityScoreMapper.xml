@@ -1,0 +1,178 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="org.example.web.mapper.StudentAbilityScoreMapper">
+    <!-- 全字段结果映射 -->
+    <resultMap id="StudentAbilityScoreMap" type="org.example.web.entity.StudentAbilityScore">
+        <id column="id" property="id"/>
+        <result column="user_id" property="userId"/>
+        <result column="ability_id" property="abilityId"/>
+        <result column="education_score" property="educationScore"/>
+        <result column="internship_score" property="internshipScore"/>
+        <result column="professional_score" property="professionalScore"/>
+        <result column="certificate_score" property="certificateScore"/>
+        <result column="innovation_score" property="innovationScore"/>
+        <result column="learning_score" property="learningScore"/>
+        <result column="pressure_score" property="pressureScore"/>
+        <result column="communication_score" property="communicationScore"/>
+        <result column="problem_solving_score" property="problemSolvingScore"/>
+        <result column="teamwork_score" property="teamworkScore"/>
+        <result column="total_score" property="totalScore"/>
+        <result column="industry_rank" property="industryRank"/>
+        <result column="peer_rank" property="peerRank"/>
+        <result column="score_type" property="scoreType"/>
+        <result column="score_comment" property="scoreComment"/>
+        <result column="create_time" property="createTime"/>
+        <result column="update_time" property="updateTime"/>
+        <result column="is_deleted" property="isDeleted"/>
+    </resultMap>
+
+    <!-- 公共表名片段 -->
+    <sql id="baseTable">student_ability_score</sql>
+
+    <!-- 1. 全部查询（自动过滤已删除数据） -->
+    <select id="selectAll" resultMap="StudentAbilityScoreMap">
+        select * from <include refid="baseTable" /> where is_deleted = 0
+    </select>
+
+    <!-- 2. 多条件查询（自动过滤已删除数据） -->
+    <select id="selectByCondition" resultMap="StudentAbilityScoreMap">
+        select * from <include refid="baseTable" />
+        <where>
+            and is_deleted = 0
+            <if test="id != null">and id = #{id}</if>
+            <if test="userId != null">and user_id = #{userId}</if>
+            <if test="abilityId != null">and ability_id = #{abilityId}</if>
+            <if test="educationScore != null">and education_score = #{educationScore}</if>
+            <if test="internshipScore != null">and internship_score = #{internshipScore}</if>
+            <if test="professionalScore != null">and professional_score = #{professionalScore}</if>
+            <if test="certificateScore != null">and certificate_score = #{certificateScore}</if>
+            <if test="innovationScore != null">and innovation_score = #{innovationScore}</if>
+            <if test="learningScore != null">and learning_score = #{learningScore}</if>
+            <if test="pressureScore != null">and pressure_score = #{pressureScore}</if>
+            <if test="communicationScore != null">and communication_score = #{communicationScore}</if>
+            <if test="problemSolvingScore != null">and problem_solving_score = #{problemSolvingScore}</if>
+            <if test="teamworkScore != null">and teamwork_score = #{teamworkScore}</if>
+            <if test="totalScore != null">and total_score = #{totalScore}</if>
+            <if test="industryRank != null">and industry_rank = #{industryRank}</if>
+            <if test="peerRank != null">and peer_rank = #{peerRank}</if>
+            <if test="scoreType != null">and score_type = #{scoreType}</if>
+            <if test="scoreComment != null and scoreComment != ''">and score_comment like concat('%', #{scoreComment}, '%')</if>
+        </where>
+    </select>
+
+    <!-- 3. 新增评分 -->
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        insert into <include refid="baseTable" />
+        <trim prefix="(" suffix=")" suffixOverrides=",">
+            <if test="id != null">id,</if>
+            <if test="userId != null">user_id,</if>
+            <if test="abilityId != null">ability_id,</if>
+            <if test="educationScore != null">education_score,</if>
+            <if test="internshipScore != null">internship_score,</if>
+            <if test="professionalScore != null">professional_score,</if>
+            <if test="certificateScore != null">certificate_score,</if>
+            <if test="innovationScore != null">innovation_score,</if>
+            <if test="learningScore != null">learning_score,</if>
+            <if test="pressureScore != null">pressure_score,</if>
+            <if test="communicationScore != null">communication_score,</if>
+            <if test="problemSolvingScore != null">problem_solving_score,</if>
+            <if test="teamworkScore != null">teamwork_score,</if>
+            <if test="totalScore != null">total_score,</if>
+            <if test="industryRank != null">industry_rank,</if>
+            <if test="peerRank != null">peer_rank,</if>
+            <if test="scoreType != null">score_type,</if>
+            <if test="scoreComment != null">score_comment,</if>
+            create_time, update_time, is_deleted
+        </trim>
+        <trim prefix="values (" suffix=")" suffixOverrides=",">
+            <if test="id != null">#{id},</if>
+            <if test="userId != null">#{userId},</if>
+            <if test="abilityId != null">#{abilityId},</if>
+            <if test="educationScore != null">#{educationScore},</if>
+            <if test="internshipScore != null">#{internshipScore},</if>
+            <if test="professionalScore != null">#{professionalScore},</if>
+            <if test="certificateScore != null">#{certificateScore},</if>
+            <if test="innovationScore != null">#{innovationScore},</if>
+            <if test="learningScore != null">#{learningScore},</if>
+            <if test="pressureScore != null">#{pressureScore},</if>
+            <if test="communicationScore != null">#{communicationScore},</if>
+            <if test="problemSolvingScore != null">#{problemSolvingScore},</if>
+            <if test="teamworkScore != null">#{teamworkScore},</if>
+            <if test="totalScore != null">#{totalScore},</if>
+            <if test="industryRank != null">#{industryRank},</if>
+            <if test="peerRank != null">#{peerRank},</if>
+            <if test="scoreType != null">#{scoreType},</if>
+            <if test="scoreComment != null">#{scoreComment},</if>
+            NOW(), NOW(), 0
+        </trim>
+    </insert>
+
+    <!-- 4. 更新评分 -->
+    <update id="update">
+        update <include refid="baseTable" />
+        <set>
+            <if test="userId != null">user_id = #{userId},</if>
+            <if test="abilityId != null">ability_id = #{abilityId},</if>
+            <if test="educationScore != null">education_score = #{educationScore},</if>
+            <if test="internshipScore != null">internship_score = #{internshipScore},</if>
+            <if test="professionalScore != null">professional_score = #{professionalScore},</if>
+            <if test="certificateScore != null">certificate_score = #{certificateScore},</if>
+            <if test="innovationScore != null">innovation_score = #{innovationScore},</if>
+            <if test="learningScore != null">learning_score = #{learningScore},</if>
+            <if test="pressureScore != null">pressure_score = #{pressureScore},</if>
+            <if test="communicationScore != null">communication_score = #{communicationScore},</if>
+            <if test="problemSolvingScore != null">problem_solving_score = #{problemSolvingScore},</if>
+            <if test="teamworkScore != null">teamwork_score = #{teamworkScore},</if>
+            <if test="totalScore != null">total_score = #{totalScore},</if>
+            <if test="industryRank != null">industry_rank = #{industryRank},</if>
+            <if test="peerRank != null">peer_rank = #{peerRank},</if>
+            <if test="scoreType != null">score_type = #{scoreType},</if>
+            <if test="scoreComment != null">score_comment = #{scoreComment},</if>
+            update_time = NOW()
+        </set>
+        where id = #{id} and is_deleted = 0
+    </update>
+
+    <!-- 5. 根据ID删除（逻辑删除） -->
+    <update id="deleteById">
+        update <include refid="baseTable" />
+        set is_deleted = 1, update_time = NOW()
+        where id = #{id} and is_deleted = 0
+    </update>
+
+    <!-- 6. 批量查询（自动过滤已删除数据） -->
+    <select id="batchSelect" resultMap="StudentAbilityScoreMap">
+        select * from <include refid="baseTable" />
+        where is_deleted = 0 and id in
+        <foreach collection="ids" open="(" close=")" separator="," item="id">
+            #{id}
+        </foreach>
+    </select>
+
+    <!-- 7. 根据用户ID查询（自动过滤已删除数据） -->
+    <select id="selectByUserId" resultMap="StudentAbilityScoreMap">
+        select * from <include refid="baseTable" /> where user_id = #{userId} and is_deleted = 0
+    </select>
+
+    <!-- 8. 根据能力ID查询（自动过滤已删除数据） -->
+    <select id="selectByAbilityId" resultMap="StudentAbilityScoreMap">
+        select * from <include refid="baseTable" /> where ability_id = #{abilityId} and is_deleted = 0
+    </select>
+
+    <!-- 9. 根据ID查询（自动过滤已删除数据） -->
+    <select id="selectById" resultMap="StudentAbilityScoreMap">
+        select * from <include refid="baseTable" /> where id = #{id} and is_deleted = 0
+    </select>
+
+    <!-- 10. 批量删除（批量逻辑删除） -->
+    <update id="batchDelete">
+        update <include refid="baseTable" />
+        set is_deleted = 1, update_time = NOW()
+        where is_deleted = 0 and id in
+        <foreach collection="ids" open="(" close=")" separator="," item="id">
+            #{id}
+        </foreach>
+    </update>
+</mapper>

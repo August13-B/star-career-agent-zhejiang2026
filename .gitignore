@@ -1,0 +1,40 @@
+# ===== 构建产物 =====
+target/
+dist/
+node_modules/
+
+# ===== IDE / 系统文件 =====
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db
+
+# ===== Office 临时文件 =====
+~$*
+~WRL*.tmp
+
+# ===== JVM 崩溃日志 =====
+hs_err_pid*.log
+*.log
+
+# ===== 敏感信息 =====
+application-local.yml
+*.local.yml
+
+# ===== 大文件（走网盘/本地存储，不入库）=====
+# AI 向量库（161MB）
+**/knowledge_base.json
+# 向量化知识库 CSV（153MB）
+**/*embedding_knowledge_base*.csv
+# 演示视频（219MB）
+**/*.mp4
+# 项目介绍 PPT（133MB，超 GitHub 单文件上限，走网盘/本地）
+作品材料/*.pptx
+# Docker 安装包（591MB）
+**/Docker Desktop Installer.exe
+
+# ===== 运行时数据 =====
+resumes/
+uploads/
+*.sql.bak

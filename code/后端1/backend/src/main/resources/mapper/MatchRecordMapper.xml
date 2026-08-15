@@ -1,0 +1,151 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="org.example.web.mapper.MatchRecordMapper">
+    
+    <resultMap id="BaseResultMap" type="org.example.web.entity.MatchRecord">
+        <id column="id" property="id"/>
+        <result column="user_id" property="userId"/>
+        <result column="job_id" property="jobId"/>
+        <result column="level" property="level"/>
+        <result column="hard_score" property="hardScore"/>
+        <result column="skill_score" property="skillScore"/>
+        <result column="soft_score" property="softScore"/>
+        <result column="education_score" property="educationScore"/>
+        <result column="internship_score" property="internshipScore"/>
+        <result column="professional_score" property="professionalScore"/>
+        <result column="certificate_score" property="certificateScore"/>
+        <result column="innovation_score" property="innovationScore"/>
+        <result column="learning_score" property="learningScore"/>
+        <result column="pressure_score" property="pressureScore"/>
+        <result column="communication_score" property="communicationScore"/>
+        <result column="problem_solving_score" property="problemSolvingScore"/>
+        <result column="teamwork_score" property="teamworkScore"/>
+        <result column="total_score" property="totalScore"/>
+        <result column="match_result" property="matchResult"/>
+        <result column="match_status" property="matchStatus"/>
+        <result column="create_time" property="createTime"/>
+        <result column="update_time" property="updateTime"/>
+        <result column="is_deleted" property="isDeleted"/>
+    </resultMap>
+    
+    <insert id="insert" parameterType="org.example.web.entity.MatchRecord">
+        INSERT INTO match_record (
+            id, user_id, job_id, level,
+            hard_score, skill_score, soft_score,
+            education_score, internship_score, professional_score, certificate_score,
+            innovation_score, learning_score, pressure_score, communication_score,
+            problem_solving_score, teamwork_score, total_score,
+            match_result, match_status, create_time, update_time, is_deleted
+        ) VALUES (
+            #{id}, #{userId}, #{jobId}, #{level},
+            #{hardScore}, #{skillScore}, #{softScore},
+            #{educationScore}, #{internshipScore}, #{professionalScore}, #{certificateScore},
+            #{innovationScore}, #{learningScore}, #{pressureScore}, #{communicationScore},
+            #{problemSolvingScore}, #{teamworkScore}, #{totalScore},
+            #{matchResult}, #{matchStatus}, #{createTime}, #{updateTime}, #{isDeleted}
+        )
+    </insert>
+    
+    <update id="update" parameterType="org.example.web.entity.MatchRecord">
+        UPDATE match_record
+        SET user_id = #{userId},
+            job_id = #{jobId},
+            level = #{level},
+            hard_score = #{hardScore},
+            skill_score = #{skillScore},
+            soft_score = #{softScore},
+            education_score = #{educationScore},
+            internship_score = #{internshipScore},
+            professional_score = #{professionalScore},
+            certificate_score = #{certificateScore},
+            innovation_score = #{innovationScore},
+            learning_score = #{learningScore},
+            pressure_score = #{pressureScore},
+            communication_score = #{communicationScore},
+            problem_solving_score = #{problemSolvingScore},
+            teamwork_score = #{teamworkScore},
+            total_score = #{totalScore},
+            match_result = #{matchResult},
+            match_status = #{matchStatus},
+            update_time = #{updateTime},
+            is_deleted = #{isDeleted}
+        WHERE id = #{id}
+    </update>
+    
+    <update id="updateScores" parameterType="org.example.web.entity.MatchRecord">
+        UPDATE match_record
+        SET hard_score = #{hardScore},
+            skill_score = #{skillScore},
+            soft_score = #{softScore},
+            education_score = #{educationScore},
+            internship_score = #{internshipScore},
+            professional_score = #{professionalScore},
+            certificate_score = #{certificateScore},
+            innovation_score = #{innovationScore},
+            learning_score = #{learningScore},
+            pressure_score = #{pressureScore},
+            communication_score = #{communicationScore},
+            problem_solving_score = #{problemSolvingScore},
+            teamwork_score = #{teamworkScore},
+            total_score = #{totalScore},
+            update_time = #{updateTime}
+        WHERE id = #{id}
+    </update>
+    
+    <update id="updateMatchStatus">
+        UPDATE match_record
+        SET match_status = #{matchStatus}, update_time = NOW()
+        WHERE id = #{id}
+    </update>
+    
+    <update id="updateMatchResult">
+        UPDATE match_record
+        SET match_result = #{matchResult}, update_time = NOW()
+        WHERE id = #{id}
+    </update>
+    
+    <update id="logicDeleteById">
+        UPDATE match_record
+        SET is_deleted = 1, update_time = NOW()
+        WHERE id = #{id}
+    </update>
+    
+    <delete id="deleteById">
+        DELETE FROM match_record WHERE id = #{id}
+    </delete>
+    
+    <select id="selectById" resultMap="BaseResultMap">
+        SELECT * FROM match_record WHERE id = #{id} AND is_deleted = 0
+    </select>
+    
+    <select id="selectByUserId" resultMap="BaseResultMap">
+        SELECT * FROM match_record WHERE user_id = #{userId} AND is_deleted = 0 ORDER BY create_time DESC
+    </select>
+    
+    <select id="selectByJobId" resultMap="BaseResultMap">
+        SELECT * FROM match_record WHERE job_id = #{jobId} AND is_deleted = 0 ORDER BY create_time DESC
+    </select>
+    
+    <select id="selectByUserIdAndJobId" resultMap="BaseResultMap">
+        SELECT * FROM match_record 
+        WHERE user_id = #{userId} AND job_id = #{jobId} AND is_deleted = 0
+        ORDER BY create_time DESC LIMIT 1
+    </select>
+    
+    <select id="selectAll" resultMap="BaseResultMap">
+        SELECT * FROM match_record WHERE is_deleted = 0 ORDER BY create_time DESC
+    </select>
+    
+    <select id="selectByMatchResult" resultMap="BaseResultMap">
+        SELECT * FROM match_record 
+        WHERE match_result = #{matchResult} AND is_deleted = 0 
+        ORDER BY create_time DESC
+    </select>
+    
+    <select id="selectByMatchStatus" resultMap="BaseResultMap">
+        SELECT * FROM match_record 
+        WHERE match_status = #{matchStatus} AND is_deleted = 0 
+        ORDER BY create_time DESC
+    </select>
+    
+</mapper>

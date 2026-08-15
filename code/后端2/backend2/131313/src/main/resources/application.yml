@@ -1,0 +1,37 @@
+server:
+  port: 9999
+
+spring:
+  datasource:
+    url: jdbc:mysql://localhost:3306/131313?useSSL=false&serverTimezone=UTC&serverTimezone=UTC&nullCatalogMeansCurrent=true
+    username: root
+    password: 123456
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+#?? Spring MVC ?? 404 ??
+mvc:
+  throw-exception-if-no-handler-found: true
+  web:
+    resources:
+      add-mappings: false
+# MyBatis ??
+mybatis-plus:
+  mapper-locations: classpath:mappers/*.xml
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+  global-config:
+    db-config:
+      logic-delete-field: isDeleted   # 逻辑删除实体字段名
+      logic-delete-value: 1           # 逻辑已删除值
+      logic-not-delete-value: 0       # 逻辑未删除值
+      id-type: assign_id              # 全局ID策略：雪花ID（assign_id）
+
+
+rsa:
+  private-key: MIICdgIBADANBgkqhkiG9w0BAQEFAASCAmAwggJcAgEAAoGBAIyAH1tFskobZpzEsLVLq8JjSRNdlBYAPhUR3IYb1pLRbTPpP+DT38biUp/I9EY07UidPSqqmHxfStjfyysqPQCF24cVOzapBKoC+pnL+qn/y24SJdhCAZdpSFVPRwxQGlvmMKR/z7IGWJNfxEmB9SxYBtJgcg7KStsoj/8APTebAgMBAAECgYALnGr69/+L8EfCnN6dnOtM3Tekyg764no+84Lt8k8BQx1rNNN6mQfdP8bkPY8yXh1d6uCrLf38CUP+OEBqCMuRp7mOt/lCWiq5ULbExuxxaWe0/0YeFDgzia/Gp/OJwvj+fpjAECBWu4RhTEVPB7+BQJGSn/bx703Y3EuW35UbQQJBAKD7N6tQg2r005oSDb7JKtzZ7KUFD7Hts2EN6cHuecY+DI62KDX78dFF9xcG+iOKef2Ui5TzMtIzGb9y05IgL0cCQQDfbi+T5ClwHUkzljs9KMiY3qyVEEU89+uBdEJZDyHsbLCK8OgEOwliTV9ffmIJZ5/SLtEe/XIsSUiu2/rg4ScNAkArhN5+1KxCXN9bdmf63L1WqR89WUnt6vmkUjOQdty6yAlzBzGFro+n6Ics1XkH5Kan8+FsKfbiNmhOhkdF6Kd/AkEAgTMNLh7s21kEAGGqJcaUoNl6wMPk1cmjFHuu9iLrAfUj7WQ7Nl8RIRgOw4Conjme0IKkCKCUSgmijwLDwxBPbQJAe6MXFR5uPDQapoSclhrUlM+irvXUFciqdosnIrrb6Ng4rGG4vY3xFWAI8n43iQ53Yz7/3RiK1XXr3P6t11mHWA==
+  public-key: MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQCMgB9bRbJKG2acxLC1S6vCY0kTXZQWAD4VEdyGG9aS0W0z6T/g09/G4lKfyPRGNO1InT0qqph8X0rY38srKj0AhduHFTs2qQSqAvqZy/qp/8tuEiXYQgGXaUhVT0cMUBpb5jCkf8+yBliTX8RJgfUsWAbSYHIOykrbKI//AD03mwIDAQAB
+# 数据库存储专用固定 AES 密钥（永久不改）
+aes-storage:
+  key: 8KmNcQa7sV2fG9pX
+  iv: 5ZrBvEa4sDfGhJkL

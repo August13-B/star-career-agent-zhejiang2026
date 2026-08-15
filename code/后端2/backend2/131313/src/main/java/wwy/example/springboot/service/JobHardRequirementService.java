@@ -1,0 +1,59 @@
+package wwy.example.springboot.service;
+
+
+import com.baomidou.mybatisplus.core.metadata.IPage;
+import wwy.example.springboot.entity.JobHardRequirement;
+
+public interface JobHardRequirementService {
+
+    /**
+     * 新增硬门槛需求
+     * @param requirement 硬门槛实体
+     * @return 是否成功
+     */
+    boolean add(JobHardRequirement requirement);
+
+    /**
+     * 根据ID逻辑删除
+     * @param id 主键
+     * @return 是否成功
+     */
+    boolean deleteById(Long id);
+
+    /**
+     * 根据岗位ID逻辑删除（当岗位被删除时调用）
+     * @param jobId 岗位ID
+     * @return 是否成功
+     */
+    boolean deleteByJobId(Long jobId);
+
+    /**
+     * 更新硬门槛需求
+     * @param requirement 实体（必须包含id）
+     * @return 是否成功
+     */
+    boolean update(JobHardRequirement requirement);
+
+    /**
+     * 根据ID查询
+     * @param id 主键
+     * @return 硬门槛实体
+     */
+    JobHardRequirement findById(Long id);
+
+    /**
+     * 根据岗位ID查询（一对一关系，返回唯一记录）
+     * @param jobId 岗位ID
+     * @return 硬门槛实体，可能为null
+     */
+    JobHardRequirement findByJobId(Long jobId);
+
+    /**
+     * 分页查询（可选按岗位ID过滤）
+     * @param current 当前页
+     * @param size 每页条数
+     * @param jobId 岗位ID（可选）
+     * @return 分页结果
+     */
+    IPage<JobHardRequirement> pageQuery(long current, long size, Long jobId);
+}
