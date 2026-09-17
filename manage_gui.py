@@ -9,12 +9,13 @@
 功能:
     - 一键启动 / 一键停止 / 一键重启（后端 + 前端 + Nginx）
     - 单个服务 启动 / 停止 / 重启
-    - 实时状态 + 端口显示
-    - 日志查看 + 清空日志
+    - 状态显示：运行状态 + PID + 启动时间（重启后时间变化，一眼可辨）
+    - 操作过程中显示「处理中」过渡态 + 实时进度输出
+    - 日志查看 / 清空当前日志 / 清空全部日志
 
 端口约定:
     后端  http://localhost:8080   （context-path /api，可在 后端/.env 改 SERVER_PORT）
-    前端  http://localhost:5173   （Vite dev server，可在 前端/vite.config.js 改）
+    前端  http://localhost:5173   （Vite dev server）
     Nginx http://localhost        （可选，生产反代）
 """
 
@@ -28,7 +29,7 @@ from pathlib import Path
 import tkinter as tk
 from tkinter import scrolledtext
 
-# ── 主题色（PolyPlexII 同款暗色）──────────────────────────────────────
+# ── 主题色 ────────────────────────────────────────────────────────────
 BG_DARK = "#1e1e2e"
 BG_CARD = "#2a2a3e"
 BG_INPUT = "#35354a"
@@ -39,7 +40,6 @@ ACCENT_OK = "#a6e3a1"
 ACCENT_WARN = "#f9e2af"
 ACCENT_ERR = "#f38ba8"
 
-# ── 端口 / 地址（与 manage.SERVICES 保持一致）──
 URLS = {
     "backend": "http://localhost:8080/api",
     "frontend": "http://localhost:5173",
@@ -53,15 +53,16 @@ class ManageGUI:
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
         self.root.title("星职 · 服务管理器")
-        self.root.geometry("1040x680")
-        self.root.minsize(820, 560)
+        self.root.geometry("1060x700")
+        self.root.minsize(840, 580)
         self.root.configure(bg=BG_DARK)
 
-        import manage as M  # 复用 manage.py 逻辑
+        import manage as M
         self.M = M
 
         self.service_names = ["backend", "frontend", "nginx"]
         self.status_vars: dict[str, tk.Label] = {}
+        self.time_vars: dict[str, tk.Label] = {}
         self._busy = False
 
         self._setup_header()
@@ -79,12 +80,12 @@ class ManageGUI:
         tk.Label(header, text="✨ 星职 · 服务管理器", bg=BG_DARK, fg=ACCENT,
                  font=("Microsoft YaHei", 17, "bold")).pack(side="left")
 
-        # 一键操作按钮
         btns = tk.Frame(header, bg=BG_DARK)
         btns.pack(side="left", padx=24)
         self._btn(btns, "⚡ 一键启动", ACCENT_OK, lambda: self._run_all("start"), bold=True).pack(side="left", padx=3)
         self._btn(btns, "■ 全部停止", ACCENT_ERR, lambda: self._run_all("stop")).pack(side="left", padx=3)
         self._btn(btns, "↻ 全部重启", ACCENT_WARN, lambda: self._run_all("restart")).pack(side="left", padx=3)
+        self._btn(btns, "🗑 清空全部日志", FG_SECONDARY, self._clear_all_logs).pack(side="left", padx=12)
 
         self.status_bar = tk.Label(header, text="", bg=BG_DARK, fg=FG_SECONDARY,
                                    font=("Microsoft YaHei", 9))
@@ -102,14 +103,15 @@ class ManageGUI:
             svc = self.M.SERVICES[name]
             tk.Label(card, text=svc["name"], bg=BG_CARD, fg=FG_PRIMARY,
                      font=("Microsoft YaHei", 10, "bold")).pack(anchor="w")
-
-            # 端口 / 访问地址
             tk.Label(card, text=f"端口 {svc['port']}  ·  {URLS[name]}", bg=BG_CARD,
-                     fg=ACCENT, font=("Consolas", 8)).pack(anchor="w", pady=(1, 3))
+                     fg=ACCENT, font=("Consolas", 8)).pack(anchor="w", pady=(1, 4))
 
             self.status_vars[name] = tk.Label(card, text="○ 已停止", bg=BG_CARD,
-                                              fg=FG_SECONDARY, font=("Consolas", 10))
-            self.status_vars[name].pack(anchor="w", pady=(0, 8))
+                                              fg=FG_SECONDARY, font=("Consolas", 10, "bold"))
+            self.status_vars[name].pack(anchor="w")
+            self.time_vars[name] = tk.Label(card, text="—", bg=BG_CARD,
+                                            fg=FG_SECONDARY, font=("Consolas", 8))
+            self.time_vars[name].pack(anchor="w", pady=(1, 8))
 
             btns = tk.Frame(card, bg=BG_CARD)
             btns.pack(fill="x")
@@ -133,10 +135,11 @@ class ManageGUI:
         self.log_sel.pack(side="left", padx=8)
 
         self._btn(bar, "⟳ 刷新日志", ACCENT, self._refresh_log).pack(side="left", padx=4)
-        self._btn(bar, "🗑 清空日志", ACCENT_ERR, self._clear_log).pack(side="left", padx=4)
+        self._btn(bar, "🗑 清空当前日志", ACCENT_ERR, self._clear_log).pack(side="left", padx=4)
 
         self.log_view = scrolledtext.ScrolledText(frame, height=15, bg=BG_INPUT, fg=FG_PRIMARY,
-                                                  font=("Consolas", 9), insertbackground=FG_PRIMARY)
+                                                  font=("Consolas", 9), insertbackground=FG_PRIMARY,
+                                                  wrap="word")
         self.log_view.pack(fill="both", expand=True, pady=(6, 0))
         self.log_view.configure(state="disabled")
 
@@ -156,31 +159,38 @@ class ManageGUI:
         self.log_view.see("end")
         self.log_view.configure(state="disabled")
 
-    def _refresh_log(self) -> None:
-        name = self.log_var.get()
+    def _refresh_log(self, name: str | None = None) -> None:
+        name = name or self.log_var.get()
         log_f = self.M.SERVICES.get(name, {}).get("log")
         try:
-            text = Path(log_f).read_text(encoding="utf-8", errors="replace")[-10000:] if log_f else "(无)"
-        except FileNotFoundError:
+            text = Path(log_f).read_text(encoding="utf-8", errors="replace")[-12000:] if log_f else "(无)"
+        except (FileNotFoundError, AttributeError):
             text = "(暂无日志)"
+        if not text.strip():
+            text = f"({name} 暂无日志)"
         self.log_view.configure(state="normal")
         self.log_view.delete("1.0", "end")
         self.log_view.insert("1.0", text)
         self.log_view.configure(state="disabled")
         self.log_view.see("end")
-        self.status_bar.config(text=f"已刷新 {name} 日志 {datetime.now():%H:%M:%S}")
 
     def _clear_log(self) -> None:
-        """清空当前服务的日志文件 + 面板。"""
         name = self.log_var.get()
-        log_f = self.M.SERVICES.get(name, {}).get("log")
-        if log_f:
-            Path(log_f).write_text("", encoding="utf-8")
+        self.M.clear_log(name)
         self.log_view.configure(state="normal")
         self.log_view.delete("1.0", "end")
         self.log_view.configure(state="disabled")
-        self.status_bar.config(text=f"已清空 {name} 日志")
+        self.status_bar.config(text=f"已清空 {name} 日志  {datetime.now():%H:%M:%S}")
         self._append_log(f"[{datetime.now():%H:%M:%S}] 已清空 {name} 日志文件")
+
+    def _clear_all_logs(self) -> None:
+        for n in self.service_names:
+            self.M.clear_log(n)
+        self.log_view.configure(state="normal")
+        self.log_view.delete("1.0", "end")
+        self.log_view.configure(state="disabled")
+        self.status_bar.config(text=f"已清空全部日志  {datetime.now():%H:%M:%S}")
+        self._append_log(f"[{datetime.now():%H:%M:%S}] 已清空全部服务日志")
 
     # ── 操作逻辑 ──────────────────────────────────────────────────────
 
@@ -188,49 +198,68 @@ class ManageGUI:
         self._dispatch(action, [name])
 
     def _run_all(self, action: str) -> None:
-        # 一键启动/停止/重启：后端 + 前端 + Nginx（Nginx 未安装会自动跳过）
-        self._dispatch(action, ["backend", "frontend", "nginx"])
+        self._dispatch(action, list(self.service_names))
 
     def _dispatch(self, action: str, names: list[str]) -> None:
         if self._busy:
-            self._append_log("⚠️ 上一个操作还在进行中，请稍候…")
+            self.status_bar.config(text="⚠️ 上一个操作还在进行中，请稍候…")
             return
         self._busy = True
+        self.status_bar.config(text=f"⟳ {action} 中… {datetime.now():%H:%M:%S}")
+
+        # 立刻显示过渡态，让用户看到动作已生效
+        for n in names:
+            self.status_vars[n].config(text="⟳ 处理中…", fg=ACCENT_WARN)
 
         def worker():
-            buf = io.StringIO()
-            try:
-                with contextlib.redirect_stdout(buf):
-                    if action == "restart":
-                        for n in reversed(names):
+            for n in names:
+                buf = io.StringIO()
+                try:
+                    with contextlib.redirect_stdout(buf):
+                        if action in ("stop", "restart"):
                             self.M.stop_service(n)
-                        for n in names:
+                        if action in ("start", "restart"):
                             self.M.start_service(n)
-                    elif action == "stop":
-                        for n in reversed(names):
-                            self.M.stop_service(n)
-                    else:
-                        for n in names:
-                            self.M.start_service(n)
-            except Exception as e:  # noqa: BLE001
-                buf.write(f"❌ 执行出错: {e}\n")
-            text = buf.getvalue()
-            self.root.after(0, lambda: self._append_log(text))
-            self.root.after(0, self._refresh_status)
-            self.root.after(0, lambda: setattr(self, "_busy", False))
+                except Exception as e:  # noqa: BLE001
+                    buf.write(f"❌ {n} 执行出错: {e}\n")
+                text = buf.getvalue()
+                # 每完成一个服务就刷新状态与日志，进度可见
+                self.root.after(0, lambda t=text: self._append_log(t))
+                self.root.after(0, self._refresh_status)
+                self.root.after(0, lambda nn=n: (self.log_var.set(nn), self._refresh_log(nn)))
+            self.root.after(0, self._done)
 
         threading.Thread(target=worker, daemon=True).start()
+
+    def _done(self) -> None:
+        self._busy = False
+        self._refresh_status()
+        self.status_bar.config(text=f"✅ 操作完成  {datetime.now():%H:%M:%S}")
+
+    def _started_at(self, name: str) -> str | None:
+        """以 PID 文件的修改时间作为启动时间（重启后会变化，便于确认）。"""
+        pid_f = self.M.SERVICES[name]["pid"]
+        try:
+            return datetime.fromtimestamp(Path(pid_f).stat().st_mtime).strftime("%H:%M:%S")
+        except OSError:
+            return None
 
     def _refresh_status(self) -> None:
         for name in self.service_names:
             try:
                 alive = self.M.is_running(name)
-            except Exception:
+            except Exception:  # noqa: BLE001
                 alive = False
-            self.status_vars[name].config(
-                text=f"● 运行中 · PID {self.M._read_pid(name)}" if alive else "○ 已停止",
-                fg=ACCENT_OK if alive else FG_SECONDARY)
-        self.status_bar.config(text=f"状态已刷新 {datetime.now():%H:%M:%S}")
+            if alive:
+                pid = self.M._read_pid(name)
+                started = self._started_at(name) or "—"
+                self.status_vars[name].config(text=f"● 运行中  PID {pid}", fg=ACCENT_OK)
+                self.time_vars[name].config(text=f"启动于 {started}", fg=FG_SECONDARY)
+            else:
+                self.status_vars[name].config(text="○ 已停止", fg=ACCENT_ERR)
+                self.time_vars[name].config(text="—", fg=FG_SECONDARY)
+        if not self._busy:
+            self.status_bar.config(text=f"状态已刷新 {datetime.now():%H:%M:%S}")
 
     def _auto_refresh(self) -> None:
         if not self._busy:
