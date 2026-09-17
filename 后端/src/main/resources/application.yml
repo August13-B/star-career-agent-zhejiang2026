@@ -93,6 +93,8 @@ tbox:
   api-url: ${TBOX_API_URL:}
   api-key: ${TBOX_API_KEY:}
   agent-id: ${TBOX_AGENT_ID:}
+  timeout-seconds: ${TBOX_TIMEOUT_SECONDS:30}   # 单次对话超时（模型首响较慢）
+  hello-delay-millis: ${TBOX_HELLO_DELAY_MS:500} # HELLO 与 SEND_MESSAGE 间隔
 
 # ── 日志 ──
 logging:

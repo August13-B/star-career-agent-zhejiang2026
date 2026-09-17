@@ -36,6 +36,9 @@ import reactor.core.publisher.Flux;
 @Service
 @SuppressWarnings("unchecked")
 public class AIConversationServiceImpl implements AIConversationService {
+    @org.springframework.beans.factory.annotation.Autowired
+    private org.example.web.service.TboxAgentService tboxAgentService;
+
 
     @Autowired
     private AiConversationMapper aiConversationMapper;
@@ -1363,7 +1366,7 @@ public class AIConversationServiceImpl implements AIConversationService {
             Double finalTemperature = temperature != null ? temperature : 1.0;
 
             // 9. 调用AI服务流式接口，收集响应并保存AI消息
-            return aiService.chatStream(finalMessage, finalTemperature)
+            return aiService.chatStream(finalMessage, finalTemperature, userId, conversation.getId())
                     .collectList()
                     .flatMapMany(chunks -> {
                         // 处理每个chunk，提取纯文本并重新构建chunk，同时拼接完整响应
@@ -1427,7 +1430,27 @@ public class AIConversationServiceImpl implements AIConversationService {
                             aiMsg.setSequence(sequence + 1);
                             aiMsg.setCreateTime(LocalDateTime.now());
 
+                            // 回填百宝箱平台的 messageId / requestId（历史回捞与三方对账的前置）
+                            try {
+                                org.example.web.service.TboxAgentService.RunIds runIds =
+                                        tboxAgentService.consumeRunIds(conversation.getId());
+                                if (runIds != null) {
+                                    aiMsg.setTboxMessageId(runIds.tboxMessageId());
+                                    aiMsg.setTboxRequestId(runIds.tboxRequestId());
+                                }
+                            } catch (Exception ignore) {
+                                // 平台ID缺失不影响消息保存
+                            }
+
                             aiConversationMapper.insertMessage(aiMsg);
+                            // 消息级映射落库（insert 未含新列，单独更新）
+                            if (aiMsg.getTboxMessageId() != null || aiMsg.getTboxRequestId() != null) {
+                                try {
+                                    aiConversationMapper.updateMessageTboxIds(
+                                            aiMsg.getId(), aiMsg.getTboxMessageId(), aiMsg.getTboxRequestId());
+                                } catch (Exception ignore) {
+                                }
+                            }
 
                             // 更新对话状态为已完成
                             aiConversationMapper.updateConversationStatus(conversation.getId(), 2);

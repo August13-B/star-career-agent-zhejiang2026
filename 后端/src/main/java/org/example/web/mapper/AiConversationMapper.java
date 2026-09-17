@@ -68,4 +68,22 @@ public interface AiConversationMapper {
     @Update("UPDATE ai_conversation SET title = #{newTitle}, update_time = NOW() WHERE id = #{conversationId} AND user_id = #{userId} AND is_deleted = 0")
     int updateTitleByIdAndUserId(@Param("conversationId") Long conversationId, @Param("userId") Long userId, @Param("newTitle") String newTitle);
 
+    // ====================== 百宝箱（Tbox）映射 ======================
+
+    // 12. 写入/更新对话的百宝箱会话映射（会话级）
+    @Update("UPDATE ai_conversation SET tbox_session_id=#{sessionId}, tbox_conversation_id=#{tboxConversationId}, update_time=NOW() WHERE id=#{id}")
+    void updateTboxIds(@Param("id") Long id,
+                       @Param("sessionId") String sessionId,
+                       @Param("tboxConversationId") String tboxConversationId);
+
+    // 13. 写入消息的百宝箱映射（消息级，用于历史回捞与三方对账）
+    @Update("UPDATE ai_message SET tbox_message_id=#{tboxMessageId}, tbox_request_id=#{tboxRequestId} WHERE id=#{id}")
+    void updateMessageTboxIds(@Param("id") Long id,
+                              @Param("tboxMessageId") String tboxMessageId,
+                              @Param("tboxRequestId") String tboxRequestId);
+
+    // 14. 根据百宝箱会话ID反查本地对话（历史回捞预留）
+    @Select("SELECT * FROM ai_conversation WHERE tbox_conversation_id=#{tboxConversationId} LIMIT 1")
+    AiConversation selectByTboxConversationId(@Param("tboxConversationId") String tboxConversationId);
+
 }
