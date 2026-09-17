@@ -28,6 +28,22 @@ public class AiConversationController {
     @Autowired
     private AIService aiService;
 
+    @Autowired
+    private org.example.web.service.TboxAgentService tboxAgentService;
+
+    /**
+     * 【预留】拉取百宝箱平台历史（messages?format=raw）
+     *
+     * <p>当前仅返回平台原始 JSON，供后续「历史回捞 / 断线补历史」使用；前端暂未接入。
+     * 对应：issues #15（前置工作）
+     */
+    @GetMapping("/tbox-history/{conversationId}")
+    @CrossOrigin
+    public Result<?> getTboxHistory(@PathVariable Long conversationId) {
+        String raw = tboxAgentService.fetchRawHistory(conversationId, 20);
+        return Result.success("平台历史（format=raw）", raw);
+    }
+
     /**
      * 获取特定对话的详细历史（按对话ID）
      */
@@ -234,7 +250,14 @@ public class AiConversationController {
         if (temperature == null) {
             temperature = 0.7;
         }
-        return aiService.chatStream(message, temperature);
+        Long userId = request.get("user_id") == null ? null
+                : Long.parseLong(String.valueOf(request.get("user_id")));
+        Long conversationId = request.get("conversation_id") == null ? null
+                : Long.parseLong(String.valueOf(request.get("conversation_id")));
+        if (conversationId == null) {
+            return Flux.just("{\"data\":\"请先创建对话后再发送消息\"}");
+        }
+        return aiService.chatStream(message, temperature, userId, conversationId);
     }
 
     /**

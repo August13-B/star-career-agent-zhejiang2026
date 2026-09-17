@@ -16,9 +16,12 @@ import reactor.core.publisher.Mono;
 @Service
 public class AIServiceImpl implements AIService {
     private final WebClient aiWebClient;
+    private final org.example.web.service.TboxAgentService tboxAgentService;
 
-    public AIServiceImpl(@Qualifier("aiWebClient") WebClient aiWebClient) {
+    public AIServiceImpl(@Qualifier("aiWebClient") WebClient aiWebClient,
+                         org.example.web.service.TboxAgentService tboxAgentService) {
         this.aiWebClient = aiWebClient;
+        this.tboxAgentService = tboxAgentService;
     }
 
     @Override
@@ -66,17 +69,10 @@ public class AIServiceImpl implements AIService {
     }
 
     @Override
-    public Flux<String> chatStream(String message, Double temperature) {
-        Map<String, Object> body = new HashMap<>();
-        body.put("message", message);
-        body.put("temperature", temperature);
-        // 使用SSE流式响应，AI服务器返回text/event-stream
-        // 修复406错误：移除accept头，让WebClient自动处理
-        return aiWebClient.post()
-                .uri("/chat_with_flux")
-                .bodyValue(body)
-                .retrieve()
-                .bodyToFlux(String.class);
+    public Flux<String> chatStream(String message, Double temperature, Long userId, Long conversationId) {
+        // A02 改造：对话能力由蚂蚁百宝箱（WebSocket / AG-UI）承担
+        // 返回元素仍为 {"data":"..."}，与既有转发契约、前端渲染保持一致（前端零改动）
+        return tboxAgentService.chatStream(userId, conversationId, message);
     }
 
     @Override
