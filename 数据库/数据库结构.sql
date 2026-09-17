@@ -14,6 +14,15 @@
  Date: 22/04/2026 02:31:05
 */
 
+-- ----------------------------
+-- 创建并选择数据库（一键灌库：无需手动选库）
+-- 注意：youthpath 库中的业务数据（岗位/画像等）需另行导出，见数据库/README.md
+-- ----------------------------
+CREATE DATABASE IF NOT EXISTS `youthpath`
+  DEFAULT CHARACTER SET utf8mb4
+  COLLATE utf8mb4_0900_ai_ci;
+USE `youthpath`;
+
 SET NAMES utf8mb4;
 SET FOREIGN_KEY_CHECKS = 0;
 
