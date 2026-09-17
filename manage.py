@@ -100,6 +100,134 @@ _ENV = load_env(ENV_FILE)
 SERVICES_BACKEND_PORT = _ENV.get("SERVER_PORT", "8080")
 SERVICES["backend"]["port"] = SERVICES_BACKEND_PORT
 
+# ── 数据库灌库相关 ────────────────────────────────────────────────────
+DB_DIR = PROJECT_DIR / "数据库"
+STRUCTURE_SQL = DB_DIR / "数据库结构.sql"   # 建库建表（31 张）
+DATA_SQL = DB_DIR / "数据库数据.sql"        # 业务数据（岗位/画像等）
+EXPECTED_TABLES = 31
+
+
+def _find_mysql() -> str | None:
+    """定位 mysql 客户端：优先 PATH，否则搜常见安装目录。"""
+    import glob
+    import shutil
+    exe = shutil.which("mysql")
+    if exe:
+        return exe
+    for pat in (r"D:\MySQL\MySQL Server *\bin\mysql.exe",
+                r"C:\Program Files\MySQL\MySQL Server *\bin\mysql.exe",
+                r"C:\xampp\mysql\bin\mysql.exe",
+                "/mnt/d/MySQL/MySQL Server */bin/mysql.exe",
+                "/mnt/c/Program Files/MySQL/MySQL Server */bin/mysql.exe",
+                "/usr/bin/mysql", "/usr/local/bin/mysql"):
+        hits = sorted(glob.glob(pat), reverse=True)
+        if hits:
+            return hits[0]
+    return None
+
+
+def _db_params() -> dict:
+    """从 后端/.env 解析数据库连接参数（与 application.yml 一致）。"""
+    import re as _re
+    env = load_env(ENV_FILE)
+    url = env.get("DB_URL", "")
+    m = _re.search(r"//([^:/]+)(?::(\d+))?/([^?]+)", url)
+    return {
+        "host": m.group(1) if m else "localhost",
+        "port": m.group(2) if (m and m.group(2)) else "3306",
+        "db": m.group(3) if m else "youthpath",
+        "user": env.get("DB_USERNAME", "root"),
+        "password": env.get("DB_PASSWORD", ""),
+    }
+
+
+def _mysql_base(p: dict) -> list:
+    cmd = [_find_mysql(), f"-h{p['host']}", f"-P{p['port']}", f"-u{p['user']}"]
+    if p["password"]:
+        cmd.append(f"-p{p['password']}")
+    cmd.append("--default-character-set=utf8mb4")
+    return cmd
+
+
+def _mysql_scalar(sql: str) -> int | None:
+    """执行查询并返回首个整数值；失败返回 None。"""
+    p = _db_params()
+    try:
+        r = subprocess.run(_mysql_base(p) + ["-N", "-B", "-e", sql],
+                           capture_output=True, text=True, timeout=60)
+        if r.returncode != 0:
+            return None
+        return int(r.stdout.strip().splitlines()[0])
+    except Exception:
+        return None
+
+
+def _mysql_file(path: Path) -> bool:
+    """导入 SQL 文件。"""
+    p = _db_params()
+    with open(path, "rb") as f:
+        r = subprocess.run(_mysql_base(p), stdin=f, capture_output=True, text=True, timeout=1800)
+    if r.returncode != 0:
+        print(f"❌ 导入失败 {path.name}: {(r.stderr or '').strip()[:300]}")
+        return False
+    return True
+
+
+def db_seed(force: bool = False) -> bool:
+    """自动灌库（幂等）：缺表则建表，无业务数据则导入数据。
+
+    - 结构：数据库/数据库结构.sql（含 CREATE DATABASE）
+    - 数据：数据库/数据库数据.sql（岗位 9958 条 + 画像/能力/用户等）
+    """
+    if not _find_mysql():
+        print("⏭  未找到 mysql 客户端，跳过自动灌库"
+              "（可手动执行 数据库/数据库结构.sql 与 数据库数据.sql）")
+        return False
+    if not STRUCTURE_SQL.exists():
+        print(f"⏭  未找到建表脚本：{STRUCTURE_SQL}")
+        return False
+    p = _db_params()
+    db = p["db"]
+
+    tables = _mysql_scalar(
+        f"SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='{db}'")
+    if tables is None:
+        tables = 0
+    if force or tables < EXPECTED_TABLES:
+        print(f"📦 初始化数据库 {db}（当前 {tables}/{EXPECTED_TABLES} 张表）...")
+        if not _mysql_file(STRUCTURE_SQL):
+            return False
+        tables = _mysql_scalar(
+            f"SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='{db}'") or 0
+
+    rows = _mysql_scalar(f"SELECT COUNT(*) FROM `{db}`.job_info") if tables else 0
+    if force or not rows:
+        if not DATA_SQL.exists():
+            print(f"⏭  无数据脚本 {DATA_SQL.name}，仅建表完成")
+            return True
+        print("📦 导入业务数据（岗位/画像/能力/用户等，约 24MB）...")
+        if not _mysql_file(DATA_SQL):
+            return False
+        rows = _mysql_scalar(f"SELECT COUNT(*) FROM `{db}`.job_info") or 0
+
+    print(f"✅ 数据库就绪：{db} | 表 {tables} 张 | job_info {rows} 条")
+    return True
+
+
+def cmd_db(args):
+    if getattr(args, "db_action", "seed") == "status":
+        p = _db_params()
+        tables = _mysql_scalar(
+            f"SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='{p['db']}'")
+        rows = _mysql_scalar(f"SELECT COUNT(*) FROM `{p['db']}`.job_info")
+        print("═" * 46)
+        print(f"  数据库: {p['user']}@{p['host']}:{p['port']}/{p['db']}")
+        print(f"  表数量: {tables if tables is not None else '无法连接'}")
+        print(f"  岗位数据: {rows if rows is not None else '—'} 条")
+        print("═" * 46)
+    else:
+        db_seed(force=getattr(args, "force", False))
+
 
 # ── 进程管理 ──────────────────────────────────────────────────────────
 
@@ -152,6 +280,7 @@ def start_service(name: str) -> bool:
         return True
     if name == "backend":
         _check_java()
+        db_seed()  # 启动前自动灌库（幂等）
 
     log_f = open(svc["log"], "ab")
 
@@ -354,6 +483,10 @@ def main():
 
     sub.add_parser("gui", help="打开可视化界面")
 
+    p_db = sub.add_parser("db", help="数据库灌库 / 查看状态")
+    p_db.add_argument("db_action", nargs="?", default="seed", choices=["seed", "status"])
+    p_db.add_argument("--force", action="store_true", help="强制重建表并重新导入数据")
+
     args = parser.parse_args()
     if not args.command:
         parser.print_help()
@@ -372,6 +505,8 @@ def main():
     elif args.command == "gui":
         from manage_gui import run_gui
         run_gui()
+    elif args.command == "db":
+        cmd_db(args)
 
 
 if __name__ == "__main__":
