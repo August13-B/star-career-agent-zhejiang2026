@@ -41,11 +41,21 @@ PID_DIR.mkdir(exist_ok=True)
 LOG_DIR.mkdir(exist_ok=True)
 
 # ── 服务定义 ──────────────────────────────────────────────────────────
+def _win(cmd: list[str]) -> list[str]:
+    """Windows 下 .cmd/.bat 与 npm/npx 需通过 cmd /c 执行。"""
+    if not IS_WINDOWS:
+        return cmd
+    exe = cmd[0].lower()
+    if exe.endswith((".cmd", ".bat")) or exe in ("npm", "npx", "nginx"):
+        return ["cmd", "/c"] + cmd
+    return cmd
+
+
 SERVICES = {
     "backend": {
         "name": "后端（Spring Boot 合并工程）",
         "cwd": str(BACKEND_DIR),
-        "cmd": ["mvnw.cmd", "spring-boot:run"] if IS_WINDOWS else ["./mvnw", "spring-boot:run"],
+        "cmd": _win(["mvnw.cmd", "spring-boot:run"] if IS_WINDOWS else ["./mvnw", "spring-boot:run"]),
         "log": LOG_DIR / "backend.log",
         "pid": PID_DIR / "backend.pid",
         "port": "8080",
@@ -53,7 +63,7 @@ SERVICES = {
     "frontend": {
         "name": "前端（Vite Dev Server）",
         "cwd": str(FRONTEND_DIR),
-        "cmd": ["npm", "run", "dev"],
+        "cmd": _win(["npm", "run", "dev"]),
         "log": LOG_DIR / "frontend.log",
         "pid": PID_DIR / "frontend.pid",
         "port": "5173",
@@ -61,7 +71,7 @@ SERVICES = {
     "nginx": {
         "name": "Nginx（反向代理，可选）",
         "cwd": str(NGINX_DIR),
-        "cmd": ["nginx", "-p", str(NGINX_DIR), "-c", "conf/nginx.conf"],
+        "cmd": _win(["nginx", "-p", str(NGINX_DIR), "-c", "conf/nginx.conf"]),
         "log": LOG_DIR / "nginx.log",
         "pid": PID_DIR / "nginx.pid",
         "port": "80",
@@ -94,11 +104,28 @@ def _run_cmd(cmd, **kw):
     return subprocess.run(cmd, **kw)
 
 
+def _check_java() -> None:
+    """后端需 JDK 17；若当前 java 不是 17，给出提醒。"""
+    try:
+        kw = {"capture_output": True, "text": True}
+        if IS_WINDOWS:
+            kw["creationflags"] = subprocess.CREATE_NO_WINDOW
+        out = subprocess.run(["java", "-version"], **kw)
+        ver = (out.stderr or out.stdout).split('"')[1] if '"' in (out.stderr or out.stdout) else "?"
+        if not ver.startswith("17"):
+            print(f"⚠️  当前 Java 版本 = {ver}，项目需要 JDK 17。"
+                  f"\n    请先设置：set JAVA_HOME=C:\\Program Files\\Java\\jdk-17")
+    except Exception:
+        print("⚠️  未检测到 java，请安装/配置 JDK 17")
+
+
 def start_service(name: str) -> bool:
     svc = SERVICES[name]
     if is_running(name):
         print(f"⏭  {svc['name']} 已在运行")
         return True
+    if name == "backend":
+        _check_java()
     print(f"🚀 启动 {svc['name']} ...")
     env = {**os.environ, "PYTHONUTF8": "1"}
     if name == "backend":
