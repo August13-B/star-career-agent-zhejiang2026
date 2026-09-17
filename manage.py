@@ -164,18 +164,22 @@ def start_service(name: str) -> bool:
             log_f.close()
             return False
 
-    # 前端首次运行自动 npm install（否则找不到 vite）
-    if name == "frontend" and not (Path(svc["cwd"]) / "node_modules").exists():
-        print("📦 首次运行，正在安装前端依赖（npm install，请稍候）...")
-        log_f.write(b"\n=== npm install ===\n")
-        log_f.flush()
-        rc = _run_cmd(_win(["npm", "install"]), cwd=svc["cwd"],
-                      stdout=log_f, stderr=subprocess.STDOUT, env={**os.environ, "PYTHONUTF8": "1"})
-        if rc.returncode != 0:
-            print(f"❌ npm install 失败（退出码 {rc.returncode}），详见日志：{svc['log']}")
-            log_f.close()
-            return False
-        print("✅ 前端依赖安装完成")
+    # 前端首次/依赖变化时自动 npm install（否则找不到 vite 或缺失模块）
+    if name == "frontend":
+        pkg = Path(svc["cwd"]) / "package.json"
+        mods = Path(svc["cwd"]) / "node_modules"
+        need = (not mods.exists()) or (pkg.exists() and pkg.stat().st_mtime > mods.stat().st_mtime)
+        if need:
+            print("📦 正在安装/更新前端依赖（npm install，请稍候）...")
+            log_f.write(b"\n=== npm install ===\n")
+            log_f.flush()
+            rc = _run_cmd(_win(["npm", "install"]), cwd=svc["cwd"],
+                          stdout=log_f, stderr=subprocess.STDOUT, env={**os.environ, "PYTHONUTF8": "1"})
+            if rc.returncode != 0:
+                print(f"❌ npm install 失败（退出码 {rc.returncode}），详见日志：{svc['log']}")
+                log_f.close()
+                return False
+            print("✅ 前端依赖安装完成")
 
     print(f"🚀 启动 {svc['name']} ...")
     env = {**os.environ, "PYTHONUTF8": "1"}
