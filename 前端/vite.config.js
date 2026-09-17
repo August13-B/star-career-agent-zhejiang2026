@@ -9,26 +9,15 @@ export default defineConfig({
       '@': fileURLToPath(new URL('./src', import.meta.url))
     }
   },
-  // 🌟 核心：配置多重跨域代理
   server: {
+    port: 5173,
     proxy: {
-      // 🚦 朋友 A 的服务器（管用户、管 AI 对话）
-      '/api/user': { target: 'http://57c42474b0ea.ofalias.net:57332', changeOrigin: true },
-      '/api/ai-conversation': { target: 'http://57c42474b0ea.ofalias.net:57332', changeOrigin: true },
-      '/api/llm': { target: 'http://57c42474b0ea.ofalias.net:57332', changeOrigin: true },
-      
-      // 🚦 新朋友的服务器（岗位基础信息和硬门槛需求） - 更具体的路径放在前面
-      '/api/job-info': { 
-        target: 'http://7e526c6c1d80.ofalias.net:53880', 
-        changeOrigin: true 
-      },
-      '/api/job-hard-requirement': { 
-        target: 'http://7e526c6c1d80.ofalias.net:53880', 
-        changeOrigin: true 
-      },
-      
-      // 🚦 朋友 B 的服务器（管岗位业务，目前可能 502） - 通用路径放在后面
-      '/api/job': { target: 'http://cfc8522bc8db.ofalias.net:64679', changeOrigin: true }
+      // 开发环境：所有 /api 请求代理到合并后的后端
+      // （后端 context-path = /api，默认端口 8080，见 后端/.env SERVER_PORT）
+      '/api': {
+        target: 'http://localhost:8080',
+        changeOrigin: true
+      }
     }
   }
 })
