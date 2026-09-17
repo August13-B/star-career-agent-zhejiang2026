@@ -95,6 +95,12 @@ def load_env(path: Path) -> dict:
     return env
 
 
+# 后端端口跟随 .env 的 SERVER_PORT
+_ENV = load_env(ENV_FILE)
+SERVICES_BACKEND_PORT = _ENV.get("SERVER_PORT", "8080")
+SERVICES["backend"]["port"] = SERVICES_BACKEND_PORT
+
+
 # ── 进程管理 ──────────────────────────────────────────────────────────
 
 
