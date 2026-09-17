@@ -273,6 +273,15 @@ def _auto_java_home() -> str | None:
     return jh if jh else None
 
 
+def clear_log(name: str) -> bool:
+    """清空指定服务的日志文件。"""
+    try:
+        Path(SERVICES[name]["log"]).write_text("", encoding="utf-8")
+        return True
+    except OSError:
+        return False
+
+
 def start_service(name: str) -> bool:
     svc = SERVICES[name]
     if is_running(name):
@@ -282,7 +291,8 @@ def start_service(name: str) -> bool:
         _check_java()
         db_seed()  # 启动前自动灌库（幂等）
 
-    log_f = open(svc["log"], "ab")
+    # 每次启动前清空日志，保证本次运行日志干净可读
+    log_f = open(svc["log"], "wb")
 
     # Nginx 未安装时优雅跳过（不阻塞一键启动）
     if name == "nginx":
