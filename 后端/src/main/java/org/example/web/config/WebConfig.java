@@ -24,7 +24,9 @@ public class WebConfig implements WebMvcConfigurer{
         // 岗位知识库模块（原无鉴权，合并后保持开放）
         "/job-*", "/job-*/**",
         "/analysis/**",
-        "/job-score/**", "/job-score*"
+        "/job-score/**", "/job-score*",
+        // API 文档（Swagger）
+        "/swagger-ui/**", "/swagger-ui.html", "/v3/api-docs/**", "/doc.html", "/webjars/**"
 );
     }
 }
