@@ -117,7 +117,64 @@ python manage.py gui           # 可视化管理器（Tkinter）
 > 也可手动执行：`python manage.py db`（灌库）/ `python manage.py db status`（查看）。
 > 数据说明见 [`数据库/README.md`](./数据库/README.md)（岗位 9958 条 + 画像/能力/用户，向量数据见 `数据库/向量数据/`）。
 
-## 七、当前状态与演进方向
+## 七、百宝箱应用接入（已实测 ✅）
+
+省赛 A02 要求依托**蚂蚁百宝箱企业版**开发，本项目的**知识库与多智能体能力部署在百宝箱侧**，自研后端通过接口对接（链路：前端 → 后端 → 百宝箱）。
+
+**应用基址**（来自平台注入环境变量 `APP_API_URL`，预览态域名会变，勿硬编码）：
+```
+https://202609APqqd122487260-coding.tboxpro.cn
+```
+
+### 已实测通过的通道
+
+| # | 通道 | 地址 | 结果 |
+|---|---|---|---|
+| 1 | 健康检查 | `GET /api/health` | ✅ `{"status":"ok"}` |
+| 2 | 对话页 H5 | `GET /` | ✅ HTTP 200 |
+| 3 | 创建会话 | `POST /api/conversation/create` | ✅ 返回 `conversationId` |
+| 4 | 历史导出 | `GET /api/conversation/messages?format=raw` | ✅ 分页结构正常 |
+| 5 | 平台会话 | `GET /api/tbox/session` | ✅ 返回 `sessionId / appId` |
+| 6 | **对话通道** | `WSS /ws` | ✅ 握手 + HELLO + SEND_MESSAGE + `RUN_STARTED` 全通 |
+| 7 | 知识库 OpenAPI | `POST api.tbox.cn/api/datasets/retrieve` | ✅ 鉴权通过（待补 datasetId） |
+
+### 对话协议（AG-UI）
+
+```
+客户端：HELLO{sessionId} → SEND_MESSAGE{content, sessionId, conversationId?}
+        （可选 CANCEL_RUN / UI_ACTION）
+服务端：RUN_STARTED
+        → TOOL_CALL*（searchJobs 双库 RAG：岗位记录 | 能力画像）
+        → TEXT_MESSAGE_CONTENT(delta)*   ← Markdown 正文
+        → CUSTOM('tbox:card')            ← 结构化卡片
+        → RUN_FINISHED{requestId}
+```
+
+**结构化卡片契约**：
+- `career_pathway`：`{title, phases[{phase, goal, key_actions[], timeline}]}`（3-5 年路径）
+- `scenario_score`：`{scenario, dimensions{professional/communication/teamwork/problem_solving/learning/innovation/pressure}, total, comment, suggestions[]}`（与库表 `student_ability_score` 一一对应）
+- `weather`：`{city, temp, weather, humidity}`
+
+**模型输出协议**：`{"response":...}` / `{"career_pathway":{...}}` / `{"scenario_score":{...}}`
+
+### 环境变量（`后端/.env`）
+
+| 变量 | 说明 |
+|---|---|
+| `TBOX_API_URL` | 应用基址（来自平台 `APP_API_URL`） |
+| `TBOX_API_KEY` | 报名所得 `inc-ak...`（**不入库**） |
+| `TBOX_AGENT_ID` | `202609APqqd122487260` |
+
+### 🔴 当前阻塞
+
+**模型网关未开通**：WS 调用返回 `RUN_ERROR: "Not Open"`，需在百宝箱侧开通模型后对话才能完整跑通。
+
+> 详细接口清单、实测抓包与后端改造方案见 [`百宝箱/接口清单与接入说明.md`](./百宝箱/接口清单与接入说明.md)；
+> 智能体创建提示词见 [`百宝箱/提示词-智能体创建.md`](./百宝箱/提示词-智能体创建.md)。
+
+> ⚠️ **后端改造要点**：实测确认百宝箱对话是 **WebSocket (AG-UI)** 通道（非 HTTP 转发），后端需新增 WS 客户端并把事件流桥接为对前端的 SSE（对应 issue #15）。
+
+## 八、当前状态与演进方向
 
 **已完成**：用户体系、学生画像、能力测评、人岗匹配、生涯报告、岗位知识库、SSE 流式基础链路、前端全页面、后端合并、nginx/启动脚本/环境变量配置。
 
