@@ -21,6 +21,11 @@ spring:
   application:
     name: xingzhi-backend
 
+  # 原生导入 .env（报名/config 密钥放在这里，不入库）
+  # 无论用 mvnw / IDE / manage.py 启动都能读到
+  config:
+    import: optional:file:./.env[.properties],optional:file:./后端/.env[.properties]
+
   # ── 数据源（youthpath 库含全部 31 张表，见 数据库/数据库结构.sql）──
   datasource:
     type: com.zaxxer.hikari.HikariDataSource
