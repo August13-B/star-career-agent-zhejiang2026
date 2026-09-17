@@ -1,11 +1,13 @@
-# 数据库灌库说明
+# 数据库说明（灌库 / 数据 / 向量）
 
-## 文件说明
+## 目录内容
 
-| 文件 | 内容 | 用途 |
+| 路径 | 内容 | 大小 |
 |---|---|---|
-| `数据库结构.sql` | **31 张表结构**（含 `CREATE DATABASE` + `USE`） | 一键建库建表 |
-| `后端/sql/invitation_code_init.sql` | 邀请码表 + 3 条角色邀请码种子数据 | 初始化邀请码（可选） |
+| `数据库结构.sql` | **31 张表结构**（含 `CREATE DATABASE` + `USE`，一键建库） | 72 KB |
+| `数据库数据.sql` | **业务数据**（岗位 9958 条 + 岗位画像/学生画像/能力/用户/对话等） | 24 MB |
+| `向量数据/` | **岗位知识库向量**（10139 条 × 1024 维，gzip 约 60MB） | 60 MB |
+| `../后端/sql/` | 邀请码相关脚本 | — |
 
 ## 连接信息（与 `后端/.env` 对应）
 
@@ -13,53 +15,61 @@
 |---|---|
 | 主机 | `localhost:3306` |
 | 库名 | `youthpath` |
-| 字符集 | `utf8mb4` / `utf8mb4_0900_ai_ci` |
+| 字符集 | `utf8mb4` |
 | 账号 | 见 `后端/.env` 的 `DB_USERNAME` / `DB_PASSWORD` |
 
-## 灌库步骤
+## 方式 1：自动灌库（推荐，随项目启动）
 
-### 方式 1：命令行（推荐）
+`manage.py` 已内置**幂等自动灌库**：启动后端前自动检查——缺表则建表、无业务数据则导入；已有数据则跳过。
 
 ```bash
-# 已在脚本内置 CREATE DATABASE + USE，无需手动选库
-mysql -u root -p < 数据库/数据库结构.sql
-
-# （可选）导入邀请码种子数据
-mysql -u root -p youthpath < 后端/sql/invitation_code_init.sql
+python manage.py start backend     # 启动时自动灌库
+python manage.py db                # 手动灌库（同样幂等）
+python manage.py db --force        # 强制重建表并重新导入
+python manage.py db status         # 查看库/表/岗位数据量
 ```
 
-Windows 下 MySQL 客户端示例：
+> 灌库逻辑读取 `后端/.env` 的 `DB_URL` / `DB_USERNAME` / `DB_PASSWORD`，自动定位 mysql 客户端（PATH 或常见安装目录）。
+
+## 方式 2：手动命令行
+
+```bash
+# 建库建表（脚本内含 CREATE DATABASE + USE，无需手动选库）
+mysql -u root -p --default-character-set=utf8mb4 < 数据库/数据库结构.sql
+
+# 导入业务数据
+mysql -u root -p --default-character-set=utf8mb4 < 数据库/数据库数据.sql
+
+# （可选）邀请码种子数据
+mysql -u root -p --default-character-set=utf8mb4 youthpath < 后端/sql/invitation_code_init.sql
+```
+
+Windows（MySQL 装在 D 盘时）：
 ```bat
-"D:\MySQL\MySQL Server 8.0\bin\mysql.exe" -uroot -p < "数据库\数据库结构.sql"
+"D:\MySQL\MySQL Server 8.0\bin\mysql.exe" -uroot -p --default-character-set=utf8mb4 < "数据库\数据库结构.sql"
+"D:\MySQL\MySQL Server 8.0\bin\mysql.exe" -uroot -p --default-character-set=utf8mb4 < "数据库\数据库数据.sql"
 ```
 
-### 方式 2：Navicat / GUI 工具
-
-1. 新建连接 → 主机 `localhost`、端口 `3306`、账号密码见 `.env`
-2. 运行 SQL 文件 → 选择 `数据库/数据库结构.sql` → 执行
+> ⚠️ **`--default-character-set=utf8mb4` 必须带**：数据含中文与 `\"` 转义，缺失该参数会导致 `ERROR: Unknown command '\"'` 导入失败。
 
 ## ⚠️ 重要提醒
 
-1. **脚本开头是 `DROP TABLE IF EXISTS`** —— 执行会**清空并重建**所有 31 张表，**现有数据会丢失**。
-   仅在首次建库或确认可清空数据时执行；生产/演示库请先备份。
-2. **本脚本仅含表结构，不含业务数据**。
-   真实库中的业务数据（岗位 `job_info` 约 1 万条、岗位画像 `job_requirement_profile`、用户与画像等）**未包含在仓库中**，需另行导出后导入。
-   导出命令参考：
-   ```bash
-   mysqldump -u root -p --no-create-info --complete-insert youthpath > data.sql
-   ```
+1. **两个脚本都含 `DROP TABLE IF EXISTS`** —— 执行会**清空并重建**表，现有数据会丢失。
+   仅在首次建库或确认可清空时执行；生产/演示库请先备份。
+2. 自动灌库是**幂等**的：检测到 `job_info` 已有数据就跳过，故日常启动不会重复导入。
 
 ## 灌库后自检
 
 ```sql
 USE youthpath;
-SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='youthpath';  -- 应为 31
-SELECT COUNT(*) FROM youthpath.user;                 -- 用户数
-SELECT COUNT(*) FROM youthpath.job_info;             -- 岗位数（需导入数据后才有值）
-SELECT id, user_role, invitation_code FROM youthpath.invitation_code;  -- 邀请码
+SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='youthpath';  -- 31
+SELECT COUNT(*) FROM youthpath.job_info;                  -- 9958
+SELECT COUNT(*) FROM youthpath.job_requirement_profile;   -- 181
+SELECT COUNT(*) FROM youthpath.user;                      -- 4
+SELECT COUNT(*) FROM youthpath.student_profile;           -- 3
 ```
 
-## 邀请码说明
+## 邀请码
 
 | user_role | 角色 |
 |---|---|
@@ -67,4 +77,6 @@ SELECT id, user_role, invitation_code FROM youthpath.invitation_code;  -- 邀请
 | 3 | 企业端 |
 | 4 | 导师 |
 
-`后端/sql/` 下另有 `invitation_code_table.sql`（仅建表，已被主结构覆盖）、`invitation_code_full.sql`（建表 + 冲突时重建），按需使用。
+## 向量数据
+
+见 [`向量数据/README.md`](./向量数据/README.md) —— 当前为**预留**状态，后续上传蚂蚁百宝箱企业版知识库。

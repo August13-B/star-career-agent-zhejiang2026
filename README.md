@@ -113,6 +113,10 @@ python manage.py gui           # 可视化管理器（Tkinter）
 
 > ⚠️ 生产部署：先在 Windows 侧执行 `npm run build` 生成 `前端/dist`，再由 Nginx 托管静态文件并反代 `/api/*` 到后端（详见 `nginx/README.md`）。
 
+> 🗄️ **数据库自动灌库**：`manage.py` 启动后端前会自动检查并灌库（缺表建表、无数据导入，已有数据则跳过）。
+> 也可手动执行：`python manage.py db`（灌库）/ `python manage.py db status`（查看）。
+> 数据说明见 [`数据库/README.md`](./数据库/README.md)（岗位 9958 条 + 画像/能力/用户，向量数据见 `数据库/向量数据/`）。
+
 ## 七、当前状态与演进方向
 
 **已完成**：用户体系、学生画像、能力测评、人岗匹配、生涯报告、岗位知识库、SSE 流式基础链路、前端全页面、后端合并、nginx/启动脚本/环境变量配置。
