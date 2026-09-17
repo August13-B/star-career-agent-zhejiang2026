@@ -3,67 +3,67 @@
     
     <aside class="sidebar">
       <div class="logo-area">
-        <span class="logo-icon">✨</span>
+        <span class="logo-mark"><AppIcon name="compass" :size="19" /></span>
         <span class="logo-text">AI职业规划师</span>
       </div>
 
       <button class="new-chat-btn" @click="openWizard">
-        <span style="font-size: 1.2rem;">+</span> 新建职业规划
+        <AppIcon name="plus" :size="16" /> 新建职业规划
       </button>
 
       <div class="nav-section">
         <p class="section-title">核心功能</p>
         <nav class="nav-menu">
           <router-link to="/" class="nav-item">
-            <span class="nav-icon">💬</span>
+            <AppIcon name="chat" class="nav-icon" :size="17" />
             <span class="nav-text">智能体对话</span>
           </router-link>
           
           <router-link to="/graph" class="nav-item">
-            <span class="nav-icon">🌌</span>
+            <AppIcon name="graph" class="nav-icon" :size="17" />
             <span class="nav-text">职业星图</span>
           </router-link>
 
           <router-link to="/ai-score" class="nav-item">
-            <span class="nav-icon">📊</span>
+            <AppIcon name="radar" class="nav-icon" :size="17" />
             <span class="nav-text">AI 能力测评</span>
           </router-link>
 
           <router-link to="/multi-agent" class="nav-item">
-            <span class="nav-icon">🧠</span>
+            <AppIcon name="cpu" class="nav-icon" :size="17" />
             <span class="nav-text">多智能体中枢</span>
           </router-link>
 
           <router-link v-if="userRole === 4" to="/tutor-dashboard" class="nav-item tutor-item">
-            <span class="nav-icon">📈</span>
+            <AppIcon name="dashboard" class="nav-icon" :size="17" />
             <span class="nav-text">学生就业大盘</span>
           </router-link>
 
           <router-link to="/profile" class="nav-item">
-            <span class="nav-icon">👤</span>
+            <AppIcon name="user" class="nav-icon" :size="17" />
             <span class="nav-text">个人中心</span>
           </router-link>
 
           <router-link v-if="isAdmin" to="/admin/job-info" class="nav-item admin-item">
-            <span class="nav-icon">⚙️</span>
+            <AppIcon name="settings" class="nav-icon" :size="17" />
             <span class="nav-text">图谱管理中枢</span>
           </router-link>
         </nav>
       </div>
 
       <div class="recommend-section">
-        <p class="section-title">🌟 推荐专属路线</p>
+        <p class="section-title">推荐专属路线</p>
         <div class="recommend-list">
           <div class="recommend-item" @click="openReport('dachang')">
-            <span class="item-icon">🚀</span>
+            <AppIcon name="trendUp" class="item-icon" :size="16" />
             <span class="item-text">互联网大厂晋升通道</span>
           </div>
           <div class="recommend-item" @click="openReport('kaoyan')">
-            <span class="item-icon">⚖️</span>
+            <AppIcon name="scale" class="item-icon" :size="16" />
             <span class="item-text">跨专业/考研就业对比</span>
           </div>
           <div class="recommend-item" @click="openReport('pm')">
-            <span class="item-icon">💼</span>
+            <AppIcon name="briefcase" class="item-icon" :size="16" />
             <span class="item-text">零基础转行产品经理</span>
           </div>
         </div>
@@ -72,11 +72,11 @@
       <div class="user-profile-wrapper">
         <div v-if="showUserMenu" class="user-popover">
           <router-link to="/profile" class="popover-item" @click="showUserMenu = false">
-            <span class="popover-icon">⚙️</span>
+            <AppIcon name="settings" class="popover-icon" :size="15" />
             <span class="popover-text">个人中心</span>
           </router-link>
           <div class="popover-item logout" @click="handleLogout">
-            <span class="popover-icon">🚪</span>
+            <AppIcon name="logout" class="popover-icon" :size="15" />
             <span class="popover-text">退出登录</span>
           </div>
         </div>
@@ -88,7 +88,8 @@
           <div class="user-info">
             <span class="username">{{ isLogged ? username : '未登录游客' }}</span>
             <span class="user-status" :style="{ color: isLogged ? (isAdmin ? '#E11D48' : (userRole === 4 ? '#7C3AED' : '#10B981')) : '#4A90E2' }">
-              {{ isLogged ? (isAdmin ? '🔴 超级管理员在线' : (userRole === 4 ? '🟣 专属导师在线' : '🟢 在线')) : '点击登录同步数据 →' }}
+              <i v-if="isLogged" class="status-dot"></i>
+              {{ isLogged ? (isAdmin ? '超级管理员在线' : (userRole === 4 ? '专属导师在线' : '在线')) : '点击登录同步数据' }}
             </span>
           </div>
         </div>
@@ -108,10 +109,10 @@
         <div class="custom-modal report-modal">
           <div class="modal-header">
             <div class="header-left">
-              <span class="modal-badge">🔥 深度行研数据</span>
+              <span class="modal-badge"><AppIcon name="file" :size="13" /> 深度行研数据</span>
               <h3 class="gradient-title">{{ currentReport.title }}</h3>
             </div>
-            <button class="close-modal-btn" @click="closeReport">✕</button>
+            <button class="close-modal-btn" @click="closeReport"><AppIcon name="close" :size="17" /></button>
           </div>
           <div class="modal-body" v-html="currentReport.content"></div>
           
@@ -131,16 +132,16 @@
               <span class="modal-badge wizard-badge">AI 专属定制引擎</span>
               <h3 class="gradient-title">开启您的专属规划蓝图</h3>
             </div>
-            <button class="close-modal-btn" @click="closeWizard">✕</button>
+            <button class="close-modal-btn" @click="closeWizard"><AppIcon name="close" :size="17" /></button>
           </div>
           <div class="modal-body wizard-body">
             <div class="wizard-step">
               <label>1. 您目前所处的阶段是？</label>
               <div class="options-grid">
-                <div class="option-card" :class="{'active': wizardForm.status === '在校学生'}" @click="selectStatus('在校学生')">🎓 在校学生</div>
-                <div class="option-card" :class="{'active': wizardForm.status === '应届毕业生'}" @click="selectStatus('应届毕业生')">🎓 应届毕业生</div>
-                <div class="option-card" :class="{'active': wizardForm.status === '职场新人(0-3年)'}" @click="selectStatus('职场新人(0-3年)')">💼 职场新人</div>
-                <div class="option-card" :class="{'active': wizardForm.status === '资深职场人'}" @click="selectStatus('资深职场人')">🏆 资深职场人</div>
+                <div class="option-card" :class="{'active': wizardForm.status === '在校学生'}" @click="selectStatus('在校学生')">在校学生</div>
+                <div class="option-card" :class="{'active': wizardForm.status === '应届毕业生'}" @click="selectStatus('应届毕业生')">应届毕业生</div>
+                <div class="option-card" :class="{'active': wizardForm.status === '职场新人(0-3年)'}" @click="selectStatus('职场新人(0-3年)')">职场新人</div>
+                <div class="option-card" :class="{'active': wizardForm.status === '资深职场人'}" @click="selectStatus('资深职场人')">资深职场人</div>
               </div>
             </div>
             <div class="wizard-step">
@@ -150,10 +151,10 @@
             <div class="wizard-step">
               <label>3. 您当前最迫切的诉求是什么？</label>
               <div class="options-grid">
-                <div class="option-card" :class="{'active': wizardForm.need === '简历优化与包装'}" @click="selectNeed('简历优化与包装')">📄 简历优化</div>
-                <div class="option-card" :class="{'active': wizardForm.need === '面试技巧与模拟'}" @click="selectNeed('面试技巧与模拟')">🎤 面试技巧</div>
-                <div class="option-card" :class="{'active': wizardForm.need === '跨行跳槽路径指引'}" @click="selectNeed('跨行跳槽路径指引')">🛤️ 跨行跳槽</div>
-                <div class="option-card" :class="{'active': wizardForm.need === '核心技能快速突破'}" @click="selectNeed('核心技能快速突破')">⚡ 技能突破</div>
+                <div class="option-card" :class="{'active': wizardForm.need === '简历优化与包装'}" @click="selectNeed('简历优化与包装')">简历优化</div>
+                <div class="option-card" :class="{'active': wizardForm.need === '面试技巧与模拟'}" @click="selectNeed('面试技巧与模拟')">面试技巧</div>
+                <div class="option-card" :class="{'active': wizardForm.need === '跨行跳槽路径指引'}" @click="selectNeed('跨行跳槽路径指引')">跨行跳槽</div>
+                <div class="option-card" :class="{'active': wizardForm.need === '核心技能快速突破'}" @click="selectNeed('核心技能快速突破')">技能突破</div>
               </div>
             </div>
           </div>
@@ -161,7 +162,7 @@
           <div class="modal-footer">
             <p class="footer-note" style="color: #10B981;">AI 正在收集数据并准备生成...</p>
             <button class="footer-btn start-ai-btn" @click="generatePlan" :disabled="!wizardForm.status || !wizardForm.target || !wizardForm.need">
-              ✨ 启动 AI 定制引擎
+              <AppIcon name="sparkle" :size="15" /> 启动 AI 定制引擎
             </button>
           </div>
         </div>
@@ -174,6 +175,7 @@
 <script setup>
 import { ref, reactive, onMounted, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
+import AppIcon from './components/AppIcon.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -222,8 +224,8 @@ const reportDatabase = {
         <h4>1. P5/T4 初级执行层：从学生到职场人的跃迁</h4>
         <p><strong>核心定义：</strong> 能够独立负责一个明确的需求点，保质保量完成导师分配的任务。</p>
         <div class="vs-card">
-          <p>✅ <strong>能力重心：</strong> 熟练使用工具、文档撰写规范、逻辑闭环。</p>
-          <p>💰 <strong>市场行情：</strong> 年包 25w-35w (含年终及小额激励)。</p>
+          <p><strong>能力重心：</strong> 熟练使用工具、文档撰写规范、逻辑闭环。</p>
+          <p><strong>市场行情：</strong> 年包 25w-35w (含年终及小额激励)。</p>
         </div>
 
         <h4>2. P6/T5 骨干层：独立战场指挥官 (晋升最难坎)</h4>
@@ -233,13 +235,13 @@ const reportDatabase = {
           <li><span class="tag">复杂场景解决</span></li>
           <li><span class="tag">项目管理</span></li>
         </ul>
-        <div class="salary-box">📈 核心红利：此职级开始涉及股票期权奖励，年包可达 45w-70w。</div>
+        <div class="salary-box">核心红利：此职级开始涉及股票期权奖励，年包可达 45w-70w。</div>
 
         <h4>3. P7/T8 专家/组长：业务决策与影响力</h4>
         <p><strong>关键动作：</strong> 制定本业务线的技术/产品路径，能够沉淀通用方法论，培养下属。晋升需通过集团评审委员会（评委面试）。</p>
-        <div class="report-alert">💡 <strong>AI 洞察：</strong> 大厂目前趋向扁平化，P6 到 P7 的淘汰率约为 40%，核心差异点在于“对业务结果的深度负责度”。</div>
+        <div class="report-alert"><strong>AI 洞察：</strong> 大厂目前趋向扁平化，P6 到 P7 的淘汰率约为 40%，核心差异点在于“对业务结果的深度负责度”。</div>
         
-        <h4>📊 2025 大厂招聘门槛动态</h4>
+        <h4>2025 大厂招聘门槛动态</h4>
         <table class="report-table">
           <tr><th>维度</th><th>2022年</th><th>2025年展望</th></tr>
           <tr><td>学历要求</td><td>本科/211</td><td>重点院校/硕士为主</td></tr>
@@ -258,8 +260,8 @@ const reportDatabase = {
         <h4>A. 跨专业考研的“投入产出比”分析</h4>
         <p><strong>适合场景：</strong> 目标进入金融券商、核心算法、体制内等“唯学历论”行业。考研是唯一洗白背景的通道。</p>
         <div class="vs-card">
-          <p>❌ <strong>风险预警：</strong> 2025 考研报录比预计达 4.2:1。若失败，错过应届生黄金校招期，空窗期代价极大。</p>
-          <p>💰 <strong>隐形亏损：</strong> 备考1年+读研3年，共计 4 年无薪资，隐形成本约 60w-80w。</p>
+          <p><strong>风险预警：</strong> 2025 考研报录比预计达 4.2:1。若失败，错过应届生黄金校招期，空窗期代价极大。</p>
+          <p><strong>隐形亏损：</strong> 备考1年+读研3年，共计 4 年无薪资，隐形成本约 60w-80w。</p>
         </div>
 
         <h4>B. 直接就业的“实战积累”分析</h4>
@@ -269,7 +271,7 @@ const reportDatabase = {
           <li><strong>第 3 年：</strong> 凭借实战经验跳槽，薪资涨幅通常超过硕士起薪。</li>
         </ul>
 
-        <h4>📊 核心对比矩阵 (决策公式：Q = (S * I) / C)</h4>
+        <h4>核心对比矩阵 (决策公式：Q = (S * I) / C)</h4>
         <table class="report-table">
           <tr><th>决策因素</th><th>考研派</th><th>实战派</th></tr>
           <tr><td>职业上限</td><td>更高，利于管理层跃迁</td><td>由具体项目战绩决定</td></tr>
@@ -277,7 +279,7 @@ const reportDatabase = {
           <tr><td>首月薪资</td><td>8k - 15k (硕士价)</td><td>5k - 9k (本科价)</td></tr>
         </table>
         
-        <div class="report-alert">⚖️ <strong>AI 建议：</strong> 若你现在的专业是文史哲且想进互联网，建议直接自学转行；若你想进国企大行，请务必考研。</div>
+        <div class="report-alert"><strong>AI 建议：</strong> 若你现在的专业是文史哲且想进互联网，建议直接自学转行；若你想进国企大行，请务必考研。</div>
       </div>
     `
   },
@@ -298,7 +300,7 @@ const reportDatabase = {
 
         <h4>阶段 2：输出一份“能打”的竞品分析 (Day 21-50)</h4>
         <p><strong>避坑指南：</strong> 不要写成功能对比表！要从商业模式、用户分层、体验地图、核心壁垒四个维度深度剖析。</p>
-        <div class="salary-box">🔥 关键：去 Github 或各大社区找一份 PRD 模版，练习写 10 份以上的功能描述。</div>
+        <div class="salary-box">关键：去 Github 或各大社区找一份 PRD 模版，练习写 10 份以上的功能描述。</div>
 
         <h4>阶段 3：作品集包装与面试黑话 (Day 51-100)</h4>
         <p><strong>核心：</strong> 没有实习经历，就创造项目。挑选一个冷门行业（如智慧养老），从 0 到 1 构思一款产品，画出原型图，写好需求文档。</p>
@@ -307,7 +309,7 @@ const reportDatabase = {
           <li><strong>项目包装：</strong> 将你的分析报告整理成精美 PDF，放在简历显眼位置。</li>
         </ul>
 
-        <div class="report-alert">🎤 <strong>AI 面试秘籍：</strong> 面试官问“你觉得好的产品是什么？”，不要回答“好用”，要回答“能为公司创造商业价值，同时降低用户成本”。</div>
+        <div class="report-alert"><strong>AI 面试秘籍：</strong> 面试官问“你觉得好的产品是什么？”，不要回答“好用”，要回答“能为公司创造商业价值，同时降低用户成本”。</div>
       </div>
     `
   }
@@ -332,36 +334,33 @@ const generatePlan = () => {
 <style>
 body { margin: 0; background-color: #F4F7FC; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #2C3E50; }
 .app-layout { display: flex; height: 100vh; width: 100vw; overflow: hidden; position: relative; }
-.sidebar { width: 280px; min-width: 280px; flex-shrink: 0; background: linear-gradient(135deg, #f0f9ff, #e0f2fe); border-right: 1px solid #d1e0f0; display: flex; flex-direction: column; padding: 25px 20px; box-sizing: border-box; z-index: 10; box-shadow: 2px 0 15px rgba(0, 0, 0, 0.05); transition: all 0.3s ease;}
-.logo-area { display: flex; align-items: center; gap: 12px; font-size: 1.3rem; font-weight: 700; padding: 10px 10px 25px 10px; color: #1e3a8a; background: rgba(255, 255, 255, 0.7); border-radius: 12px; margin-bottom: 15px; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);}
-.logo-area .logo-icon { font-size: 1.8rem; animation: pulse 2s infinite; }
-@keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.1); } 100% { transform: scale(1); } }
+.sidebar { width: 268px; min-width: 268px; flex-shrink: 0; background: #FBFDFF; border-right: 1px solid #E4EAF2; display: flex; flex-direction: column; padding: 20px 16px; box-sizing: border-box; z-index: 10; }
+.logo-area { display: flex; align-items: center; gap: 10px; font-size: 1.05rem; font-weight: 700; letter-spacing: 0.3px; padding: 2px 4px 18px 4px; color: #1E3A8A; }
+.logo-mark { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 8px; background: #4A90E2; color: #FFFFFF; }
 
-.new-chat-btn { background: linear-gradient(135deg, #4A90E2, #357ABD); color: white; border: none; padding: 14px; border-radius: 12px; font-weight: 600; font-size: 1rem; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 10px; transition: all 0.3s ease; margin-bottom: 25px; box-shadow: 0 4px 15px rgba(74, 144, 226, 0.3); position: relative; overflow: hidden;}
-.new-chat-btn::before { content: ''; position: absolute; top: 0; left: -100%; width: 100%; height: 100%; background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent); transition: 0.5s; }
-.new-chat-btn:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(74, 144, 226, 0.4); }
+.new-chat-btn { background: #4A90E2; color: #FFFFFF; border: none; padding: 11px 14px; border-radius: 8px; font-weight: 600; font-size: 0.92rem; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; transition: background 0.18s ease; margin-bottom: 22px; }
+.new-chat-btn:hover { background: #357ABD; }
 
-.section-title { font-size: 0.85rem; color: #475569; font-weight: 600; padding: 0 10px 8px 10px; margin-bottom: 12px; margin-top: 0; border-bottom: 1px solid rgba(148, 163, 184, 0.2); display: flex; align-items: center; gap: 8px; }
-.section-title::before { content: ''; width: 4px; height: 16px; background: linear-gradient(to bottom, #4A90E2, #357ABD); border-radius: 2px; }
-.nav-section { margin-bottom: 25px; }
-.nav-menu { display: flex; flex-direction: column; gap: 6px; }
-.nav-item { text-decoration: none; color: #334155; padding: 12px 14px; border-radius: 10px; font-size: 1rem; font-weight: 500; transition: all 0.3s ease; display: flex; align-items: center; gap: 12px; background: rgba(255, 255, 255, 0.6); border: 1px solid rgba(226, 232, 240, 0.5); box-shadow: 0 2px 4px rgba(0, 0, 0, 0.02); }
-.nav-item:hover { background-color: rgba(255, 255, 255, 0.9); transform: translateX(4px); box-shadow: 0 4px 8px rgba(0, 0, 0, 0.05); }
-.nav-item.router-link-active { background: linear-gradient(to right, #e8f4ff, #d1e8ff); color: #1e40af; font-weight: 600; border-left: 3px solid #4A90E2; box-shadow: 0 4px 12px rgba(74, 144, 226, 0.15); }
+.section-title { font-size: 0.74rem; color: #64748B; font-weight: 600; letter-spacing: 0.7px; padding: 0 4px; margin: 0 0 10px 0; display: flex; align-items: center; gap: 7px; }
+.section-title::before { content: ''; width: 3px; height: 12px; background: #4A90E2; border-radius: 2px; }
+.nav-section { margin-bottom: 22px; }
+.nav-menu { display: flex; flex-direction: column; gap: 2px; }
+.nav-item { text-decoration: none; color: #475569; padding: 9px 11px; border-radius: 7px; font-size: 0.9rem; font-weight: 500; transition: background 0.16s ease, color 0.16s ease; display: flex; align-items: center; gap: 10px; }
+.nav-item:hover { background: #EEF4FB; color: #1E3A8A; }
+.nav-item.router-link-active { background: #E8F1FC; color: #1D4ED8; font-weight: 600; }
 
-.nav-item.tutor-item { margin-top: 8px; background: linear-gradient(to right, #eff6ff, #e0e7ff); border: 1px solid #c7d2fe; color: #4f46e5; }
-.nav-item.admin-item { margin-top: 8px; background: linear-gradient(to right, #fff1f2, #ffe4e6); border: 1px solid #fecdd3; color: #e11d48;}
+.nav-item.tutor-item { color: #4F46E5; }
+.nav-item.admin-item { color: #BE123C; }
 
 .recommend-section { flex: 1; overflow-y: auto; padding: 5px 0; }
 .recommend-list { display: flex; flex-direction: column; gap: 8px; }
-.recommend-item { padding: 14px 12px; font-size: 0.9rem; font-weight: 500; color: #334155; cursor: pointer; border-radius: 10px; background: rgba(255, 255, 255, 0.7); border: 1px solid rgba(226, 232, 240, 0.5); transition: all 0.3s ease; position: relative; overflow: hidden; display: flex; align-items: center; gap: 10px; }
-.recommend-item::before { content: ''; position: absolute; top: 0; left: -100%; width: 100%; height: 100%; background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.4), transparent); transition: 0.5s; }
-.recommend-item:hover::before { left: 100%; }
-.recommend-item:hover { background: rgba(255, 255, 255, 0.9); color: #4A90E2; border-color: rgba(74, 144, 226, 0.3); transform: translateY(-2px); box-shadow: 0 6px 15px rgba(0,0,0,0.08); }
-.item-icon { font-size: 1.1rem; }
+.recommend-item { padding: 10px 11px; font-size: 0.85rem; font-weight: 500; color: #475569; cursor: pointer; border-radius: 7px; transition: background 0.16s ease, color 0.16s ease; display: flex; align-items: center; gap: 9px; }
+.recommend-item:hover { background: #EEF4FB; color: #1D4ED8; }
+.item-icon { color: #64748B; }
+.recommend-item:hover .item-icon { color: #4A90E2; }
 
-.user-profile-wrapper { position: relative; margin-top: auto; border-top: 1px solid rgba(234, 236, 239, 0.7); padding: 15px 10px 10px 10px; background: rgba(255, 255, 255, 0.5); border-radius: 12px 12px 0 0; }
-.user-popover { position: absolute; bottom: 100%; left: 0; width: 100%; background: white; border: 1px solid #EAECEF; border-radius: 12px; box-shadow: 0 -4px 20px rgba(0,0,0,0.08); padding: 8px; margin-bottom: 10px; z-index: 100; animation: popUp 0.2s ease-out; }
+.user-profile-wrapper { position: relative; margin-top: auto; border-top: 1px solid #E9EEF5; padding: 12px 4px 4px 4px; }
+.user-popover { position: absolute; bottom: 100%; left: 0; width: 100%; background: #FFFFFF; border: 1px solid #E4EAF2; border-radius: 9px; box-shadow: 0 8px 24px rgba(15, 23, 42, 0.10); padding: 6px; margin-bottom: 8px; z-index: 100; }
 @keyframes popUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
 .popover-item { padding: 10px 12px; border-radius: 8px; cursor: pointer; font-size: 0.9rem; color: #475569; display: flex; align-items: center; gap: 8px; text-decoration: none; transition: 0.2s; font-weight: 500; }
 .popover-item:hover { background-color: #F1F5F9; }
@@ -369,28 +368,29 @@ body { margin: 0; background-color: #F4F7FC; font-family: -apple-system, BlinkMa
 .user-profile { display: flex; align-items: center; gap: 12px; cursor: pointer; padding: 5px; border-radius: 8px; transition: 0.2s; }
 .user-profile:hover { background-color: #F8FAFC; }
 .avatar-small { width: 36px; height: 36px; background-color: #E8F0FE; color: #4A90E2; border-radius: 50%; display: flex; justify-content: center; align-items: center; font-weight: bold; font-size: 1rem; transition: 0.3s; }
-.avatar-small.is-logged { background: linear-gradient(135deg, #60A5FA, #4A90E2); color: white; box-shadow: 0 4px 10px rgba(74,144,226,0.3); }
-.avatar-small.is-admin-avatar { background: linear-gradient(135deg, #FB7185, #E11D48); }
-.avatar-small.is-tutor-avatar { background: linear-gradient(135deg, #A78BFA, #7C3AED); color: white;}
+.avatar-small.is-logged { background: #4A90E2; color: white; }
+.avatar-small.is-admin-avatar { background: #E11D48; }
+.avatar-small.is-tutor-avatar { background: #7C3AED; color: white;}
 .user-info { display: flex; flex-direction: column; }
-.username { font-size: 0.9rem; font-weight: 600; color: #2C3E50; }
-.user-status { font-size: 0.75rem; font-weight: 600; margin-top: 2px; }
+.username { font-size: 0.88rem; font-weight: 600; color: #1E293B; }
+.user-status { font-size: 0.72rem; font-weight: 500; margin-top: 2px; display: flex; align-items: center; gap: 5px; }
+.status-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; display: inline-block; }
 
 .main-content { flex: 1; min-width: 0; display: flex; justify-content: center; align-items: center; padding: 20px; box-sizing: border-box; overflow: hidden; }
 
 /* 弹窗核心样式 */
 .modal-overlay { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(15, 23, 42, 0.55); backdrop-filter: blur(8px); z-index: 9999; display: flex; justify-content: center; align-items: center; }
-.custom-modal { background: #FFFFFF; border-radius: 20px; box-shadow: 0 25px 50px rgba(0, 0, 0, 0.25); display: flex; flex-direction: column; overflow: hidden; }
+.custom-modal { background: #FFFFFF; border-radius: 12px; box-shadow: 0 16px 40px rgba(15, 23, 42, 0.18); display: flex; flex-direction: column; overflow: hidden; }
 .modal-header { padding: 24px 30px; border-bottom: 1px solid #F1F5F9; display: flex; justify-content: space-between; align-items: center; background: #FFFFFF; }
 .header-left { display: flex; flex-direction: column; gap: 6px; }
-.modal-badge { align-self: flex-start; font-size: 0.75rem; font-weight: bold; color: #4A90E2; background: rgba(74, 144, 226, 0.1); padding: 4px 10px; border-radius: 20px; letter-spacing: 1px; }
-.gradient-title { margin: 0; font-size: 1.4rem; font-weight: 800; background: linear-gradient(135deg, #1E293B, #3B82F6); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
-.close-modal-btn { background: #F8FAFC; border: 1px solid #E2E8F0; width: 32px; height: 32px; border-radius: 50%; cursor: pointer; transition: 0.3s; font-size: 1.2rem; display: flex; align-items: center; justify-content: center; color: #94A3B8;}
-.close-modal-btn:hover { background: #FEE2E2; color: #EF4444; border-color: #FECACA; transform: rotate(90deg); }
+.modal-badge { align-self: flex-start; display: inline-flex; align-items: center; gap: 5px; font-size: 0.72rem; font-weight: 600; color: #2563EB; background: #EFF6FF; padding: 3px 9px; border-radius: 6px; letter-spacing: 0.3px; }
+.gradient-title { margin: 0; font-size: 1.2rem; font-weight: 700; color: #1E293B; }
+.close-modal-btn { background: #FFFFFF; border: 1px solid #E2E8F0; width: 30px; height: 30px; border-radius: 8px; cursor: pointer; transition: 0.16s; display: flex; align-items: center; justify-content: center; color: #94A3B8; }
+.close-modal-btn:hover { background: #F8FAFC; color: #475569; border-color: #CBD5E1; }
 
 .modal-body { flex: 1; padding: 30px 40px; overflow-y: auto; background: #FAFAF9; }
 
-/* 🌟 核心补齐：底部区域与按钮的所有样式 */
+/* 核心补齐：底部区域与按钮的所有样式 */
 .modal-footer { padding: 16px 30px; background: #FFFFFF; border-top: 1px solid #F1F5F9; display: flex; justify-content: space-between; align-items: center; }
 .footer-note { margin: 0; font-size: 0.85rem; color: #94A3B8; font-weight: 500; }
 

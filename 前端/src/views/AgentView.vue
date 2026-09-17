@@ -5,7 +5,7 @@
     
     <aside class="sidebar glass-panel">
       <button class="new-chat-btn" @click="prepareNewChat">
-        <span class="icon">+</span> 开启新话题
+        <AppIcon name="plus" :size="16" /> 开启新话题
       </button>
       
       <div class="chat-list">
@@ -29,7 +29,7 @@
                 @dblclick.stop="startEditTitle(String(chat.id), chat.title)"
                 title="双击编辑标题"
               >
-                💬 {{ chat.title === '对话' ? '职业规划咨询' : (chat.title || '职业规划咨询') }}
+                {{ chat.title === '对话' ? '职业规划咨询' : (chat.title || '职业规划咨询') }}
               </span>
               <input
                 v-else
@@ -46,8 +46,8 @@
             <span class="chat-time" v-if="chat.createTime">{{ chat.createTime.substring(5, 16).replace('T', ' ') }}</span>
           </div>
           <div class="chat-actions">
-            <button class="edit-icon" @click.stop="startEditTitle(String(chat.id), chat.title)" title="编辑标题">✏️</button>
-            <button class="delete-icon" @click.stop="deleteChat(String(chat.id))" title="删除记录">🗑️</button>
+            <button class="edit-icon" @click.stop="startEditTitle(String(chat.id), chat.title)" title="编辑标题"><AppIcon name="edit" :size="14" /></button>
+            <button class="delete-icon" @click.stop="deleteChat(String(chat.id))" title="删除记录"><AppIcon name="trash" :size="14" /></button>
           </div>
         </div>
       </div>
@@ -56,7 +56,7 @@
     <main class="chat-main">
       <div class="workspace-wrapper">
         <div class="page-header">
-          <div class="title-badge">🚀 Agent 引擎已就绪</div>
+          <div class="title-badge"><AppIcon name="activity" :size="13" /> Agent 引擎已就绪</div>
           <h1 class="gradient-text">准备好规划你的职业未来了吗？</h1>
           <p class="subtitle">基于 <span class="highlight-number">10,000+</span> 真实企业招聘数据，AI 为你量身定制</p>
         </div>
@@ -65,7 +65,7 @@
           <div class="message-container" ref="messageBox">
             
             <div v-if="messages.length === 0" class="welcome-screen">
-              <h3>👋 你的专属领航员在此等候</h3>
+              <h3>你的专属领航员在此等候</h3>
               <p>请在下方输入你的问题，或者发送包含岗位的图片由我来解析</p>
             </div>
             
@@ -101,7 +101,7 @@
             <div v-if="previewImageUrl" class="image-preview-area">
               <div class="preview-box">
                 <img :src="previewImageUrl" alt="预览" />
-                <button class="remove-img-btn" @click="removeSelectedImage" title="移除图片">✕</button>
+                <button class="remove-img-btn" @click="removeSelectedImage" title="移除图片"><AppIcon name="close" :size="12" /></button>
               </div>
             </div>
 
@@ -115,7 +115,7 @@
               />
               
               <button class="tool-btn" @click="triggerImageUpload" title="上传图片" :disabled="isWaitingResponse || isTyping">
-                🖼️
+                <AppIcon name="image" :size="18" />
               </button>
 
               <textarea
@@ -138,6 +138,7 @@
 <script setup>
 import { ref, onMounted, nextTick, watch } from 'vue'
 import axios from 'axios'
+import AppIcon from '../components/AppIcon.vue'
 import { generateAesKeyAndIv, rsaEncrypt } from '../utils/crypto'
 import { useRoute, useRouter } from 'vue-router'
 const route = useRoute()
@@ -177,7 +178,7 @@ const selectedImageFile = ref(null)
 const previewImageUrl = ref('')
 
 // ==========================================
-// 🌟 核心格式化引擎：把杂乱数据变成极简 Markdown (修复版)
+// 核心格式化引擎：把杂乱数据变成极简 Markdown (修复版)
 // ==========================================
 const formatText = (text) => {
   if (!text) return '';
@@ -188,18 +189,18 @@ const formatText = (text) => {
   if (str.includes('"career_pathway"') || str.includes('career_blueprint') || str.includes('career蓝图')) {
       let formatted = str
           .replace(/\{?"(?:career_pathway|career_blueprint|career蓝图)"\s*:\s*\{?/g, '')
-          .replace(/"(?:title|标题)"\s*:\s*"([^"]+)"/g, '### 🎯 $1\n\n')
+          .replace(/"(?:title|标题)"\s*:\s*"([^"]+)"/g, '### $1\n\n')
           .replace(/"(?:phases|阶段目标|阶段)"\s*:\s*\[?/g, '')
-          .replace(/\{?"(?:phase|阶段|phase_\d+)"\s*:\s*"([^"]+)"/g, '\n#### 🌟 阶段：$1\n')
-          .replace(/"(?:goal|goals|核心任务|目标)"\s*:\s*"([^"]+)"/g, '**📌 核心目标：** $1\n')
-          .replace(/"(?:key_actions|关键成果|行动重点)"\s*:\s*\[?/g, '\n**🎯 关键行动：**\n')
+          .replace(/\{?"(?:phase|阶段|phase_\d+)"\s*:\s*"([^"]+)"/g, '\n#### 阶段：$1\n')
+          .replace(/"(?:goal|goals|核心任务|目标)"\s*:\s*"([^"]+)"/g, '**核心目标：** $1\n')
+          .replace(/"(?:key_actions|关键成果|行动重点)"\s*:\s*\[?/g, '\n**关键行动：**\n')
           .replace(/\{?"(?:action|action_\d+)"\s*:\s*"([^"]+)"/g, '- $1 ')
           .replace(/"(?:timeline|时间线)"\s*:\s*"([^"]+)"/g, ' ($1)\n')
           .replace(/","/g, '\n- ')
           .replace(/"/g, '')
           .replace(/[\[\]{}]/g, '')
           .trim();
-      if (formatted.includes('🎯') || formatted.includes('🌟')) return formatted; 
+      if (formatted.includes('###') || formatted.includes('核心目标')) return formatted; 
   }
 
   try {
@@ -207,7 +208,7 @@ const formatText = (text) => {
       if (obj.response) return typeof obj.response === 'string' ? obj.response : JSON.stringify(obj.response);
       if (obj.data) return typeof obj.data === 'string' ? obj.data : JSON.stringify(obj.data);
   } catch(e) {
-      // 🌟 核心修复点 3：残缺 JSON 剥离技术
+      // 核心修复点 3：残缺 JSON 剥离技术
       // 如果打字机正在输入中，JSON不完整，暴力剥离前缀，保证实时排版美观！
       const match = str.match(/\{?"(?:response|data)"\s*:\s*"?([\s\S]*)/);
       if (match) {
@@ -222,7 +223,7 @@ const formatText = (text) => {
 };
 
 // ==========================================
-// 🌟 Markdown 渲染器 (增强版：修复加粗、列表、换行)
+// Markdown 渲染器 (增强版：修复加粗、列表、换行)
 // ==========================================
 const renderMarkdown = (text) => {
   if (!text) return '';
@@ -230,7 +231,7 @@ const renderMarkdown = (text) => {
   html = html.replace(/</g, '&lt;').replace(/>/g, '&gt;');
   html = html.replace(/```([\s\S]*?)```/g, '<pre class="md-pre"><code class="md-code-block">$1</code></pre>');
   html = html.replace(/`([^`]+)`/g, '<code class="md-inline-code">$1</code>');
-  // 🌟 增强加粗正则，支持多行和复杂内容
+  // 增强加粗正则，支持多行和复杂内容
   html = html.replace(/\*\*([\s\S]*?)\*\*/g, '<strong class="md-bold">$1</strong>');
   html = html.replace(/__([\s\S]*?)__/g, '<strong class="md-bold">$1</strong>');
   html = html.replace(/^### (.*$)/gim, '<h3 class="md-h3">$1</h3>');
@@ -342,7 +343,7 @@ const fileToBase64 = (file) => {
 };
 
 // ==========================================
-// 🌟 修复版流式发送引擎
+// 修复版流式发送引擎
 // ==========================================
 const sendMessage = async () => {
   if ((!inputContent.value.trim() && !previewImageUrl.value) || isWaitingResponse.value || isTyping.value) return
@@ -454,7 +455,7 @@ const sendMessage = async () => {
             else if (parsed.response) chunkText = parsed.response;
          } catch(e) {}
          
-         // 🌟 核心修复点 1：使用 Array.from() 拆分，完美保留 Emoji 图标不乱码！
+         // 核心修复点 1：使用 Array.from() 拆分，完美保留 Emoji 图标不乱码！
          charQueue.push(...Array.from(chunkText));
       }
     }
@@ -519,50 +520,49 @@ watch(() => route.query.autoPrompt, (newVal) => { if (newVal) handleAutoPrompt(n
 
 <style scoped>
 /* 保持所有原本美丽的样式不变 */
-.agent-page { position: relative; width: 100vw; height: 100vh; display: flex; background: #F4F7FA; overflow: hidden; font-family: 'Inter', -apple-system, sans-serif;}
-.ambient-glow { position: absolute; width: 500px; height: 500px; border-radius: 50%; filter: blur(100px); opacity: 0.4; z-index: 0; pointer-events: none; }
-.glow-blue { top: -100px; left: 200px; background: radial-gradient(circle, rgba(74,144,226,0.3) 0%, rgba(255,255,255,0) 70%); }
-.glow-purple { bottom: -150px; right: 50px; background: radial-gradient(circle, rgba(139,92,246,0.2) 0%, rgba(255,255,255,0) 70%); }
-.sidebar { width: 280px; position: relative; z-index: 2; border-right: 1px solid rgba(255,255,255,0.5); display: flex; flex-direction: column; padding: 20px; box-sizing: border-box; }
-.glass-panel { background-color: rgba(255, 255, 255, 0.4); backdrop-filter: blur(20px); }
-.new-chat-btn { width: 100%; padding: 14px; background: rgba(255,255,255,0.8); color: #4A90E2; border: 1px dashed #4A90E2; border-radius: 12px; font-weight: bold; cursor: pointer; transition: 0.2s; display: flex; align-items: center; justify-content: center; gap: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.02); }
-.new-chat-btn:hover { background: #4A90E2; color: #FFFFFF; }
-.chat-list { margin-top: 25px; flex: 1; overflow-y: auto; }
-.list-title { font-size: 0.85rem; color: #94A3B8; font-weight: bold; margin-bottom: 10px; padding-left: 5px; }
-.empty-text, .loading-text { text-align: center; color: #94A3B8; font-size: 0.9rem; margin-top: 20px; }
-.chat-item { padding: 12px 15px; margin-bottom: 8px; border-radius: 10px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; transition: 0.2s; background: rgba(255,255,255,0.5); border: 1px solid transparent; }
-.chat-item:hover { background: rgba(255,255,255,0.8); }
-.chat-item.active { background: #FFFFFF; border-color: rgba(74, 144, 226, 0.3); box-shadow: 0 4px 10px rgba(0,0,0,0.03); }
+.agent-page { position: relative; width: 100vw; height: 100vh; display: flex; background: #F6F8FC; overflow: hidden; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+/* 环境光晕装饰已移除，保持界面克制专业 */
+.ambient-glow { display: none; }
+.sidebar { width: 268px; position: relative; z-index: 2; border-right: 1px solid #E4EAF2; display: flex; flex-direction: column; padding: 20px 16px; box-sizing: border-box; }
+.glass-panel { background-color: #FBFDFF; }
+.new-chat-btn { width: 100%; padding: 11px; background: #FFFFFF; color: #2563EB; border: 1px solid #CBDDF5; border-radius: 8px; font-weight: 600; font-size: 0.88rem; cursor: pointer; transition: background 0.16s ease, border-color 0.16s ease; display: flex; align-items: center; justify-content: center; gap: 7px; }
+.new-chat-btn:hover { background: #EFF6FF; border-color: #4A90E2; }
+.chat-list { margin-top: 20px; flex: 1; overflow-y: auto; }
+.list-title { font-size: 0.74rem; color: #94A3B8; font-weight: 600; letter-spacing: 0.6px; margin: 0 0 10px 4px; }
+.empty-text, .loading-text { text-align: center; color: #94A3B8; font-size: 0.85rem; margin-top: 20px; }
+.chat-item { padding: 10px 12px; margin-bottom: 3px; border-radius: 7px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; transition: background 0.16s ease; }
+.chat-item:hover { background: #EEF4FB; }
+.chat-item.active { background: #E8F1FC; }
 .chat-info { display: flex; flex-direction: column; gap: 4px; overflow: hidden; }
 .title-editable { position: relative; }
-.chat-title { color: #334155; font-size: 0.9rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 150px; cursor: text; padding: 2px 4px; border-radius: 4px; transition: background-color 0.2s; }
-.chat-title:hover { background-color: rgba(74, 144, 226, 0.1); }
+.chat-title { color: #334155; font-size: 0.87rem; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 150px; cursor: text; padding: 2px 4px; border-radius: 4px; transition: background-color 0.16s; }
+.chat-title:hover { background-color: #EEF4FB; }
 .title-input { width: 150px; font-size: 0.9rem; font-weight: 600; color: #334155; background: white; border: 1px solid #4A90E2; border-radius: 4px; padding: 2px 6px; outline: none; box-shadow: 0 0 0 2px rgba(74, 144, 226, 0.2); }
 .chat-time { font-size: 0.75rem; color: #94A3B8; padding-left: 22px; }
 .chat-actions { display: flex; gap: 5px; }
-.edit-icon, .delete-icon { background: none; border: none; cursor: pointer; opacity: 0; transition: 0.2s; filter: grayscale(100%); font-size: 0.9rem; }
-.edit-icon:hover { filter: none; color: #4A90E2; }
-.delete-icon:hover { filter: none; color: #EF4444; }
+.edit-icon, .delete-icon { background: none; border: none; cursor: pointer; opacity: 0; transition: 0.16s; color: #94A3B8; display: flex; align-items: center; padding: 2px; }
+.edit-icon:hover { color: #4A90E2; }
+.delete-icon:hover { color: #EF4444; }
 .chat-item:hover .edit-icon, .chat-item:hover .delete-icon { opacity: 1; }
 .chat-main { flex: 1; display: flex; justify-content: center; align-items: center; position: relative; z-index: 1; }
-.workspace-wrapper { width: 100%; max-width: 850px; display: flex; flex-direction: column; gap: 20px; }
-.page-header { text-align: center; margin-bottom: 20px; animation: fadeInDown 0.8s ease-out; display: flex; flex-direction: column; align-items: center; gap: 12px; }
-.title-badge { display: inline-block; padding: 6px 16px; background: rgba(74, 144, 226, 0.1); color: #4A90E2; border-radius: 20px; font-size: 0.85rem; font-weight: 600; border: 1px solid rgba(74, 144, 226, 0.2); letter-spacing: 0.5px; }
-.gradient-text { font-size: 1.9rem; margin: 0; font-weight: 800; letter-spacing: 1px; background: linear-gradient(135deg, #2C3E50 0%, #4A90E2 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
-.subtitle { font-size: 1.05rem; color: #64748B; margin: 0; }
-.highlight-number { color: #4A90E2; font-weight: 800; font-size: 1.15rem; background: rgba(74, 144, 226, 0.08); padding: 2px 6px; border-radius: 4px; }
-.chat-container { width: 100%; height: 75vh; background-color: rgba(255, 255, 255, 0.7); backdrop-filter: blur(20px); border: 1px solid rgba(255, 255, 255, 0.8); border-radius: 16px; box-shadow: 0 10px 40px rgba(0, 0, 0, 0.05); display: flex; flex-direction: column; overflow: hidden; animation: fadeInUp 0.8s ease-out; }
-.message-container { flex: 1; padding: 30px; overflow-y: auto; display: flex; flex-direction: column; gap: 20px; scroll-behavior: smooth; }
-.welcome-screen { text-align: center; margin-top: 10vh; color: #64748B; }
-.welcome-screen h3 { color: #1E293B; font-size: 1.5rem; margin-bottom: 10px; }
-.message-wrapper { display: flex; gap: 15px; max-width: 85%; }
+.workspace-wrapper { width: 100%; max-width: 860px; display: flex; flex-direction: column; gap: 16px; padding: 0 24px; }
+.page-header { text-align: center; margin-bottom: 12px; display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.title-badge { display: inline-flex; align-items: center; gap: 6px; padding: 4px 12px; background: #EFF6FF; color: #2563EB; border-radius: 6px; font-size: 0.76rem; font-weight: 600; letter-spacing: 0.3px; }
+.gradient-text { font-size: 1.6rem; margin: 0; font-weight: 700; letter-spacing: 0.2px; color: #1E293B; }
+.subtitle { font-size: 0.95rem; color: #64748B; margin: 0; }
+.highlight-number { color: #4A90E2; font-weight: 700; }
+.chat-container { width: 100%; height: 72vh; background: #FFFFFF; border: 1px solid #E4EAF2; border-radius: 12px; box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04); display: flex; flex-direction: column; overflow: hidden; }
+.message-container { flex: 1; padding: 26px 28px; overflow-y: auto; display: flex; flex-direction: column; gap: 18px; scroll-behavior: smooth; }
+.welcome-screen { text-align: center; margin-top: 9vh; color: #64748B; }
+.welcome-screen h3 { color: #1E293B; font-size: 1.25rem; font-weight: 650; margin-bottom: 8px; }
+.message-wrapper { display: flex; gap: 12px; max-width: 85%; }
 .message-wrapper.is-user { align-self: flex-end; flex-direction: row-reverse; }
 .message-wrapper.is-ai { align-self: flex-start; }
-.avatar { width: 40px; height: 40px; border-radius: 50%; background: linear-gradient(135deg, #60A5FA, #4A90E2); color: white; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 0.9rem; flex-shrink: 0; box-shadow: 0 4px 10px rgba(74,144,226,0.3); }
-.is-user .avatar { background: linear-gradient(135deg, #34D399, #10B981); box-shadow: 0 4px 10px rgba(16,185,129,0.3); }
-.message-bubble { padding: 15px 20px; border-radius: 16px; font-size: 1rem; line-height: 1.7; box-shadow: 0 4px 15px rgba(0,0,0,0.03); word-break: break-word; }
-.is-user .message-bubble { background: linear-gradient(135deg, #60A5FA, #4A90E2); color: white; border-top-right-radius: 4px; white-space: pre-wrap; }
-.is-ai .message-bubble { background: rgba(255,255,255,0.9); border-top-left-radius: 4px; border: 1px solid rgba(255,255,255,1); color: #334155; }
+.avatar { width: 34px; height: 34px; border-radius: 8px; background: #4A90E2; color: #FFFFFF; display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 0.8rem; flex-shrink: 0; }
+.is-user .avatar { background: #10B981; }
+.message-bubble { padding: 12px 16px; border-radius: 10px; font-size: 0.95rem; line-height: 1.7; word-break: break-word; }
+.is-user .message-bubble { background: #4A90E2; color: #FFFFFF; border-top-right-radius: 3px; white-space: pre-wrap; }
+.is-ai .message-bubble { background: #F6F8FC; border: 1px solid #E8EDF5; border-top-left-radius: 3px; color: #334155; }
 .bubble-image-wrapper { margin-bottom: 10px; max-width: 300px; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
 .bubble-image { width: 100%; height: auto; display: block; border-radius: 8px; }
 :deep(.markdown-body) { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; font-size: 1rem; }
@@ -584,22 +584,22 @@ watch(() => route.query.autoPrompt, (newVal) => { if (newVal) handleAutoPrompt(n
 .typing-indicator span:nth-child(1) { animation-delay: -0.32s; }
 .typing-indicator span:nth-child(2) { animation-delay: -0.16s; }
 @keyframes bounce { 0%, 80%, 100% { transform: scale(0); } 40% { transform: scale(1); } }
-.input-area { padding: 15px 30px; background: rgba(255, 255, 255, 0.5); backdrop-filter: blur(10px); border-top: 1px solid rgba(255, 255, 255, 0.6); display: flex; flex-direction: column; gap: 10px; }
-.image-preview-area { padding-bottom: 5px; }
-.preview-box { position: relative; display: inline-block; width: 60px; height: 60px; border-radius: 8px; border: 2px solid #4A90E2; padding: 2px; background: white; }
-.preview-box img { width: 100%; height: 100%; object-fit: cover; border-radius: 4px; }
-.remove-img-btn { position: absolute; top: -8px; right: -8px; width: 20px; height: 20px; border-radius: 50%; background: #EF4444; color: white; border: none; font-size: 0.7rem; font-weight: bold; cursor: pointer; display: flex; align-items: center; justify-content: center; padding: 0; box-shadow: 0 2px 5px rgba(0,0,0,0.2); }
+.input-area { padding: 12px 22px 16px 22px; background: #FFFFFF; border-top: 1px solid #E8EDF5; display: flex; flex-direction: column; gap: 8px; }
+.image-preview-area { padding-bottom: 4px; }
+.preview-box { position: relative; display: inline-block; width: 56px; height: 56px; border-radius: 8px; border: 1px solid #CBD5E1; padding: 2px; background: #FFFFFF; }
+.preview-box img { width: 100%; height: 100%; object-fit: cover; border-radius: 6px; }
+.remove-img-btn { position: absolute; top: -8px; right: -8px; width: 19px; height: 19px; border-radius: 50%; background: #EF4444; color: white; border: none; cursor: pointer; display: flex; align-items: center; justify-content: center; padding: 0; }
 .remove-img-btn:hover { background: #DC2626; }
-.input-box { display: flex; gap: 12px; background: rgba(255,255,255,0.8); border: 1px solid #E2E8F0; border-radius: 12px; padding: 6px 8px; transition: 0.3s; box-shadow: inset 0 2px 4px rgba(0,0,0,0.02); align-items: center; }
-.input-box:focus-within { border-color: #4A90E2; box-shadow: 0 0 0 3px rgba(74, 144, 226, 0.15); }
-.tool-btn { background: none; border: none; font-size: 1.4rem; cursor: pointer; padding: 5px; opacity: 0.7; transition: 0.2s; border-radius: 8px; }
-.tool-btn:hover:not(:disabled) { opacity: 1; background: #F1F5F9; }
-.tool-btn:disabled { opacity: 0.3; cursor: not-allowed; }
-textarea { flex: 1; height: 40px; min-height: 40px; max-height: 120px; border: none; background: transparent; outline: none; resize: none; font-size: 1rem; color: #1E293B; font-family: inherit; padding: 8px 5px; line-height: 24px; }
+.input-box { display: flex; gap: 8px; background: #FFFFFF; border: 1px solid #DFE6EF; border-radius: 9px; padding: 5px 7px; transition: border-color 0.16s ease, box-shadow 0.16s ease; align-items: center; }
+.input-box:focus-within { border-color: #4A90E2; box-shadow: 0 0 0 3px rgba(74, 144, 226, 0.10); }
+.tool-btn { background: none; border: none; cursor: pointer; padding: 6px; color: #64748B; transition: 0.16s; border-radius: 7px; display: flex; align-items: center; }
+.tool-btn:hover:not(:disabled) { color: #4A90E2; background: #F1F5F9; }
+.tool-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+textarea { flex: 1; height: 38px; min-height: 38px; max-height: 120px; border: none; background: transparent; outline: none; resize: none; font-size: 0.95rem; color: #1E293B; font-family: inherit; padding: 8px 4px; line-height: 22px; }
 textarea::placeholder { color: #94A3B8; }
-.send-btn { background: linear-gradient(135deg, #60A5FA, #4A90E2); color: white; border: none; border-radius: 10px; padding: 0 25px; height: 40px; font-weight: bold; cursor: pointer; transition: 0.2s; box-shadow: 0 4px 10px rgba(74,144,226,0.3); }
-.send-btn:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 6px 15px rgba(74,144,226,0.4); }
-.send-btn:disabled { opacity: 0.5; cursor: not-allowed; box-shadow: none; }
+.send-btn { background: #4A90E2; color: #FFFFFF; border: none; border-radius: 8px; padding: 0 20px; height: 38px; font-weight: 600; font-size: 0.88rem; cursor: pointer; transition: background 0.16s ease; }
+.send-btn:hover:not(:disabled) { background: #357ABD; }
+.send-btn:disabled { opacity: 0.45; cursor: not-allowed; }
 @keyframes fadeInDown { from { opacity: 0; transform: translateY(-20px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes fadeInUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
 </style>
