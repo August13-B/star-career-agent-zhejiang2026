@@ -188,8 +188,8 @@ class ManageGUI:
         self._dispatch(action, [name])
 
     def _run_all(self, action: str) -> None:
-        # 一键启动/重启默认只启核心（后端+前端），Nginx 需另行安装且可选
-        self._dispatch(action, ["backend", "frontend"])
+        # 一键启动/停止/重启：后端 + 前端 + Nginx（Nginx 未安装会自动跳过）
+        self._dispatch(action, ["backend", "frontend", "nginx"])
 
     def _dispatch(self, action: str, names: list[str]) -> None:
         if self._busy:

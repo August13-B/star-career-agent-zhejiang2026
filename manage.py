@@ -119,10 +119,30 @@ def _check_java() -> None:
         out = subprocess.run(["java", "-version"], **kw)
         ver = (out.stderr or out.stdout).split('"')[1] if '"' in (out.stderr or out.stdout) else "?"
         if not ver.startswith("17"):
-            print(f"⚠️  当前 Java 版本 = {ver}，项目需要 JDK 17。"
-                  f"\n    请先设置：set JAVA_HOME=C:\\Program Files\\Java\\jdk-17")
+            auto = _auto_java_home()
+            if auto:
+                print(f"ℹ️  当前 Java = {ver}，自动改用 JDK 17：{auto}")
+            else:
+                print(f"⚠️  当前 Java 版本 = {ver}，项目需要 JDK 17。"
+                      f"\n    请先设置：set JAVA_HOME=C:\\Program Files\\Java\\jdk-17")
     except Exception:
         print("⚠️  未检测到 java，请安装/配置 JDK 17")
+
+
+def _auto_java_home() -> str | None:
+    """自动定位 JDK 17：优先 JAVA_HOME，否则扫描常见安装目录。"""
+    jh = os.environ.get("JAVA_HOME")
+    if jh and "17" in Path(jh).name:
+        return jh
+    if IS_WINDOWS:
+        for base in [r"C:\Program Files\Java", r"C:\Program Files\Eclipse Adoptium",
+                     r"C:\Program Files\Microsoft", r"D:\Program Files\Java"]:
+            p = Path(base)
+            if p.exists():
+                for d in sorted(p.iterdir(), reverse=True):
+                    if d.is_dir() and ("jdk-17" in d.name.lower() or d.name.endswith("17")):
+                        return str(d)
+    return jh if jh else None
 
 
 def start_service(name: str) -> bool:
@@ -132,20 +152,64 @@ def start_service(name: str) -> bool:
         return True
     if name == "backend":
         _check_java()
+
+    log_f = open(svc["log"], "ab")
+
+    # Nginx 未安装时优雅跳过（不阻塞一键启动）
+    if name == "nginx":
+        probe = _run_cmd(_win(["nginx", "-v"]), capture_output=True, text=True)
+        if probe.returncode != 0:
+            print("⚠️  未检测到已安装的 nginx，跳过该服务"
+                  "（安装见 nginx/README.md，安装后可单独启动）")
+            log_f.close()
+            return False
+
+    # 前端首次运行自动 npm install（否则找不到 vite）
+    if name == "frontend" and not (Path(svc["cwd"]) / "node_modules").exists():
+        print("📦 首次运行，正在安装前端依赖（npm install，请稍候）...")
+        log_f.write(b"\n=== npm install ===\n")
+        log_f.flush()
+        rc = _run_cmd(_win(["npm", "install"]), cwd=svc["cwd"],
+                      stdout=log_f, stderr=subprocess.STDOUT, env={**os.environ, "PYTHONUTF8": "1"})
+        if rc.returncode != 0:
+            print(f"❌ npm install 失败（退出码 {rc.returncode}），详见日志：{svc['log']}")
+            log_f.close()
+            return False
+        print("✅ 前端依赖安装完成")
+
     print(f"🚀 启动 {svc['name']} ...")
     env = {**os.environ, "PYTHONUTF8": "1"}
     if name == "backend":
         env.update(load_env(ENV_FILE))  # 注入 .env 配置
-    log_f = open(svc["log"], "ab")
+        jh = _auto_java_home()
+        if jh:
+            env["JAVA_HOME"] = jh
+            env["PATH"] = str(Path(jh) / "bin") + os.pathsep + env.get("PATH", "")
     try:
         kw = dict(cwd=svc["cwd"], stdout=log_f, stderr=subprocess.STDOUT)
         if IS_WINDOWS:
             kw["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW
         proc = subprocess.Popen(svc["cmd"], env=env, **kw)
     except FileNotFoundError as e:
-        print(f"❌ 启动失败：{e}（请确认 {svc['cwd']} 环境就绪）")
+        print(f"❌ 启动失败：{e}（请确认 {svc['cwd']} 环境就绪" +
+              ("；Nginx 未安装可跳过该服务）" if name == "nginx" else "）"))
+        log_f.close()
         return False
     svc["pid"].write_text(str(proc.pid), encoding="utf-8")
+
+    # 存活校验：等几秒确认进程仍在（避免“报成功但已崩溃”）
+    settle = {"backend": 6, "frontend": 4, "nginx": 2}.get(name, 3)
+    time.sleep(settle)
+    if not _pid_alive(proc.pid):
+        svc["pid"].unlink(missing_ok=True)
+        tail = ""
+        try:
+            tail = Path(svc["log"]).read_text(encoding="utf-8", errors="replace")[-800:]
+        except OSError:
+            pass
+        print(f"❌ {svc['name']} 启动后立即退出，日志末尾：\n{tail}")
+        return False
+
     print(f"✅ {svc['name']} 已启动 (PID {proc.pid})，日志：{svc['log']}")
     return True
 
