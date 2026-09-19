@@ -132,12 +132,12 @@ const toggleExpand = (i) => {
     if (el) el.scrollTop = el.scrollHeight
   })
 }
-// 用户上滑 → 暂停自动滚动；回到最底 → 恢复
+// 用户上滑 → 暂停自动滚动（并冻结该卡片输出）；回到最底 → 恢复跟随
 const onBodyScroll = (i, e) => {
   const el = e.target
   const card = agents.value[i]
   if (!card) return
-  card.autoScroll = el.scrollTop + el.clientHeight >= el.scrollHeight - 8
+  card.autoScroll = el.scrollTop + el.clientHeight >= el.scrollHeight - 16
 }
 // 开始生成时自动展开（除非用户手动收起/接管过）
 const markRunning = (i) => {
@@ -195,27 +195,31 @@ const stopTypewriter = () => { if (typeTimer) { clearInterval(typeTimer); typeTi
 const startTypewriter = () => {
   if (typeTimer) return
   typeTimer = setInterval(() => {
-    let catchingUp = false
+    let pending = false
     agents.value.forEach((card, i) => {
       const recv = card.received || ''
       const shown = card.content || ''
       if (shown.length > recv.length) {
         // 服务端内容被整体替换/回退 → 直接对齐，避免错位
         card.content = recv
-      } else if (shown.length < recv.length) {
+        return
+      }
+      if (shown.length < recv.length) {
+        pending = true
+        // 展开态且用户已上滑 → **冻结该卡片输出**（高度不再变化，否则拖到底永远是“移动靶”），
+        // 等用户拖回底部（autoScroll=true）再继续追赶；收起态始终跟随。
+        if (card.expanded && !card.autoScroll) return
         const backlog = recv.length - shown.length
         const step = Math.max(2, Math.ceil(backlog / 30))
         card.content = recv.slice(0, shown.length + step)
-        catchingUp = true
-        // 收起态：始终跟最新；展开态：尊重用户上滑（autoScroll=false 时暂停，回到底部自动恢复）
-        if (bodyRefs[i] && (card.autoScroll || !card.expanded)) {
+        if (bodyRefs[i]) {
           const el = bodyRefs[i]
           el.scrollTop = el.scrollHeight
         }
       }
     })
-    // 全部播完 且 已收到 done → 收尾
-    if (!catchingUp && doneReceived) {
+    // 全部播完 且 已收到 done → 收尾（若用户暂停则等其恢复）
+    if (!pending && doneReceived) {
       stopTypewriter()
       agents.value.forEach(c => { if (c.status !== 'error') c.status = 'done' })
       finished.value = true
