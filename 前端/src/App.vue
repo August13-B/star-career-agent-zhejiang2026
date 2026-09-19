@@ -30,6 +30,11 @@
             <span class="nav-text">多智能体中枢</span>
           </router-link>
 
+          <router-link to="/growth" class="nav-item">
+            <AppIcon name="trendUp" class="nav-icon" :size="17" />
+            <span class="nav-text">个人成长</span>
+          </router-link>
+
           <router-link v-if="userRole === 4" to="/tutor-dashboard" class="nav-item tutor-item">
             <AppIcon name="dashboard" class="nav-icon" :size="17" />
             <span class="nav-text">学生就业大盘</span>
