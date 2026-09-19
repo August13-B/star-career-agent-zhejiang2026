@@ -426,6 +426,21 @@ public class AIConversationServiceImpl implements AIConversationService {
      * 如果查询不到学生信息，返回空字符串
      * 注意：数据库中的字符串字段可能是密文存储，需要解密
      */
+    /** 性别兼容展示：支持「男/女」字符串与「1/2」编码 */
+    private String genderText(String g) {
+        if (g == null || g.isBlank()) {
+            return "未填写";
+        }
+        String v = g.trim();
+        if (v.equals("1") || v.equals("男")) {
+            return "男";
+        }
+        if (v.equals("2") || v.equals("女")) {
+            return "女";
+        }
+        return v;
+    }
+
     private String getFormattedStudentInfo(Long userId) {
         // 先测试解密功能
         try {
@@ -473,7 +488,7 @@ public class AIConversationServiceImpl implements AIConversationService {
                 // 解密并添加字段
                 addDecryptedField(studentInfo, "姓名", studentProfile.getUserName());
                 if (studentProfile.getGender() != null) {
-                    studentInfo.append("性别: ").append(studentProfile.getGender() == 1 ? "男" : studentProfile.getGender() == 2 ? "女" : "未填写").append("\n");
+                    studentInfo.append("性别: ").append(genderText(studentProfile.getGender())).append("\n");
                 }
                 addDecryptedField(studentInfo, "院校", studentProfile.getCollege());
                 addDecryptedField(studentInfo, "专业", studentProfile.getMajor());

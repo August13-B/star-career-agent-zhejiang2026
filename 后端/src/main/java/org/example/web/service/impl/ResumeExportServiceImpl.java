@@ -53,7 +53,21 @@ public class ResumeExportServiceImpl implements ResumeExportService {
         }
     }
 
-    @Override
+    /** 性别兼容展示：支持「男/女」字符串与「1/2」编码 */
+    private String genderText(String g) {
+        if (g == null || g.isBlank()) {
+            return "未填写";
+        }
+        String v = g.trim();
+        if (v.equals("1") || v.equals("男")) {
+            return "男";
+        }
+        if (v.equals("2") || v.equals("女")) {
+            return "女";
+        }
+        return v;
+    }
+
     public File exportResume(Long userId) {
         if (userId == null || userId <= 0) {
             throw new IllegalArgumentException("用户ID不能为空且必须大于0");
@@ -123,7 +137,7 @@ public class ResumeExportServiceImpl implements ResumeExportService {
             personalTitleRun.setBold(true);
 
             addInfoRow(document, "姓名", profile.getUserName());
-            addInfoRow(document, "性别", profile.getGender() != null && profile.getGender() == 1 ? "男" : "女");
+            addInfoRow(document, "性别", genderText(profile.getGender()));
             addInfoRow(document, "年龄", profile.getAge() != null ? profile.getAge().toString() : "未知");
             addInfoRow(document, "联系电话", profile.getPhone());
             addInfoRow(document, "邮箱", profile.getEmail());
@@ -325,7 +339,7 @@ public class ResumeExportServiceImpl implements ResumeExportService {
         if (profile.getWorkTypePreference() != null) {
             try {
                 String decrypted = rsa256.rsaDecrypt(profile.getWorkTypePreference().toString());
-                profile.setWorkTypePreference(Integer.parseInt(decrypted));
+                profile.setWorkTypePreference(decrypted);
             } catch (Exception e) {
                 logger.warn("【简历导出服务】解密工作类型偏好失败", e);
             }
