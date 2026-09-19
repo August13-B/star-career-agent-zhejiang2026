@@ -7,10 +7,6 @@
         <span class="logo-text">AI职业规划师</span>
       </div>
 
-      <button class="new-chat-btn" @click="openWizard">
-        <AppIcon name="plus" :size="16" /> 新建职业规划
-      </button>
-
       <div class="nav-section">
         <p class="section-title">核心功能</p>
         <nav class="nav-menu">
@@ -127,56 +123,11 @@
       </div>
     </transition>
 
-    <transition name="modal-zoom">
-      <div v-if="wizardVisible" class="modal-overlay" @click.self="closeWizard">
-        <div class="custom-modal wizard-modal">
-          <div class="modal-header">
-            <div class="header-left">
-              <span class="modal-badge wizard-badge">AI 专属定制引擎</span>
-              <h3 class="gradient-title">开启您的专属规划蓝图</h3>
-            </div>
-            <button class="close-modal-btn" @click="closeWizard"><AppIcon name="close" :size="17" /></button>
-          </div>
-          <div class="modal-body wizard-body">
-            <div class="wizard-step">
-              <label>1. 您目前所处的阶段是？</label>
-              <div class="options-grid">
-                <div class="option-card" :class="{'active': wizardForm.status === '在校学生'}" @click="selectStatus('在校学生')">在校学生</div>
-                <div class="option-card" :class="{'active': wizardForm.status === '应届毕业生'}" @click="selectStatus('应届毕业生')">应届毕业生</div>
-                <div class="option-card" :class="{'active': wizardForm.status === '职场新人(0-3年)'}" @click="selectStatus('职场新人(0-3年)')">职场新人</div>
-                <div class="option-card" :class="{'active': wizardForm.status === '资深职场人'}" @click="selectStatus('资深职场人')">资深职场人</div>
-              </div>
-            </div>
-            <div class="wizard-step">
-              <label>2. 您期望的目标行业或岗位？</label>
-              <input type="text" v-model="wizardForm.target" placeholder="例如：前端开发、新能源产品经理..." class="wizard-input" />
-            </div>
-            <div class="wizard-step">
-              <label>3. 您当前最迫切的诉求是什么？</label>
-              <div class="options-grid">
-                <div class="option-card" :class="{'active': wizardForm.need === '简历优化与包装'}" @click="selectNeed('简历优化与包装')">简历优化</div>
-                <div class="option-card" :class="{'active': wizardForm.need === '面试技巧与模拟'}" @click="selectNeed('面试技巧与模拟')">面试技巧</div>
-                <div class="option-card" :class="{'active': wizardForm.need === '跨行跳槽路径指引'}" @click="selectNeed('跨行跳槽路径指引')">跨行跳槽</div>
-                <div class="option-card" :class="{'active': wizardForm.need === '核心技能快速突破'}" @click="selectNeed('核心技能快速突破')">技能突破</div>
-              </div>
-            </div>
-          </div>
-          
-          <div class="modal-footer">
-            <p class="footer-note" style="color: #10B981;">AI 正在收集数据并准备生成...</p>
-            <button class="footer-btn start-ai-btn" @click="generatePlan" :disabled="!wizardForm.status || !wizardForm.target || !wizardForm.need">
-              <AppIcon name="sparkle" :size="15" /> 启动 AI 定制引擎
-            </button>
-          </div>
-        </div>
-      </div>
-    </transition>
-
   </div>
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, watch } from 'vue'
+import { ref, onMounted, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import AppIcon from './components/AppIcon.vue'
 
@@ -320,18 +271,6 @@ const reportDatabase = {
 
 const openReport = (type) => { currentReport.value = reportDatabase[type]; reportVisible.value = true }
 const closeReport = () => { reportVisible.value = false }
-
-const wizardVisible = ref(false)
-const wizardForm = reactive({ status: '', target: '', need: '' })
-const selectStatus = (val) => { wizardForm.status = val }
-const selectNeed = (val) => { wizardForm.need = val }
-const openWizard = () => { wizardForm.status = ''; wizardForm.target = ''; wizardForm.need = ''; wizardVisible.value = true }
-const closeWizard = () => { wizardVisible.value = false }
-const generatePlan = () => {
-  const prompt = `你好，AI 专属领航员！我目前的身份阶段是【${wizardForm.status}】，我期望未来的目标行业或岗位是【${wizardForm.target}】，我现在最迫切的核心诉求是【${wizardForm.need}】。请根据我的具体情况，为我量身定制一份详细、专业且可落地的职业发展蓝图和接下来的行动指南。`
-  closeWizard()
-  router.push({ path: '/', query: { autoPrompt: prompt, t: Date.now() } })
-}
 </script>
 
 <style>
@@ -340,9 +279,6 @@ body { margin: 0; background-color: #F4F7FC; font-family: -apple-system, BlinkMa
 .sidebar { width: 268px; min-width: 268px; flex-shrink: 0; background: #FBFDFF; border-right: 1px solid #E4EAF2; display: flex; flex-direction: column; padding: 20px 16px; box-sizing: border-box; z-index: 10; }
 .logo-area { display: flex; align-items: center; gap: 10px; font-size: 1.05rem; font-weight: 700; letter-spacing: 0.3px; padding: 2px 4px 18px 4px; color: #1E3A8A; }
 .logo-mark { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 8px; background: #4A90E2; color: #FFFFFF; }
-
-.new-chat-btn { background: #4A90E2; color: #FFFFFF; border: none; padding: 11px 14px; border-radius: 8px; font-weight: 600; font-size: 0.92rem; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; transition: background 0.18s ease; margin-bottom: 22px; }
-.new-chat-btn:hover { background: #357ABD; }
 
 .section-title { font-size: 0.74rem; color: #64748B; font-weight: 600; letter-spacing: 0.7px; padding: 0 4px; margin: 0 0 10px 0; display: flex; align-items: center; gap: 7px; }
 .section-title::before { content: ''; width: 3px; height: 12px; background: #4A90E2; border-radius: 2px; }
@@ -413,19 +349,7 @@ body { margin: 0; background-color: #F4F7FC; font-family: -apple-system, BlinkMa
   box-shadow: 0 6px 15px rgba(74, 144, 226, 0.3); 
 }
 
-.start-ai-btn { 
-  background: linear-gradient(135deg, #10B981, #059669); 
-  font-size: 1.05rem; 
-  padding: 12px 28px; 
-  box-shadow: 0 4px 10px rgba(16, 185, 129, 0.2);
-}
-.start-ai-btn:disabled { 
-  opacity: 0.5; 
-  filter: grayscale(100%); 
-  cursor: not-allowed; 
-  transform: none; 
-  box-shadow: none;
-}
+/* .start-ai-btn 已随向导弹窗下线 */
 
 /* 报告面板样式 */
 .report-modal { width: 92%; max-width: 820px; max-height: 85vh; }
@@ -441,16 +365,7 @@ body { margin: 0; background-color: #F4F7FC; font-family: -apple-system, BlinkMa
 .report-table th { background: #F8FAFC; color: #1E293B; font-weight: bold; }
 
 /* 向导弹窗样式 */
-.wizard-modal { width: 92%; max-width: 650px; }
-.wizard-badge { background: rgba(16, 185, 129, 0.1); color: #10B981; }
-.wizard-body { display: flex; flex-direction: column; gap: 25px; }
-.wizard-step label { font-size: 1.05rem; font-weight: bold; color: #1E293B; margin-bottom: 12px; display: block; }
-.options-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-.option-card { padding: 14px; border: 1px solid #E2E8F0; border-radius: 12px; text-align: center; cursor: pointer; transition: 0.2s; background: #F8FAFC; font-weight: 600; color: #64748B; font-size: 0.95rem; }
-.option-card:hover { border-color: #93C5FD; background: #EFF6FF; color: #3B82F6; }
-.option-card.active { background: #EFF6FF; border-color: #3B82F6; color: #1D4ED8; box-shadow: 0 4px 12px rgba(59, 130, 246, 0.15);}
-.wizard-input { width: 100%; padding: 14px 16px; border: 2px solid #E2E8F0; border-radius: 12px; font-size: 1rem; outline: none; box-sizing: border-box; background: #F8FAFC; font-family: inherit;}
-.wizard-input:focus { border-color: #3B82F6; background: #FFFFFF; box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.1); }
+/* 向导弹窗样式已移除（“新建职业规划”入口下线） */
 
 .page-fade-enter-active, .page-fade-leave-active { transition: all 0.4s cubic-bezier(0.25, 0.8, 0.25, 1); }
 .page-fade-enter-from, .page-fade-leave-to { opacity: 0; transform: translateY(15px); }

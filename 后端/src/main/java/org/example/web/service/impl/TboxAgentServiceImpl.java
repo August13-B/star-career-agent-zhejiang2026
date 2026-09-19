@@ -37,8 +37,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * <ul>
  *   <li><b>对话</b>：WebSocket / AG-UI 事件流（HELLO → SEND_MESSAGE → RUN_STARTED → TEXT_MESSAGE_CONTENT* → RUN_FINISHED），
  *       输出统一包装为 {"data":"..."}</li>
- *   <li><b>职业报告</b>：平台专用 HTTP SSE 接口 {@code POST /api/report/stream}，
- *       平台自行串行编排 6 个智能体并逐段打 {@code agent} 标签（不再需要段标记协议）</li>
+ *   <li><b>职业报告</b>：平台异步任务 + 轮询（{@code POST /api/report} → {@code GET /api/report/jobs/{jobId}}）；
+ *       平台网关对长响应做缓冲，SSE 从公网不可用，故一律走轮询</li>
  * </ul>
  */
 @Slf4j
@@ -288,24 +288,12 @@ public class TboxAgentServiceImpl implements TboxAgentService {
         }
     }
 
-    // ====================== 职业报告多智能体流式（平台专用 HTTP SSE 接口） ======================
+    // ====================== 职业报告（平台异步任务） ======================
 
-    /**
-     * 调用平台专用报告接口 {@code POST /api/report/stream}（SSE）。
-     *
-     * <p>请求体：{@code {"message":"...","userId":"..."}}；
-     * 响应帧（全部 {@code data:{json}}）：
-     * <ul>
-     *   <li>{@code {"agent":"profile_analysis","data":"增量文本"}}（按 key 分组拼接）</li>
-     *   <li>{@code {"done":true,"agents":[...],"reportName":"...","reportId":"..."}}</li>
-     *   <li>{@code {"error":"文案"}}</li>
-     * </ul>
-     * 本方法只负责调用与转发，落库由 Controller 在 done 帧完成。
-     */
     @Override
-    public Flux<String> reportStream(Long userId, String message) {
+    public String startReportJob(Long userId, String message) {
         if (!props.isConfigured()) {
-            return Flux.just(errorChunk("AI 服务暂不可用：后端未配置百宝箱地址（TBOX_API_URL）。"));
+            throw new IllegalStateException("AI 服务暂不可用：后端未配置百宝箱地址（TBOX_API_URL）。");
         }
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("message", message == null ? "" : message);
@@ -313,71 +301,99 @@ public class TboxAgentServiceImpl implements TboxAgentService {
             // 64 位雪花 ID：必须字符串传输（JS Number 会丢精度）
             body.put("userId", String.valueOf(userId));
         }
-        log.info("调用百宝箱报告接口 /api/report/stream (userId={}, messageLen={})",
+        log.info("创建百宝箱报告任务 /api/report (userId={}, messageLen={})",
                 userId, message == null ? 0 : message.length());
-        final java.util.concurrent.atomic.AtomicInteger frames = new java.util.concurrent.atomic.AtomicInteger();
-        final java.util.concurrent.atomic.AtomicReference<String> lastAgent = new java.util.concurrent.atomic.AtomicReference<>("");
-        return http.post()
-                .uri("/api/report/stream")
+        String resp = http.post()
+                .uri("/api/report")
                 .contentType(MediaType.APPLICATION_JSON)
-                .accept(MediaType.TEXT_EVENT_STREAM)
-                .headers(h -> {
-                    String key = props.getApiKey();
-                    if (key != null && !key.isBlank()) {
-                        h.set(HttpHeaders.AUTHORIZATION, key.startsWith("Bearer ") ? key : "Bearer " + key);
-                    }
-                })
+                .headers(this::applyReportHeaders)
                 .bodyValue(body)
-                .exchangeToFlux(resp -> {
-                    log.info("平台报告响应: status={}, contentType={}",
-                            resp.statusCode(), resp.headers().contentType().orElse(null));
-                    if (resp.statusCode().isError()) {
-                        int code = resp.statusCode().value();
-                        return resp.bodyToMono(String.class).defaultIfEmpty("")
-                                .flatMapMany(b -> {
-                                    String friendly;
-                                    if (code == 502 || code == 504) {
-                                        friendly = "平台报告服务网关超时（上游未响应）：" + abbreviate(b, 160)
-                                                + "。请确认平台侧 /api/report/stream 已就绪、模型网关已开通，且使用的是正确的应用基址"
-                                                + "（预览/coding 域可能未部署该服务，需用已发布域名）。";
-                                    } else {
-                                        friendly = "AI 服务返回 " + code + "：" + abbreviate(b, 200);
-                                    }
-                                    return Flux.just(errorChunk(friendly));
-                                });
-                    }
-                    return resp.bodyToFlux(new ParameterizedTypeReference<ServerSentEvent<String>>() {
-                            })
-                            .map(ServerSentEvent::data)
-                            .filter(java.util.Objects::nonNull);
-                })
-                .doOnNext(json -> {
-                    int n = frames.incrementAndGet();
-                    String agent = extractAgentKey(json);
-                    boolean keyFrame = n <= 3 || json.contains("\"done\"") || json.contains("\"error\"");
-                    if (keyFrame || (agent != null && !agent.equals(lastAgent.get()))) {
-                        log.info("平台报告帧 #{}: {}", n, abbreviate(json, 300));
-                    }
-                    if (agent != null) {
-                        lastAgent.set(agent);
-                    }
-                })
-                .doOnComplete(() -> log.info("平台报告流结束，共 {} 帧", frames.get()))
-                .timeout(Duration.ofSeconds(Math.max(60, props.getReportTimeoutSeconds())))
-                .onErrorResume(e -> {
-                    log.error("百宝箱报告流失败: {}", e.toString());
-                    return Flux.just(errorChunk(translateError(e)));
-                });
+                .retrieve()
+                .bodyToMono(String.class)
+                .block(Duration.ofSeconds(30));
+        log.info("平台报告任务已创建: {}", abbreviate(resp, 300));
+        JsonNode n = readTree(resp);
+        String jobId = n.path("jobId").asText("");
+        if (jobId.isEmpty()) {
+            throw new IllegalStateException("创建报告任务失败：" + abbreviate(resp, 200));
+        }
+        return jobId;
     }
 
-    /** 从帧 JSON 中取 agent key（无则 null） */
-    private String extractAgentKey(String json) {
+    @Override
+    public String fetchReportJob(String jobId, String offsets) {
+        return http.get()
+                .uri(uriBuilder -> {
+                    uriBuilder.path("/api/report/jobs/{jobId}");
+                    if (offsets != null && !offsets.isBlank()) {
+                        uriBuilder.queryParam("offsets", offsets);
+                    }
+                    return uriBuilder.build(jobId);
+                })
+                .headers(this::applyReportHeaders)
+                .retrieve()
+                .bodyToMono(String.class)
+                .block(Duration.ofSeconds(30));
+    }
+
+    @Override
+    public String cancelReportJob(String jobId) {
+        log.info("取消平台报告任务 /api/report/jobs/{}/cancel", jobId);
+        return http.post()
+                .uri("/api/report/jobs/{jobId}/cancel", jobId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .headers(this::applyReportHeaders)
+                .retrieve()
+                .bodyToMono(String.class)
+                .block(Duration.ofSeconds(20));
+    }
+
+    @Override
+    public String deleteReports(java.util.List<String> reportIds, Long userId) {
+        if (reportIds == null || reportIds.isEmpty()) {
+            return "{\"deleted\":[],\"failed\":[]}";
+        }
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("reportIds", reportIds);
+        if (userId != null) {
+            // 传 userId → 平台校验归属（不符返回 failed: not_found_or_forbidden）
+            body.put("userId", String.valueOf(userId));
+        }
+        log.info("删除平台报告 /api/report/delete count={}, userId={}", reportIds.size(), userId);
+        return http.post()
+                .uri("/api/report/delete")
+                .contentType(MediaType.APPLICATION_JSON)
+                .headers(this::applyReportHeaders)
+                .bodyValue(body)
+                .retrieve()
+                .bodyToMono(String.class)
+                .block(Duration.ofSeconds(30));
+    }
+
+    /**
+     * 报告类接口统一请求头：
+     * <ul>
+     *   <li>{@code Authorization: Bearer <TBOX_API_KEY>}（.env 配了就带）</li>
+     *   <li>{@code X-Report-Token: <TBOX_REPORT_TOKEN>}（平台配置 REPORT_API_TOKEN 后必须带）</li>
+     * </ul>
+     */
+    private void applyReportHeaders(HttpHeaders h) {
+        String key = props.getApiKey();
+        if (key != null && !key.isBlank()) {
+            h.set(HttpHeaders.AUTHORIZATION, key.startsWith("Bearer ") ? key : "Bearer " + key);
+        }
+        String rt = props.getReportToken();
+        if (rt != null && !rt.isBlank()) {
+            h.set("X-Report-Token", rt);
+        }
+    }
+
+    /** 解析 JSON，失败抛异常 */
+    private JsonNode readTree(String json) {
         try {
-            JsonNode n = objectMapper.readTree(json);
-            String a = n.path("agent").asText("");
-            return a.isEmpty() ? null : a;
+            return objectMapper.readTree(json == null || json.isBlank() ? "{}" : json);
         } catch (Exception e) {
-            return null;
+            throw new IllegalStateException("JSON 解析失败: " + abbreviate(json, 120), e);
         }
     }
 
@@ -395,6 +411,58 @@ public class TboxAgentServiceImpl implements TboxAgentService {
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("error", text == null ? "AI 服务调用失败" : text);
         return toJson(m);
+    }
+
+    // ====================== 纯文本对话流式（平台专用 HTTP SSE 接口） ======================
+
+    @Override
+    public Flux<String> chatStreamHttp(Long userId, String platformConversationId, String message) {
+        if (!props.isConfigured()) {
+            return Flux.just(errorChunk("AI 服务暂不可用：后端未配置百宝箱地址（TBOX_API_URL）。"));
+        }
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("message", message == null ? "" : message);
+        if (userId != null) {
+            body.put("userId", String.valueOf(userId));
+        }
+        if (platformConversationId != null && !platformConversationId.isBlank()) {
+            body.put("conversationId", platformConversationId);
+        }
+        log.info("调用百宝箱对话接口 /api/chat/stream (userId={}, conversationId={}, messageLen={})",
+                userId, platformConversationId, message == null ? 0 : message.length());
+        final java.util.concurrent.atomic.AtomicInteger frames = new java.util.concurrent.atomic.AtomicInteger();
+        return http.post()
+                .uri("/api/chat/stream")
+                .contentType(MediaType.APPLICATION_JSON)
+                .accept(MediaType.TEXT_EVENT_STREAM)
+                .headers(h -> {
+                    String key = props.getApiKey();
+                    if (key != null && !key.isBlank()) {
+                        h.set(HttpHeaders.AUTHORIZATION, key.startsWith("Bearer ") ? key : "Bearer " + key);
+                    }
+                })
+                .bodyValue(body)
+                .exchangeToFlux(resp -> {
+                    if (resp.statusCode().isError()) {
+                        int code = resp.statusCode().value();
+                        return resp.bodyToMono(String.class).defaultIfEmpty("")
+                                .flatMapMany(b -> Flux.just(errorChunk(
+                                        "AI 对话服务返回 " + code + "：" + abbreviate(b, 200))));
+                    }
+                    log.info("平台对话响应: status={}, contentType={}",
+                            resp.statusCode(), resp.headers().contentType().orElse(null));
+                    return resp.bodyToFlux(new ParameterizedTypeReference<ServerSentEvent<String>>() {
+                            })
+                            .map(ServerSentEvent::data)
+                            .filter(java.util.Objects::nonNull);
+                })
+                .doOnNext(json -> frames.incrementAndGet())
+                .doOnComplete(() -> log.info("平台对话流结束，共 {} 帧", frames.get()))
+                .timeout(Duration.ofSeconds(Math.max(30, props.getChatTimeoutSeconds())))
+                .onErrorResume(e -> {
+                    log.error("百宝箱对话流失败: {}", e.toString());
+                    return Flux.just(errorChunk(translateError(e)));
+                });
     }
 
     // ====================== 结构化卡片 → Markdown（前端零改动） ======================

@@ -14,7 +14,7 @@
 - 后端：Spring Boot 3.5 + MyBatis-Plus + JWT + RSA/AES（`后端/`，两个包合并：`org.example.web` 业务、`wwy.example.springboot` 岗位库）
 - AI：**蚂蚁百宝箱企业版**（WebSocket / AG-UI 事件流），链路 前端 → 后端 `TboxAgentServiceImpl` → 百宝箱
 - 数据：MySQL `youthpath`（31 张表）+ Redis（可选）
-- AI 参数来自 `后端/.env`（不入库）：`TBOX_API_URL` / `TBOX_API_KEY` / `TBOX_AGENT_ID`
+- AI 参数来自 `后端/.env`（不入库）：`TBOX_API_URL` / `TBOX_API_KEY` / `TBOX_REPORT_TOKEN` / `TBOX_AGENT_ID`
 
 ## 3. 启动方式
 
@@ -44,10 +44,25 @@ python manage.py free-port backend
 8. **端口/IPv4**：Vite 代理与后端检查一律用 `127.0.0.1`，避免 localhost 解析到 IPv6 `::1`。
 9. **`数据库结构.sql` 与 `migrations/` 必须同步**：历史上出现「结构漂移」——建表脚本仍是旧列宽，只有迁移修过。
 10. **Mapper 必须「有实现」**：`@Mapper` 接口若无 XML、无注解，运行期报 `Invalid bound statement`（曾漏 `MatchDetailMapper`、`CareerReportMapper`）。
-11. **职业报告走平台专用 SSE 接口**：`POST {TBOX_API_URL}/api/report/stream`（不再用 WS 报告通道 + 段标记协议）。
-   - 总耗时 160~185s，某段内 20~30s 无帧属正常（`searchJobs`）；`report-timeout-seconds` 默认 360s。
-   - `spring.mvc.async.request-timeout=600000` 必须保留，否则长 SSE 被容器提前掉断。
-   - 平台落它的库（给 AI 看，自动注入"上一份报告"），我们 `done` 帧时另存 MySQL（给用户看）；前端详情/PDF 用我们的 `reportId`。
+11. **职业报告 = 平台异步任务 + 前端 offsets 增量轮询**（网关缓冲长响应，SSE 公网不可用）：
+    - 后端 `POST /api/career-report/start` → 平台 `POST /api/report` → `202 {jobId}`
+    - 后端 `GET /api/career-report/jobs/{jobId}?offsets={...}` → 平台同名接口（透传 offsets）；
+      running 返回 `deltas:[{agent,data}]`（按 offsets 切片，不重不漏）+ `currentAgent/agentsDone/segmentChars/progressChars`
+    - 前端每 1.5s 轮询：`deltas` 追加到卡片缓冲 → 本地 30ms 均匀打字机实时呈现；done 用 `content.agents[]` 校准
+    - `jobId` 存 localStorage，刷新/切页可续（任务在平台侧独立运行，与浏览器连接无关）
+    - 后端首次 done 时按 `content.agents` 幂等落库 MySQL；前端详情/PDF 用我们的 `reportId`
+    - 注意：平台 done 帧顶层 `agents` 为 `null`，6 段在 **`content.agents[]`**（key/name/content）
+12. **纯文本对话默认走平台 SSE**：`POST {TBOX_API_URL}/api/chat/stream`（`TBOX_CHAT_CHANNEL=http`，待平台提供）；
+    平台未就绪时设 `TBOX_CHAT_CHANNEL=ws` 回退 WS。带图片对话始终走 `WS /ws`。
+    - 对话上下文：后端用 `StudentProfileContextService.build()` 注入账号画像 + 本轮问题；多轮历史由平台按 `conversationId` 注入。
+    - 帧：`{"delta":...}`* + `{"type":"tool",...}` + `{"done":...}` + `{"error":...}`；我们 `done` 时另存 MySQL。
+13. **报告可随时停止**（平台已上线）：前端「停止生成」→ 后端 `POST /api/career-report/jobs/{jobId}/cancel`
+    → 平台 `POST /api/report/jobs/{jobId}/cancel`（abort、不落库、幂等、done no-op；`status=canceled` 为终态）。
+    停止后丢弃本次内容（**不写 MySQL**）；轮询遇 `canceled` 也自动收尾。
+14. **报告批量删除**（平台已上线）：个人中心「管理」→ 后端 `POST /api/career-report/batch-delete`：
+    - 我们侧**逻辑删除**（`is_deleted=1`）；平台侧**物理删除** `POST /api/report/delete`（带 `userId` 校验归属）
+    - 平台失败**不阻塞**，返回 `failed/skipped`；需 `career_report.platform_report_id`（迁移 **006**）。
+15. **报告类接口鉴权**：平台配置 `REPORT_API_TOKEN` 后需带 `X-Report-Token`；本仓库用 `.env` 的 `TBOX_REPORT_TOKEN`。
 
 ## 5. 当前阻塞（平台侧）
 

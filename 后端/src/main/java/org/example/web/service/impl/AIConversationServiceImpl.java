@@ -39,6 +39,14 @@ public class AIConversationServiceImpl implements AIConversationService {
     @org.springframework.beans.factory.annotation.Autowired
     private org.example.web.service.TboxAgentService tboxAgentService;
 
+    /** 百宝箱配置（对话通道选择 chat-channel） */
+    @Autowired
+    private org.example.web.config.TboxProperties tboxProperties;
+
+    /** 账号画像上下文构建（对话与报告同源） */
+    @Autowired
+    private StudentProfileContextService studentProfileContextService;
+
 
     @Autowired
     private AiConversationMapper aiConversationMapper;
@@ -1285,6 +1293,20 @@ public class AIConversationServiceImpl implements AIConversationService {
 
     @Override
     public Flux<String> sendMessageStream(Long userId, String userMessage, Integer conversationType, Long conversationId, Double temperature) {
+        // A02：纯文本对话默认走百宝箱 HTTP SSE（POST /api/chat/stream）；
+        // 若平台新接口尚未就绪，可在 .env 设 TBOX_CHAT_CHANNEL=ws 切回旧 WebSocket 兜底。
+        // 带图片对话始终走 WS（见 sendMessageWithImageStream）。
+        if ("ws".equalsIgnoreCase(tboxProperties.getChatChannel())) {
+            return sendMessageStreamWs(userId, userMessage, conversationType, conversationId, temperature);
+        }
+        return sendMessageStreamHttp(userId, userMessage, conversationType, conversationId, temperature);
+    }
+
+    /**
+     * 【兑底/旧链路】WebSocket 流式对话（先收集后落库）。
+     * 保留以支持 {@code tbox.chat-channel=ws}。
+     */
+    private Flux<String> sendMessageStreamWs(Long userId, String userMessage, Integer conversationType, Long conversationId, Double temperature) {
         // 流式版本：保存用户消息，调用AI流式接口，收集响应并保存AI消息
         try {
             // 1. 获取用户信息
@@ -1503,6 +1525,178 @@ public class AIConversationServiceImpl implements AIConversationService {
                     });
         } catch (Exception e) {
             return Flux.error(new RuntimeException("发送流式消息失败: " + e.getMessage()));
+        }
+    }
+
+    /**
+     * 纯文本对话：百宝箱 HTTP SSE（POST /api/chat/stream）。
+     *
+     * <p>帧映射：{@code delta} → 前端 {@code {"data":...}}；{@code type=tool} 原样透传；
+     * {@code done} → 落库（我们 MySQL）+ 回填平台 conversationId/messageId；{@code error} 原样透传。
+     * 多轮上下文由平台按 conversationId 注入，本地不再拼历史。
+     */
+    private Flux<String> sendMessageStreamHttp(Long userId, String userMessage, Integer conversationType,
+                                               Long conversationId, Double temperature) {
+        try {
+            User user = userMapper.findById(userId);
+            if (user == null) {
+                return Flux.error(new RuntimeException("用户不存在"));
+            }
+
+            // 1. 获取或创建本地对话
+            AiConversation conversation;
+            if (conversationId != null && conversationId > 0) {
+                conversation = aiConversationMapper.selectConversationById(conversationId);
+                if (conversation == null || !conversation.getUserId().equals(userId)) {
+                    return Flux.error(new RuntimeException("对话不存在或无权限"));
+                }
+                if (conversation.getIsDeleted() != null && conversation.getIsDeleted() == 1) {
+                    return Flux.error(new RuntimeException("对话已被删除"));
+                }
+            } else {
+                conversation = getOrCreateConversation(userId, conversationType, userMessage);
+                if (conversation == null) {
+                    return Flux.error(new RuntimeException("创建或获取对话失败"));
+                }
+            }
+            final Long localConversationId = conversation.getId();
+
+            // 2. 历史（仅用于去重与序号）
+            List<AiMessage> historyMessages = aiConversationMapper.selectMessagesByConversationId(localConversationId);
+
+            // 3. contextInfo
+            String contextInfo;
+            try {
+                Map<String, Object> contextMap = new HashMap<>();
+                contextMap.put("userMessage", userMessage);
+                contextMap.put("channel", "http-sse");
+                contextMap.put("timestamp", LocalDateTime.now().toString());
+                contextInfo = objectMapper.writeValueAsString(contextMap);
+            } catch (Exception e) {
+                contextInfo = "{}";
+            }
+            final String finalContextInfo = contextInfo;
+
+            // 4. 保存用户消息（10 秒内重复则复用）
+            AiMessage existingUserMsg = null;
+            LocalDateTime tenSecondsAgo = LocalDateTime.now().minusSeconds(10);
+            for (AiMessage msg : historyMessages) {
+                if (msg.getMessageType() == 1 && userMessage != null && userMessage.equals(msg.getContent())
+                        && msg.getCreateTime() != null && msg.getCreateTime().isAfter(tenSecondsAgo)) {
+                    existingUserMsg = msg;
+                    break;
+                }
+            }
+            int sequence;
+            if (existingUserMsg != null) {
+                sequence = existingUserMsg.getSequence();
+            } else {
+                AiMessage userMsg = new AiMessage();
+                userMsg.setId(SnowIdCreater.generateId(23));
+                userMsg.setConversationId(localConversationId);
+                userMsg.setMessageType(1);
+                userMsg.setContentType(1);
+                userMsg.setContent(userMessage);
+                userMsg.setContextInfo(finalContextInfo);
+                sequence = historyMessages.size() + 1;
+                userMsg.setSequence(sequence);
+                userMsg.setCreateTime(LocalDateTime.now());
+                aiConversationMapper.insertMessage(userMsg);
+            }
+            final int aiSequence = sequence + 1;
+
+            // 5. 标记生成中
+            aiConversationMapper.updateConversationStatus(localConversationId, 1);
+
+            // 6. 拼上下文：账号画像（部分缺失自动降级）+ 本轮问题
+            String message = studentProfileContextService.build(userId, null, userMessage);
+            String platformConversationId = conversation.getTboxConversationId();
+
+            // 7. 调平台 SSE，逐帧转换下发
+            final StringBuilder fullResponse = new StringBuilder();
+            return tboxAgentService.chatStreamHttp(userId, platformConversationId, message)
+                    .map(frame -> handleChatFrame(frame, localConversationId, finalContextInfo,
+                            aiSequence, fullResponse))
+                    .onErrorResume(e -> {
+                        System.err.println("对话流式处理失败: " + e.getMessage());
+                        Map<String, Object> err = new HashMap<>();
+                        err.put("error", "对话服务异常：" + e.getMessage());
+                        try {
+                            return Flux.just(objectMapper.writeValueAsString(err));
+                        } catch (Exception ex) {
+                            return Flux.just("{\"error\":\"对话服务异常\"}");
+                        }
+                    });
+        } catch (Exception e) {
+            return Flux.error(new RuntimeException("发送流式消息失败: " + e.getMessage()));
+        }
+    }
+
+    /** 平台对话帧 → 前端帧；done 帧落库并回填平台会话映射 */
+    private String handleChatFrame(String frame, Long localConversationId, String contextInfo,
+                                   int aiSequence, StringBuilder fullResponse) {
+        try {
+            com.fasterxml.jackson.databind.JsonNode n = objectMapper.readTree(frame);
+            if (n.has("delta")) {
+                String delta = n.path("delta").asText("");
+                fullResponse.append(delta);
+                Map<String, Object> out = new HashMap<>();
+                out.put("data", delta);
+                return objectMapper.writeValueAsString(out);
+            }
+            if (n.has("done")) {
+                String tboxConvId = n.path("conversationId").asText(null);
+                saveAiMessage(localConversationId, contextInfo, aiSequence, fullResponse.toString(),
+                        n.path("messageId").asText(null), n.path("requestId").asText(null));
+                if (tboxConvId != null && !tboxConvId.isBlank()) {
+                    try {
+                        aiConversationMapper.updateTboxConversationId(localConversationId, tboxConvId);
+                    } catch (Exception ignore) {
+                    }
+                }
+                aiConversationMapper.updateConversationStatus(localConversationId, 2);
+                return frame;
+            }
+            // tool 状态帧 / error 帧：原样透传（前端各取所需）
+            return frame;
+        } catch (Exception e) {
+            System.err.println("解析对话帧失败: " + e.getMessage());
+            return frame;
+        }
+    }
+
+    /** 把 AI 回复存入我们 MySQL（供前端列表/历史显示） */
+    private void saveAiMessage(Long conversationId, String contextInfo, int sequence, String text,
+                               String tboxMessageId, String tboxRequestId) {
+        try {
+            Map<String, Object> raw = new HashMap<>();
+            raw.put("response", text);
+            String content;
+            try {
+                content = objectMapper.writeValueAsString(raw);
+            } catch (Exception e) {
+                content = "{\"response\":\"\"}";
+            }
+            AiMessage aiMsg = new AiMessage();
+            aiMsg.setId(SnowIdCreater.generateId(23));
+            aiMsg.setConversationId(conversationId);
+            aiMsg.setMessageType(2);
+            aiMsg.setContentType(1);
+            aiMsg.setContent(content);
+            aiMsg.setContextInfo(contextInfo);
+            aiMsg.setSequence(sequence);
+            aiMsg.setCreateTime(LocalDateTime.now());
+            aiMsg.setTboxMessageId(tboxMessageId);
+            aiMsg.setTboxRequestId(tboxRequestId);
+            aiConversationMapper.insertMessage(aiMsg);
+            if (tboxMessageId != null || tboxRequestId != null) {
+                try {
+                    aiConversationMapper.updateMessageTboxIds(aiMsg.getId(), tboxMessageId, tboxRequestId);
+                } catch (Exception ignore) {
+                }
+            }
+        } catch (Exception e) {
+            System.err.println("保存AI流式消息失败: " + e.getMessage());
         }
     }
 

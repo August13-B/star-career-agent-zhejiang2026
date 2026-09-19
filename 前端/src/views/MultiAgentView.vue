@@ -9,6 +9,7 @@
         </div>
         <div class="header-actions">
           <button class="btn ghost" @click="reset" :disabled="running">清空</button>
+          <button v-if="running" class="btn danger" @click="stopGenerating">停止生成</button>
           <button class="btn primary" @click="generate" :disabled="running || !userId">
             <AppIcon name="sparkle" :size="15" />
             {{ running ? '生成中…' : '生成职业报告' }}
@@ -28,6 +29,8 @@
           :disabled="running"
         ></textarea>
       </section>
+
+      <p v-if="running" class="progress-hint">平台正在生成… 已输出 {{ progressChars }} 字（共 6 个智能体，预计 3~4 分钟）</p>
 
       <section class="agents">
         <article
@@ -52,7 +55,15 @@
             </div>
           </div>
           <div class="agent-body" v-if="agent.content">
-            <div class="markdown" v-html="renderMarkdown(agent.content)"></div>
+            <div
+              class="markdown"
+              :class="{ 'is-collapsed': !agent.expanded }"
+              :ref="el => setBodyRef(i, el)"
+              v-html="renderMarkdown(agent.expanded ? agent.content : tailLines(agent.content, 3))"
+            ></div>
+            <button class="expand-btn" @click="toggleExpand(i)">
+              {{ agent.expanded ? '收起' : '展开全文' }}
+            </button>
           </div>
           <div class="agent-placeholder" v-else>
             {{ agent.status === 'running' ? '正在检索知识库并生成…' : '等待前序智能体完成' }}
@@ -75,7 +86,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import axios from 'axios'
 import AppIcon from '../components/AppIcon.vue'
@@ -99,12 +110,32 @@ const userId = ref(localStorage.getItem('userId') || '')
 const extraInput = ref('')
 const running = ref(false)
 const finished = ref(false)
-const hasMarkers = ref(true)
 const savedHint = ref('')
+const progressChars = ref(0)
 const reportName = ref('')
 const reportId = ref('')
 const errorMsg = ref('')
-const agents = ref(AGENT_DEFS.map(a => ({ ...a, status: 'waiting', content: '' })))
+const agents = ref(AGENT_DEFS.map(a => ({ ...a, status: 'waiting', content: '', received: '', expanded: false })))
+
+// 卡片正文 DOM（展开态自动滚到底部）
+const bodyRefs = []
+const setBodyRef = (i, el) => { if (el) bodyRefs[i] = el }
+const toggleExpand = (i) => {
+  const card = agents.value[i]
+  if (!card) return
+  card.expanded = !card.expanded
+  if (card.expanded) {
+    nextTick(() => {
+      const el = bodyRefs[i]
+      if (el) el.scrollTop = el.scrollHeight
+    })
+  }
+}
+// 收起态：只展示最新的 n 行
+const tailLines = (text, n = 3) => {
+  const lines = String(text || '').split('\n').map(l => l.replace(/\s+$/, '')).filter(l => l.trim() !== '')
+  return lines.slice(-n).join('\n')
+}
 
 const getUserInfo = async () => {
   const token = localStorage.getItem('token')
@@ -132,8 +163,61 @@ const getUserInfo = async () => {
   }
 }
 
+// ===== 轮询 / 打字机状态（刷新后可用 localStorage 里的 jobId 续跑） =====
+let pollTimer = null          // setInterval id（固定节拍；不靠递归 setTimeout，避免一处异常就永远停）
+let pollInFlight = false      // 在途保护：同一时刻只允许一个请求
+let currentPollTick = null    // 供可见性回调/看门狗立即补拉
+let pollFailures = 0
+let pollToken = 0
+let typeTimer = null
+let currentJobId = null       // 当前报告任务ID（供「停止生成」）
+let offsets = {}            // 各智能体已读字符数（每次轮询回传给平台做切片，保证不重不漏）
+let doneReceived = false
+const POLL_MS = 1500
+const POLL_TIMEOUT_MS = 12000
+
+const stopPolling = () => {
+  if (pollTimer) { clearInterval(pollTimer); pollTimer = null }
+  currentPollTick = null
+}
+const stopTypewriter = () => { if (typeTimer) { clearInterval(typeTimer); typeTimer = null } }
+
+// 本地均匀打字机：把 card.received 平滑播放到 card.content（平台 delta 是 1~2s 一批）
+const startTypewriter = () => {
+  if (typeTimer) return
+  typeTimer = setInterval(() => {
+    let catchingUp = false
+    agents.value.forEach((card, i) => {
+      const recv = card.received || ''
+      const shown = card.content || ''
+      if (shown.length < recv.length) {
+        const backlog = recv.length - shown.length
+        const step = Math.max(2, Math.ceil(backlog / 30))
+        card.content = recv.slice(0, shown.length + step)
+        catchingUp = true
+        // 展开态：自动滚到底，保证总看到最新输出
+        if (card.expanded && bodyRefs[i]) {
+          const el = bodyRefs[i]
+          el.scrollTop = el.scrollHeight
+        }
+      }
+    })
+    // 全部播完 且 已收到 done → 收尾
+    if (!catchingUp && doneReceived) {
+      stopTypewriter()
+      agents.value.forEach(c => { if (c.status !== 'error') c.status = 'done' })
+      finished.value = true
+      running.value = false
+    }
+  }, 30)
+}
+
 const reset = () => {
-  agents.value = AGENT_DEFS.map(a => ({ ...a, status: 'waiting', content: '' }))
+  stopPolling()
+  stopTypewriter()
+  offsets = {}
+  doneReceived = false
+  agents.value = AGENT_DEFS.map(a => ({ ...a, status: 'waiting', content: '', received: '', expanded: false }))
   finished.value = false
   errorMsg.value = ''
   savedHint.value = ''
@@ -148,15 +232,18 @@ const markPreviousDone = (idx) => {
 }
 
 const generate = async () => {
+  if (running.value) return
+  stopPolling()
   reset()
   running.value = true
+  progressChars.value = 0
   const token = localStorage.getItem('token') || ''
   const headers = {
     'Content-Type': 'application/json',
     ...(token ? { Authorization: token.startsWith('Bearer ') ? token : `Bearer ${token}` } : {})
   }
   try {
-    const resp = await fetch('/api/career-report/generate-stream', {
+    const resp = await fetch('/api/career-report/start', {
       method: 'POST',
       headers,
       body: JSON.stringify({
@@ -165,57 +252,163 @@ const generate = async () => {
           '请为我生成一份完整的职业规划报告。若缺少我的画像信息，请基于岗位知识库与通用情况给出，并说明假设。'
       })
     })
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
-
-    const reader = resp.body.getReader()
-    const decoder = new TextDecoder('utf-8')
-    let buffer = ''
-
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
-      buffer += decoder.decode(value, { stream: true })
-      const lines = buffer.split('\n')
-      buffer = lines.pop()
-
-      for (const line of lines) {
-        const raw = line.replace(/^data:\s*/, '').trim()
-        if (!raw) continue
-        let msg
-        try { msg = JSON.parse(raw) } catch { continue }
-
-        if (msg.done) {
-          // 后端结束帧：{done, agents, reportName, reportId(我们的), platformReportId, saved}
-          hasMarkers.value = msg.hasMarkers !== false
-          reportName.value = msg.reportName || ''
-          reportId.value = msg.reportId ? String(msg.reportId) : ''
-          savedHint.value = msg.saved === false ? '（但落库失败，详见后端日志）' : '并已保存'
-          continue
-        }
-        if (msg.error) {
-          // 平台失败帧：{error:"文案"}
-          errorMsg.value = String(msg.error)
-          const runningAgent = agents.value.find(a => a.status === 'running')
-          if (runningAgent) runningAgent.status = 'error'
-          continue
-        }
-        const idx = agents.value.findIndex(a => a.key === msg.agent)
-        if (idx < 0) continue
-        markPreviousDone(idx)
-        const agent = agents.value[idx]
-        if (agent.status === 'waiting') agent.status = 'running'
-        agent.content += msg.data || ''
-      }
+    const data = await resp.json()
+    if (data.code !== 10001 && data.code !== 200 && data.code !== 0) {
+      throw new Error(data.message || '创建报告任务失败')
     }
-    agents.value.forEach(a => { if (a.status === 'running') a.status = 'done' })
-    finished.value = true
+    const jobId = data.data && data.data.jobId
+    if (!jobId) throw new Error('未获取到 jobId')
+    currentJobId = jobId
+    // 持久化 jobId：任务在平台侧独立运行，刷新页面后仍可续跑
+    localStorage.setItem('reportJobId', jobId)
+    startPolling(jobId)
   } catch (e) {
-    errorMsg.value = `生成失败：${e.message}（请确认后端已启动、模型网关已开通）`
-    const runningAgent = agents.value.find(a => a.status === 'running')
-    if (runningAgent) runningAgent.status = 'error'
-  } finally {
+    errorMsg.value = `生成失败：${e.message}（请确认后端已启动、平台报告服务已就绪）`
     running.value = false
   }
+}
+
+// 轮询平台任务：带 offsets 拿正文增量 → 本地打字机实时呈现
+// 健壮性：请求超时 + 失败重试（不中断、不清 jobId） + 页面可见时立即补拉
+const startPolling = (jobId) => {
+  stopPolling()
+  currentJobId = jobId
+  pollFailures = 0
+  const myToken = ++pollToken
+  const tick = async () => {
+    if (myToken !== pollToken || pollInFlight) return
+    pollInFlight = true
+    try {
+      const token = localStorage.getItem('token') || ''
+      const res = await axios.get(`/api/career-report/jobs/${jobId}`, {
+        params: { offsets: JSON.stringify(offsets) },
+        timeout: POLL_TIMEOUT_MS,
+        headers: token ? { Authorization: token.startsWith('Bearer ') ? token : `Bearer ${token}` } : {}
+      })
+      // 已被新一轮轮询取代 → 丢弃旧响应，避免重复追加
+      if (myToken !== pollToken) return
+      const body = res.data || {}
+      // 后端业务错误（Result.error）不能默默继续轮询
+      if (body.code !== undefined && body.code !== 10001 && body.code !== 200 && body.code !== 0) {
+        throw new Error(body.message || '查询报告任务失败')
+      }
+      const d = body.data || {}
+      if (!d.status && !d.error) {
+        throw new Error('报告任务响应异常（无 status）')
+      }
+      pollFailures = 0
+      if (d.error) {
+        errorMsg.value = String(d.error)
+        const ra = agents.value.find(a => a.status === 'running')
+        if (ra) ra.status = 'error'
+        localStorage.removeItem('reportJobId')
+        running.value = false
+        stopPolling()
+        stopTypewriter()
+        return
+      }
+      // 平台侧已取消（终态）：停止本地轮询并清理
+      if (d.status === 'canceled') {
+        stopPolling()
+        stopTypewriter()
+        pollToken++
+        currentJobId = null
+        localStorage.removeItem('reportJobId')
+        running.value = false
+        errorMsg.value = '任务已取消'
+        return
+      }
+      progressChars.value = d.progressChars || progressChars.value
+
+      // 1) 追加增量正文（按 agent），并推进本地已读位置（下次 offsets 回传）
+      if (Array.isArray(d.deltas)) {
+        d.deltas.forEach(dl => {
+          const j = agents.value.findIndex(a => a.key === dl.agent)
+          if (j < 0) return
+          const card = agents.value[j]
+          card.received = (card.received || '') + (dl.data || '')
+          offsets[dl.agent] = (card.received || '').length
+          if (card.status === 'waiting') card.status = 'running'
+        })
+      }
+      // 2) 推进卡片状态（currentAgent 高亮 / agentsDone 标完成）
+      const idx = agents.value.findIndex(a => a.key === d.currentAgent)
+      if (idx >= 0) {
+        markPreviousDone(idx)
+        if (agents.value[idx].status === 'waiting') agents.value[idx].status = 'running'
+      }
+      if (Array.isArray(d.agentsDone)) {
+        d.agentsDone.forEach(k => {
+          const j = agents.value.findIndex(a => a.key === k)
+          if (j >= 0) agents.value[j].status = 'done'
+        })
+      }
+      startTypewriter()
+
+      // 3) 完成：用最终全文校准，打字机继续播完剩余
+      if (d.status === 'done') {
+        doneReceived = true
+        reportName.value = d.reportName || ''
+        reportId.value = d.reportId ? String(d.reportId) : ''
+        savedHint.value = d.saved === false ? '（但落库失败，详见后端日志）' : '并已保存'
+        localStorage.removeItem('reportJobId')
+        stopPolling()
+        const list = d.content && Array.isArray(d.content.agents) ? d.content.agents : []
+        list.forEach(seg => {
+          const j = agents.value.findIndex(a => a.key === (seg.key || seg.name))
+          if (j >= 0) agents.value[j].received = String(seg.content || '')
+        })
+        startTypewriter()
+        return
+      }
+      // 诊断日志（浏览器 Console 可看到每一拍）
+      console.debug('[report] poll', d.status, d.currentAgent || '-',
+        'deltas=', (d.deltas || []).map(x => `${x.agent}:${(x.data || '').length}`).join(','),
+        'chars=', d.progressChars)
+    } catch (e) {
+      if (myToken !== pollToken) return
+      pollFailures++
+      console.warn('[report] 轮询失败', pollFailures, e && e.message)
+      if (pollFailures >= 6) {
+        errorMsg.value = `轮询失败（已重试 ${pollFailures} 次）：${e && e.message}`
+        localStorage.removeItem('reportJobId')
+        running.value = false
+        stopPolling()
+        stopTypewriter()
+        return
+      }
+    } finally {
+      pollInFlight = false
+    }
+  }
+  currentPollTick = tick
+  tick()
+  // 固定节拍驱动：即使某一拍异常/请求卡住，后续拍仍会继续
+  pollTimer = setInterval(tick, POLL_MS)
+}
+
+// 随时停止：通知后端取消平台任务 → 丢弃本次内容（不落库）、清空界面
+const stopGenerating = async () => {
+  const jobId = currentJobId || localStorage.getItem('reportJobId')
+  if (jobId) {
+    try {
+      const token = localStorage.getItem('token') || ''
+      await axios.post(`/api/career-report/jobs/${jobId}/cancel`, {}, {
+        timeout: 15000,
+        headers: token ? { Authorization: token.startsWith('Bearer ') ? token : `Bearer ${token}` } : {}
+      })
+    } catch (e) {
+      console.warn('[report] 取消平台任务失败（仍会停止本地生成）', e && e.message)
+    }
+  }
+  stopPolling()
+  stopTypewriter()
+  pollToken++                 // 令在途轮询响应作废
+  currentJobId = null
+  localStorage.removeItem('reportJobId')
+  running.value = false
+  reset()
+  errorMsg.value = '已停止生成（本次内容已丢弃）'
 }
 
 const escapeHtml = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -234,7 +427,83 @@ const renderMarkdown = (text) => {
   return `<p>${html}</p>`
 }
 
-onMounted(getUserInfo)
+// 无进行中任务时：拉取该用户最近一份报告并直接展示（刷新后也能看到最终报告）
+const loadLatestReport = async () => {
+  if (!userId.value) return
+  try {
+    const token = localStorage.getItem('token') || ''
+    const res = await axios.get(`/api/career-report/user/${userId.value}`, {
+      timeout: 12000,
+      headers: token ? { Authorization: token.startsWith('Bearer ') ? token : `Bearer ${token}` } : {}
+    })
+    const body = res.data || {}
+    if (body.code !== 10001 && body.code !== 200 && body.code !== 0) return
+    const list = Array.isArray(body.data) ? body.data : []
+    if (list.length === 0) return
+    const latest = list[0]
+    let content = null
+    try {
+      content = typeof latest.reportContent === 'string' ? JSON.parse(latest.reportContent) : latest.reportContent
+    } catch (e) { content = null }
+    const list2 = content && Array.isArray(content.agents) ? content.agents : []
+    if (list2.length === 0) return
+    reportName.value = latest.reportName || ''
+    reportId.value = latest.id ? String(latest.id) : ''
+    savedHint.value = '（最近一次）'
+    list2.forEach(seg => {
+      const j = agents.value.findIndex(a => a.key === (seg.key || seg.name))
+      if (j >= 0) {
+        const card = agents.value[j]
+        card.received = String(seg.content || '')
+        card.content = card.received
+        card.status = 'done'
+      }
+    })
+    agents.value.forEach(c => { if (c.status !== 'error' && !c.received) c.status = 'done' })
+    finished.value = true
+    running.value = false
+  } catch (e) { /* 无历史/未登录时忽略 */ }
+}
+
+// 页面可见/聚焦时立即补拉一拍（后台标签页定时器被节流，是“看着卡住”的常见原因）
+const catchUp = () => {
+  if (document.visibilityState !== 'visible') return
+  if (!running.value) return
+  const jobId = localStorage.getItem('reportJobId')
+  if (jobId) {
+    if (currentPollTick) {
+      currentPollTick()
+    } else {
+      console.warn('[report] 看门狗：轮询已停止，自动重启')
+      startPolling(jobId)
+    }
+  }
+  if (!typeTimer) startTypewriter()
+}
+document.addEventListener('visibilitychange', catchUp)
+window.addEventListener('focus', catchUp)
+
+// 看门狗：运行中但轮询已停止 → 自动重启（防任何意外导致永久卡住）
+setInterval(() => {
+  if (!running.value) return
+  const jobId = localStorage.getItem('reportJobId')
+  if (jobId && !pollTimer) {
+    console.warn('[report] 看门狗：轮询已停止，自动重启')
+    startPolling(jobId)
+  }
+}, 5000)
+
+onMounted(async () => {
+  await getUserInfo()
+  const jobId = localStorage.getItem('reportJobId')
+  if (jobId && userId.value) {
+    // 刷新续跑：任务在平台侧独立运行，用持久化的 jobId 继续轮询
+    running.value = true
+    startPolling(jobId)
+  } else {
+    await loadLatestReport()
+  }
+})
 </script>
 
 <style scoped>
@@ -246,6 +515,8 @@ onMounted(getUserInfo)
 .badge { display: inline-flex; align-items: center; gap: 6px; font-size: 0.74rem; font-weight: 600;
          color: #2563EB; background: #EFF6FF; padding: 4px 10px; border-radius: 6px; }
 .subtitle { margin: 0; color: #64748B; font-size: 0.9rem; }
+.progress-hint { margin: 0 0 12px; padding: 8px 14px; background: #EFF6FF; border: 1px solid #DBEAFE; border-radius: 8px;
+                 color: #1D4ED8; font-size: 0.84rem; }
 .header-actions { display: flex; gap: 8px; }
 
 .btn { display: inline-flex; align-items: center; gap: 6px; border: 1px solid transparent; border-radius: 8px;
@@ -256,6 +527,8 @@ onMounted(getUserInfo)
 .btn.primary:disabled { opacity: 0.5; cursor: not-allowed; }
 .btn.ghost { background: #FFFFFF; color: #475569; border-color: #DFE6EF; }
 .btn.ghost:hover { background: #F1F5F9; }
+.btn.danger { background: #FFFFFF; color: #DC2626; border-color: #FECACA; }
+.btn.danger:hover { background: #FEF2F2; }
 
 .input-panel { background: #FFFFFF; border: 1px solid #E4EAF2; border-radius: 12px; padding: 12px 15px; margin-bottom: 14px; }
 .input-label { display: block; font-size: 0.78rem; font-weight: 600; color: #64748B; margin-bottom: 8px; }
@@ -288,7 +561,13 @@ onMounted(getUserInfo)
 .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; animation: pulse 1.2s infinite; }
 @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.25; } }
 
-.agent-body { margin-top: 12px; border-top: 1px solid #F1F5F9; padding-top: 10px; }
+.agent-body { margin-top: 12px; border-top: 1px solid #F1F5F9; padding-top: 10px; display: flex; flex-direction: column; }
+/* 收起态：只显示最新 3 行（内容由 tailLines 截取） */
+.agent-body .markdown.is-collapsed { max-height: none; overflow: hidden; }
+/* 展开态：可滚动，JS 每次输出自动滚到底，保证总看到最新 */
+.agent-body .markdown:not(.is-collapsed) { max-height: 60vh; overflow-y: auto; padding-right: 6px; }
+.expand-btn { align-self: flex-start; margin-top: 8px; background: none; border: none; color: #2563EB; font-size: 0.78rem; font-weight: 600; cursor: pointer; padding: 2px 0; }
+.expand-btn:hover { text-decoration: underline; }
 .agent-placeholder { margin-top: 10px; font-size: 0.82rem; color: #B6C2D2; }
 
 .markdown :deep(h2), .markdown :deep(h3), .markdown :deep(h4) { color: #1E293B; margin: 12px 0 8px; font-weight: 650; }

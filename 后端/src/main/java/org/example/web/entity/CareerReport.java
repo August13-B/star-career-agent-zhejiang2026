@@ -48,6 +48,9 @@ public class CareerReport {
      */
     private String reportContent;
 
+    /** 百宝箱平台报告ID（Appwrite $id；用于两处同步删除） */
+    private String platformReportId;
+
     /**
      * 使用的模板ID
      */

@@ -162,6 +162,7 @@ MIGRATIONS_DIR = DB_DIR / "migrations"
 #   005：画像表加宽加密列 + is_deleted 收敛（修复「Data too long」与「保存后查不到」）
 AUTO_MIGRATIONS = [
     MIGRATIONS_DIR / "005_fix_profile_schema.sql",
+    MIGRATIONS_DIR / "006_add_platform_report_id.sql",
 ]
 EXPECTED_TABLES = 31
 
@@ -369,6 +370,7 @@ def cmd_db(args):
             "003_widen_encrypted_columns.sql",
             "004_fix_null_is_deleted.sql",
             "005_fix_profile_schema.sql",
+            "006_add_platform_report_id.sql",
         )]
         _apply_migrations(files)
     else:

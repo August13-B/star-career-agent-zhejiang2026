@@ -192,6 +192,7 @@ CREATE TABLE `career_report`  (
   `version` int NOT NULL DEFAULT 1 COMMENT '报告版本号',
   `status` tinyint NOT NULL DEFAULT 1 COMMENT '状态：1-草稿，2-已生成，3-已修改，4-已确认',
   `report_content` json NOT NULL COMMENT '报告内容（JSON格式，支持高度自定义）',
+  `platform_report_id` varchar(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci NULL DEFAULT NULL COMMENT '百宝箱平台报告ID（Appwrite $id；用于两处同步删除）',
   `template_id` bigint NULL DEFAULT NULL COMMENT '使用的模板ID',
   `feedback` text CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci NULL COMMENT '用户反馈',
   `feedback_score` tinyint NULL DEFAULT NULL COMMENT '反馈评分（1-5分）',

@@ -52,14 +52,30 @@
         <div class="data-card">
           <div class="card-header">
             <h4>📑 我的职业规划报告</h4>
-            <router-link class="upload-btn" to="/multi-agent">+ 生成新报告</router-link>
+            <div class="report-header-actions">
+              <button v-if="reportList.length > 0" class="text-btn" @click="toggleManage">
+                {{ manageMode ? '完成' : '管理' }}
+              </button>
+              <router-link class="upload-btn" to="/multi-agent">+ 生成新报告</router-link>
+            </div>
           </div>
+
+          <div v-if="manageMode && reportList.length > 0" class="report-manage-bar">
+            <label class="report-select-all">
+              <input type="checkbox" :checked="allSelected" @change="toggleSelectAll($event.target.checked)" /> 全选
+            </label>
+            <button class="outline-btn danger-btn" :disabled="selectedReportIds.length === 0" @click="deleteSelectedReports">
+              删除选中（{{ selectedReportIds.length }}）
+            </button>
+          </div>
+
           <div class="report-list">
             <div v-if="reportLoading" class="report-empty">加载中…</div>
             <div v-else-if="reportList.length === 0" class="report-empty">
               还没有职业规划报告，点右上角「生成新报告」开始吧
             </div>
             <div v-else v-for="r in reportList" :key="r.id" class="report-item">
+              <input v-if="manageMode" type="checkbox" class="report-check" :value="String(r.id)" v-model="selectedReportIds" />
               <div class="report-info">
                 <div class="report-name">{{ r.reportName || '职业规划报告' }}</div>
                 <div class="report-meta">
@@ -448,7 +464,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import axios from 'axios'
 import API_CONFIG from '../config/api'
@@ -768,6 +784,47 @@ const parseReportContent = (r) => {
 
 const openReport = (r) => { parseReportContent(r); reportVis.value = true }
 
+// ===== 报告管理（批量删除：我们侧逻辑删 + 平台侧物理删） =====
+const manageMode = ref(false)
+const selectedReportIds = ref([])
+const allSelected = computed(() =>
+  reportList.value.length > 0 && selectedReportIds.value.length === reportList.value.length)
+
+const toggleManage = () => {
+  manageMode.value = !manageMode.value
+  selectedReportIds.value = []
+}
+const toggleSelectAll = (checked) => {
+  selectedReportIds.value = checked ? reportList.value.map(r => String(r.id)) : []
+}
+const deleteSelectedReports = async () => {
+  if (selectedReportIds.value.length === 0) return
+  if (!confirm(`确认删除选中的 ${selectedReportIds.value.length} 份报告？删除后不可恢复。`)) return
+  try {
+    const res = await studentApi.post('/api/career-report/batch-delete', { ids: selectedReportIds.value })
+    const body = res.data || {}
+    if (body.code !== 10001 && body.code !== 200 && body.code !== 0) {
+      alert('删除失败：' + (body.message || '未知错误'))
+      return
+    }
+    const d = body.data || {}
+    let msg = `已删除 ${d.deleted || 0} 份报告`
+    if (Array.isArray(d.platformFailed) && d.platformFailed.length) {
+      msg += `\n⚠ 平台侧 ${d.platformFailed.length} 份未删除`
+    }
+    if (d.platformSkipped) {
+      msg += `\n（${d.platformSkipped} 份历史报告无平台ID，仅本地删除）`
+    }
+    alert(msg)
+    manageMode.value = false
+    selectedReportIds.value = []
+    fetchReports()
+  } catch (e) {
+    console.error('批量删除失败', e)
+    alert('删除出错，请稍后重试')
+  }
+}
+
 const formatTime = (t) => (!t ? '' : String(t).replace('T', ' ').slice(0, 16))
 const statusText = (s) => ({ 1: '草稿', 2: '已生成', 3: '已修改', 4: '已确认' }[s] || '已生成')
 
@@ -992,11 +1049,15 @@ const changePassword = async () => {
 .report-empty { padding: 28px; text-align: center; color: #94A3B8; font-size: 0.9rem; background: #F8FAFC; border: 1px dashed #E2E8F0; border-radius: 12px; }
 .report-item { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 14px 16px; border: 1px solid #E2E8F0; border-radius: 12px; transition: 0.2s; background: #F8FAFC; }
 .report-item:hover { border-color: #4A90E2; background: #FFFFFF; box-shadow: 0 4px 12px rgba(0,0,0,0.02); }
-.report-info { min-width: 0; }
+.report-info { min-width: 0; flex: 1; }
 .report-name { font-size: 0.95rem; color: #1E293B; font-weight: 600; margin-bottom: 4px; word-break: break-all; }
 .report-meta { display: flex; align-items: center; gap: 10px; font-size: 0.8rem; color: #94A3B8; }
 .report-status { color: #10B981; font-weight: 600; }
 .report-actions { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+.report-header-actions { display: flex; align-items: center; gap: 10px; }
+.report-manage-bar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; padding: 8px 12px; background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 10px; }
+.report-select-all { display: inline-flex; align-items: center; gap: 6px; font-size: 0.85rem; color: #475569; cursor: pointer; }
+.report-check { width: 16px; height: 16px; margin-right: 10px; flex-shrink: 0; cursor: pointer; }
 .modal-content.report-modal { display: flex; flex-direction: column; width: 92%; max-width: 860px; max-height: 88vh; overflow: hidden; }
 .modal-content.report-modal .modal-body { flex: 1; overflow-y: auto; }
 .report-view { background: #FFFFFF; }

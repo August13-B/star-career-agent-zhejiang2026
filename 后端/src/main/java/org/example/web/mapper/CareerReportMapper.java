@@ -32,4 +32,8 @@ public interface CareerReportMapper {
     int updateFeedback(@Param("id") Long id, @Param("feedback") String feedback, @Param("feedbackScore") Integer feedbackScore);
     
     int logicDeleteById(@Param("id") Long id);
+
+    List<CareerReport> selectByIds(@Param("ids") List<Long> ids);
+
+    int logicDeleteByIds(@Param("ids") List<Long> ids);
 }
