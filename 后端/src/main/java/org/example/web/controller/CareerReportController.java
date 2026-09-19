@@ -111,6 +111,11 @@ public class CareerReportController {
             out.put("deltas", objectMapper.convertValue(n.path("deltas"), java.util.List.class));
             out.put("segmentChars", objectMapper.convertValue(n.path("segmentChars"), java.util.Map.class));
 
+            // 缓存本次看到的各段内容 + 起始时间（供失败/超时容错）
+            cacheSegments(jobId, n);
+            Long startedAt = jobStartCache.computeIfAbsent(jobId, k -> System.currentTimeMillis());
+            long elapsedMs = System.currentTimeMillis() - startedAt;
+
             if ("done".equalsIgnoreCase(status)) {
                 Long reportId = saveReportOnce(jobId, n, currentUserId(token));
                 out.put("platformReportId", n.path("reportId").asText(null));
@@ -123,7 +128,32 @@ public class CareerReportController {
                     out.put("saved", false);
                 }
             } else if ("error".equalsIgnoreCase(status) || n.has("error")) {
-                out.put("error", n.path("error").asText(n.path("message").asText("报告任务失败")));
+                // 容错：平台出错（如最后一段字数超长崩了）时，用已有内容组装“部分完成”报告，不报红
+                java.util.Map<String, Object> partial = savePartialReport(jobId, n, currentUserId(token), "平台返回错误");
+                if (partial != null) {
+                    out.put("status", "done");
+                    out.put("partial", true);
+                    out.put("reportId", partial.get("reportId"));
+                    out.put("reportName", partial.get("reportName"));
+                    out.put("content", partial.get("content"));
+                    out.put("saved", true);
+                } else {
+                    out.put("error", n.path("error").asText(n.path("message").asText("报告任务失败")));
+                }
+            } else if ("running".equalsIgnoreCase(status)
+                    && reportPartialTimeoutSeconds > 0 && elapsedMs > reportPartialTimeoutSeconds * 1000L) {
+                // 容错：平台长时间无进展 → 用已有内容组装“部分完成”报告
+                java.util.Map<String, Object> partial = savePartialReport(jobId, n, currentUserId(token), "平台超时未完成");
+                if (partial != null) {
+                    out.put("status", "done");
+                    out.put("partial", true);
+                    out.put("reportId", partial.get("reportId"));
+                    out.put("reportName", partial.get("reportName"));
+                    out.put("content", partial.get("content"));
+                    out.put("saved", true);
+                } else {
+                    out.put("error", "报告生成超时，且暂无已完成内容可整理");
+                }
             }
             return Result.success(out);
         } catch (Exception e) {
@@ -135,6 +165,18 @@ public class CareerReportController {
     /** jobId → 我们 MySQL reportId 缓存（保证同一次任务只落库一次） */
     private final java.util.concurrent.ConcurrentHashMap<String, Long> savedReportByJob =
             new java.util.concurrent.ConcurrentHashMap<>();
+
+    /** jobId → 最新一次看到的各段内容（agent key → 正文），用于失败/超时时组装降级报告 */
+    private final java.util.concurrent.ConcurrentHashMap<String, java.util.LinkedHashMap<String, String>> jobSegmentsCache =
+            new java.util.concurrent.ConcurrentHashMap<>();
+
+    /** jobId → 首次轮询时间（用于超时判定） */
+    private final java.util.concurrent.ConcurrentHashMap<String, Long> jobStartCache =
+            new java.util.concurrent.ConcurrentHashMap<>();
+
+    /** 平台一直 running 时的容错上限（秒），超过则用已收到内容组装“部分完成”报告 */
+    @org.springframework.beans.factory.annotation.Value("${tbox.report-partial-timeout-seconds:480}")
+    private long reportPartialTimeoutSeconds;
 
     /** 幂等落库：同一个 jobId 只写一次。userId 优先取登录态，避免平台回传不一致导致外键失败 */
     private Long saveReportOnce(String jobId, com.fasterxml.jackson.databind.JsonNode n, Long tokenUserId) {
@@ -163,6 +205,143 @@ public class CareerReportController {
             return id;
         }
         return null;
+    }
+
+    /** 缓存本次轮询看到的各段内容（agent key → 正文） */
+    private void cacheSegments(String jobId, com.fasterxml.jackson.databind.JsonNode n) {
+        com.fasterxml.jackson.databind.JsonNode deltas = n.path("deltas");
+        if (!deltas.isArray() || deltas.isEmpty()) {
+            return;
+        }
+        java.util.LinkedHashMap<String, String> map = new java.util.LinkedHashMap<>();
+        for (com.fasterxml.jackson.databind.JsonNode d : deltas) {
+            String k = d.path("agent").asText("");
+            String c = d.path("data").asText("");
+            if (!k.isEmpty() && !c.isBlank()) {
+                map.put(k, c);
+            }
+        }
+        if (!map.isEmpty()) {
+            jobSegmentsCache.put(jobId, map);
+        }
+    }
+
+    /**
+     * 容错：用已有各段内容组装「部分完成」报告并落库（幂等）。
+     *
+     * <p>final = 说明 + 已完成段落的整理（不含报告整合）；报告名加“部分完成”后缀。
+     *
+     * @return {@code {reportId, reportName, content}}；无可用内容时返回 null
+     */
+    private java.util.Map<String, Object> savePartialReport(String jobId, com.fasterxml.jackson.databind.JsonNode n,
+                                                            Long tokenUserId, String reason) {
+        Long userId = tokenUserId;
+        if (userId == null) {
+            try {
+                userId = Long.parseLong(n.path("userId").asText(""));
+            } catch (Exception ignore) {
+                userId = null;
+            }
+        }
+        if (userId == null) {
+            System.err.println("部分报告缺少 userId，跳过落库: jobId=" + jobId);
+            return null;
+        }
+
+        // 1. 各段内容：优先本次响应，其次缓存
+        java.util.LinkedHashMap<String, String> segs = new java.util.LinkedHashMap<>();
+        com.fasterxml.jackson.databind.JsonNode deltas = n.path("deltas");
+        if (deltas.isArray()) {
+            for (com.fasterxml.jackson.databind.JsonNode d : deltas) {
+                String k = d.path("agent").asText("");
+                String c = d.path("data").asText("");
+                if (!k.isEmpty()) {
+                    segs.put(k, c);
+                }
+            }
+        }
+        if (segs.isEmpty()) {
+            java.util.LinkedHashMap<String, String> cached = jobSegmentsCache.get(jobId);
+            if (cached != null) {
+                segs.putAll(cached);
+            }
+        }
+        segs.entrySet().removeIf(e -> e.getValue() == null || e.getValue().isBlank());
+        if (segs.isEmpty()) {
+            return null;
+        }
+
+        // 2. agents（剔除结构化块）+ final（说明 + 已完成段落）
+        java.util.List<java.util.Map<String, Object>> agents = new java.util.ArrayList<>();
+        StringBuilder process = new StringBuilder();
+        for (java.util.Map.Entry<String, String> e : segs.entrySet()) {
+            String key = e.getKey();
+            String content = e.getValue();
+            if ("report_composition".equals(key)) {
+                content = splitGoalsBlock(content)[1];
+            }
+            java.util.Map<String, Object> item = new java.util.LinkedHashMap<>();
+            item.put("key", key);
+            item.put("name", AGENT_NAMES.getOrDefault(key, key));
+            item.put("content", content);
+            agents.add(item);
+            if (!"report_composition".equals(key)) {
+                process.append(content).append("\n\n");
+            }
+        }
+        String note = "（本次报告整合未完成，以下为已完成的分析部分）";
+        String finalText = process.length() > 0
+                ? note + "\n\n" + process.toString().trim()
+                : note + "\n\n" + String.valueOf(agents.get(agents.size() - 1).get("content"));
+        java.util.Map<String, Object> content = new java.util.LinkedHashMap<>();
+        content.put("agents", agents);
+        content.put("final", finalText);
+        content.put("fullText", finalText);
+        content.put("partial", true);
+
+        // 3. 幂等：同一 jobId 只写一次
+        Long cachedId = savedReportByJob.get(jobId);
+        if (cachedId != null) {
+            java.util.Map<String, Object> r = new java.util.LinkedHashMap<>();
+            r.put("reportId", cachedId);
+            r.put("reportName", null);
+            r.put("content", content);
+            return r;
+        }
+        try {
+            String reportName = "职业规划报告 · 部分完成 · " + java.time.LocalDateTime.now()
+                    .format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"));
+            CareerReport report = new CareerReport();
+            report.setId(org.example.web.tool.SnowIdCreater.generateId(23));
+            report.setUserId(userId);
+            report.setReportName(reportName);
+            report.setReportType(1);
+            report.setVersion(1);
+            report.setStatus(2);
+            report.setReportContent(objectMapper.writeValueAsString(content));
+            report.setPlatformReportId(n.path("reportId").asText(null));
+            report.setCreateTime(java.time.LocalDateTime.now());
+            report.setUpdateTime(java.time.LocalDateTime.now());
+            careerReportMapper.insert(report);
+            CareerReportHistory history = new CareerReportHistory();
+            history.setId(org.example.web.tool.SnowIdCreater.generateId(23));
+            history.setReportId(report.getId());
+            history.setVersion(1);
+            history.setReportContent(report.getReportContent());
+            history.setChangeReason("部分完成（" + reason + "）");
+            history.setCreateTime(java.time.LocalDateTime.now());
+            careerReportHistoryMapper.insert(history);
+            savedReportByJob.put(jobId, report.getId());
+            System.out.println("部分报告已落库, id=" + report.getId() + ", 段数=" + agents.size() + ", 原因=" + reason);
+            java.util.Map<String, Object> r = new java.util.LinkedHashMap<>();
+            r.put("reportId", report.getId());
+            r.put("reportName", reportName);
+            r.put("content", content);
+            return r;
+        } catch (Exception e) {
+            System.err.println("部分报告落库失败: " + e.getMessage());
+            return null;
+        }
     }
 
     /** ③ 取消报告任务（随时停止）：中止平台流水线，已生成内容丢弃、不落库 */

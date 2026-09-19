@@ -104,6 +104,7 @@ tbox:
   chat-timeout-seconds: ${TBOX_CHAT_TIMEOUT_SECONDS:180} # 对话（HTTP SSE）超时（含 RAG 检索空窗）
   report-timeout-seconds: ${TBOX_REPORT_TIMEOUT_SECONDS:360} # 职业报告（6 智能体串行，实测 160~185s）
   report-poll-seconds: ${TBOX_REPORT_POLL_SECONDS:4}    # 报告异步任务轮询间隔（秒）
+  report-partial-timeout-seconds: ${TBOX_REPORT_PARTIAL_TIMEOUT_SECONDS:480} # running 超过该秒数→用已有内容整理“部分完成”报告
   hello-delay-millis: ${TBOX_HELLO_DELAY_MS:500} # HELLO 与 SEND_MESSAGE 间隔
 
 # ── 日志 ──
