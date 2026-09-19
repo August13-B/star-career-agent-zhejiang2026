@@ -424,8 +424,7 @@ userApi.interceptors.request.use(config => {
   return config
 })
 
-// 2. StudentProfile 模块 API (负责：学生基础档案、意向) -> 本地或原有 51041 / 59941
-// 这里基于你之前的代码，继续使用 cn-nd-plc-1.ofalias.net:51041 域，因为文档里 Ability 和它在一起。
+// 2. StudentProfile 模块 API（学生基础档案、意向）—— 统一走同源 /api（Vite/Nginx 代理）
 const studentApi = axios.create({
   baseURL: API_CONFIG.BASE_URL,
   timeout: 10000,
@@ -439,8 +438,7 @@ studentApi.interceptors.request.use(config => {
   return config
 })
 
-// 3. Ability 模块 API (新增！负责能力模型) -> 也是 cn-nd-plc-1.ofalias.net:51041
-// 为了代码清晰，我直接复用 studentApi 的实例（因为 baseURL 相同），但逻辑分开写。
+// 3. Ability 模块 API（能力模型）—— 与 studentApi 同源，复用同一实例
 const abilityApi = studentApi
 
 // ==========================================
@@ -471,7 +469,12 @@ onMounted(async () => {
 
   // 1. 获取用户昵称
   try {
-    const res = await userApi.get('/api/user/getUserInfo')
+    // getUserInfo 的 IV/AES 用于加密返回的手机号/邮箱；这里只需要 id/nickname/userRole，
+    // 但仍然传上，避免依赖后端对可选参数的处理
+    const { aesKey: k, aesIv: i } = generateAesKeyAndIv()
+    const res = await userApi.get('/api/user/getUserInfo', {
+      params: { IV: rsaEncrypt(i), AES: rsaEncrypt(k) }
+    })
     if (res.data.code === 10001 || res.data.code === 200 || res.data.code === 0) {
       userInfo.value = res.data.data || {}
       displayNickname.value = userInfo.value.nickname || `新星用户_${String(userInfo.value.userAccount || '8888').slice(-4)}`
