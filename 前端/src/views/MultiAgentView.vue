@@ -163,12 +163,21 @@ const getUserInfo = async () => {
 }
 
 // ===== 轮询 / 打字机状态（刷新后可用 localStorage 里的 jobId 续跑） =====
-let pollTimer = null
+let pollTimer = null          // setInterval id（固定节拍；不靠递归 setTimeout，避免一处异常就永远停）
+let pollInFlight = false      // 在途保护：同一时刻只允许一个请求
+let currentPollTick = null    // 供可见性回调/看门狗立即补拉
+let pollFailures = 0
+let pollToken = 0
 let typeTimer = null
 let offsets = {}            // 各智能体已读字符数（每次轮询回传给平台做切片，保证不重不漏）
 let doneReceived = false
+const POLL_MS = 1500
+const POLL_TIMEOUT_MS = 12000
 
-const stopPolling = () => { if (pollTimer) { clearTimeout(pollTimer); pollTimer = null } }
+const stopPolling = () => {
+  if (pollTimer) { clearInterval(pollTimer); pollTimer = null }
+  currentPollTick = null
+}
 const stopTypewriter = () => { if (typeTimer) { clearInterval(typeTimer); typeTimer = null } }
 
 // 本地均匀打字机：把 card.received 平滑播放到 card.content（平台 delta 是 1~2s 一批）
@@ -258,17 +267,13 @@ const generate = async () => {
 
 // 轮询平台任务：带 offsets 拿正文增量 → 本地打字机实时呈现
 // 健壮性：请求超时 + 失败重试（不中断、不清 jobId） + 页面可见时立即补拉
-let pollFailures = 0
-let pollToken = 0
-const POLL_MS = 1500
-const POLL_TIMEOUT_MS = 12000
-
 const startPolling = (jobId) => {
   stopPolling()
   pollFailures = 0
   const myToken = ++pollToken
-  const poll = async () => {
-    if (myToken !== pollToken) return
+  const tick = async () => {
+    if (myToken !== pollToken || pollInFlight) return
+    pollInFlight = true
     try {
       const token = localStorage.getItem('token') || ''
       const res = await axios.get(`/api/career-report/jobs/${jobId}`, {
@@ -276,11 +281,10 @@ const startPolling = (jobId) => {
         timeout: POLL_TIMEOUT_MS,
         headers: token ? { Authorization: token.startsWith('Bearer ') ? token : `Bearer ${token}` } : {}
       })
-      // 已被新一轮轮询（如可见性回调）取代 → 丢弃旧响应，避免重复追加
+      // 已被新一轮轮询取代 → 丢弃旧响应，避免重复追加
       if (myToken !== pollToken) return
-      pollFailures = 0
       const body = res.data || {}
-      // 后端返回业务错误（如 Result.error）时不能默默继续轮询
+      // 后端业务错误（Result.error）不能默默继续轮询
       if (body.code !== undefined && body.code !== 10001 && body.code !== 200 && body.code !== 0) {
         throw new Error(body.message || '查询报告任务失败')
       }
@@ -288,6 +292,7 @@ const startPolling = (jobId) => {
       if (!d.status && !d.error) {
         throw new Error('报告任务响应异常（无 status）')
       }
+      pollFailures = 0
       if (d.error) {
         errorMsg.value = String(d.error)
         const ra = agents.value.find(a => a.status === 'running')
@@ -341,23 +346,30 @@ const startPolling = (jobId) => {
         startTypewriter()
         return
       }
-      pollTimer = setTimeout(poll, POLL_MS)
+      // 诊断日志（浏览器 Console 可看到每一拍）
+      console.debug('[report] poll', d.status, d.currentAgent || '-',
+        'deltas=', (d.deltas || []).map(x => `${x.agent}:${(x.data || '').length}`).join(','),
+        'chars=', d.progressChars)
     } catch (e) {
       if (myToken !== pollToken) return
       pollFailures++
+      console.warn('[report] 轮询失败', pollFailures, e && e.message)
       if (pollFailures >= 6) {
-        errorMsg.value = `轮询失败（已重试 ${pollFailures} 次）：${e.message}`
+        errorMsg.value = `轮询失败（已重试 ${pollFailures} 次）：${e && e.message}`
         localStorage.removeItem('reportJobId')
         running.value = false
         stopPolling()
         stopTypewriter()
         return
       }
-      // 保留 jobId，稍后重试；不中断、不清 localStorage
-      pollTimer = setTimeout(poll, 3000)
+    } finally {
+      pollInFlight = false
     }
   }
-  poll()
+  currentPollTick = tick
+  tick()
+  // 固定节拍驱动：即使某一拍异常/请求卡住，后续拍仍会继续
+  pollTimer = setInterval(tick, POLL_MS)
 }
 
 const escapeHtml = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -414,19 +426,33 @@ const loadLatestReport = async () => {
   } catch (e) { /* 无历史/未登录时忽略 */ }
 }
 
-// 页面可见/聚焦时立即补拉一次（后台标签页会被浏览器节流定时器，表现就是“看着卡住”）
+// 页面可见/聚焦时立即补拉一拍（后台标签页定时器被节流，是“看着卡住”的常见原因）
 const catchUp = () => {
   if (document.visibilityState !== 'visible') return
   if (!running.value) return
   const jobId = localStorage.getItem('reportJobId')
   if (jobId) {
-    stopPolling()
-    startPolling(jobId)
+    if (currentPollTick) {
+      currentPollTick()
+    } else {
+      console.warn('[report] 看门狗：轮询已停止，自动重启')
+      startPolling(jobId)
+    }
   }
   if (!typeTimer) startTypewriter()
 }
 document.addEventListener('visibilitychange', catchUp)
 window.addEventListener('focus', catchUp)
+
+// 看门狗：运行中但轮询已停止 → 自动重启（防任何意外导致永久卡住）
+setInterval(() => {
+  if (!running.value) return
+  const jobId = localStorage.getItem('reportJobId')
+  if (jobId && !pollTimer) {
+    console.warn('[report] 看门狗：轮询已停止，自动重启')
+    startPolling(jobId)
+  }
+}, 5000)
 
 onMounted(async () => {
   await getUserInfo()

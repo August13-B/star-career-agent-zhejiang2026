@@ -153,16 +153,10 @@ import { generateAesKeyAndIv, rsaEncrypt } from '../utils/crypto'
 import { useRouter } from 'vue-router'
 const router = useRouter()
 
-axios.defaults.transformResponse = [
-  function (data) {
-    if (typeof data === 'string') {
-      const regex = /:\s*([0-9]{16,})/g;
-      data = data.replace(regex, ':"$1"');
-      try { return JSON.parse(data); } catch (e) { return data; }
-    }
-    return data;
-  }
-];
+// 注意：不要再改 axios.defaults.transformResponse（全局副作用）。
+// 64 位雪花 ID 已在后端由 JacksonConfig 统一序列化为字符串，前端无需再做正则修补；
+// 之前的全局 transformResponse 会作用于所有 axios 请求（含 /multi-agent 轮询），
+// 一旦把正文里的 ": 1234567890123456" 误改成非法 JSON，就会导致轮询解析失败/卡住。
 
 axios.interceptors.request.use(config => {
   const token = localStorage.getItem('token')
