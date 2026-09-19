@@ -81,6 +81,50 @@ SERVICES = {
 # ── .env 加载 ─────────────────────────────────────────────────────────
 
 
+
+def _pid_on_port(port: str) -> int | None:
+    """返回监听指定端口的进程 PID（Windows: netstat；Linux: ss/lsof）。"""
+    try:
+        if IS_WINDOWS:
+            r = subprocess.run(["netstat", "-ano"], capture_output=True, text=True,
+                               creationflags=subprocess.CREATE_NO_WINDOW)
+            for line in r.stdout.splitlines():
+                if f":{port} " in line and "LISTENING" in line:
+                    return int(line.split()[-1])
+        else:
+            for cmd in (["ss", "-tlnp", f"sport = :{port}"], ["lsof", "-ti", f":{port}"]):
+                r = subprocess.run(cmd, capture_output=True, text=True)
+                if r.stdout.strip():
+                    import re as _re
+                    m = _re.search(r"(\d+)", r.stdout)
+                    if m:
+                        return int(m.group(1))
+    except Exception:
+        pass
+    return None
+
+
+def free_port(name: str) -> bool:
+    """强制释放某服务端口（杀掉占用进程）。"""
+    port = SERVICES[name].get("port")
+    if not port:
+        return False
+    pid = _pid_on_port(port)
+    if pid is None:
+        print(f"ℹ️  端口 {port} 未被占用")
+        return True
+    print(f"🔫 释放端口 {port}（杀进程 PID {pid}）...")
+    if IS_WINDOWS:
+        _run_cmd(["taskkill", "/F", "/PID", str(pid)])
+    else:
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except OSError:
+            pass
+    time.sleep(1)
+    print("✅ 已释放" if _pid_on_port(port) is None else "⚠️ 仍被占用，请手动处理")
+    return True
+
 def _port_listening(port: str, host: str = "127.0.0.1") -> bool:
     """检测端口是否有进程监听（用于启动前端前确认后端已就绪）。"""
     import socket
@@ -300,6 +344,16 @@ def start_service(name: str) -> bool:
         _check_java()
         db_seed()  # 启动前自动灌库（幂等）
 
+    # 端口被"非本工具启动"的进程占用时给出明确提示（常见：上次的后端没关）
+    _port = svc.get("port")
+    if _port and _port_listening(_port) and not is_running(name):
+        _pid = _pid_on_port(_port)
+        print(f"❌ 端口 {_port} 已被占用（PID {_pid}），无法启动 {svc['name']}。"
+              f"\n    这通常是上一次的服务未关闭；可执行："
+              f"\n      python manage.py free-port {name}"
+              f"\n    或 Windows：taskkill /F /PID {_pid}")
+        return False
+
     # 每次启动前清空日志，保证本次运行日志干净可读
     log_f = open(svc["log"], "wb")
 
@@ -508,6 +562,9 @@ def main():
 
     sub.add_parser("gui", help="打开可视化界面")
 
+    p_fp = sub.add_parser("free-port", help="强制释放某服务端口（杀掉占用进程）")
+    p_fp.add_argument("service", choices=["backend", "frontend", "nginx"])
+
     p_db = sub.add_parser("db", help="数据库灌库 / 查看状态")
     p_db.add_argument("db_action", nargs="?", default="seed", choices=["seed", "status"])
     p_db.add_argument("--force", action="store_true", help="强制重建表并重新导入数据")
@@ -532,6 +589,8 @@ def main():
         run_gui()
     elif args.command == "db":
         cmd_db(args)
+    elif args.command == "free-port":
+        free_port(args.service)
 
 
 if __name__ == "__main__":
