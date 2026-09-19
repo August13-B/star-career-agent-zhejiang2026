@@ -258,34 +258,55 @@ public class CareerReportController {
     @org.springframework.web.bind.annotation.GetMapping("/{id}/export/pdf")
     @org.springframework.web.bind.annotation.CrossOrigin
     public org.springframework.http.ResponseEntity<byte[]> exportReportPdf(
-            @org.springframework.web.bind.annotation.PathVariable Long id) {
+            @org.springframework.web.bind.annotation.PathVariable Long id,
+            @org.springframework.web.bind.annotation.RequestParam(value = "mode", required = false, defaultValue = "report") String mode) {
         CareerReport report = careerReportMapper.selectById(id);
         if (report == null) {
             return org.springframework.http.ResponseEntity.notFound().build();
         }
+        // mode=report：仅导出最终报告（第 6 段简介）；mode=full：全量导出（除报告整合 agent 外的全部过程）
+        final boolean full = "full".equalsIgnoreCase(mode);
         java.util.List<java.util.Map<String, String>> agents = new java.util.ArrayList<>();
+        String title = report.getReportName();
         try {
             com.fasterxml.jackson.databind.JsonNode root = objectMapper.readTree(report.getReportContent());
-            String finalText = root.path("final").asText("");
-            if (!finalText.isBlank()) {
-                // 最终报告 = 第 6 段整合后的简介
-                java.util.Map<String, String> m = new java.util.LinkedHashMap<>();
-                m.put("name", report.getReportName());
-                m.put("content", finalText);
-                agents.add(m);
-            } else {
+            if (full) {
                 for (com.fasterxml.jackson.databind.JsonNode a : root.path("agents")) {
+                    // 全量导出不含 report_composition（报告整合）
+                    if ("report_composition".equals(a.path("key").asText(""))) {
+                        continue;
+                    }
                     java.util.Map<String, String> m = new java.util.LinkedHashMap<>();
                     m.put("name", a.path("name").asText("报告章节"));
                     m.put("content", a.path("content").asText(""));
                     agents.add(m);
                 }
+                if (!agents.isEmpty()) {
+                    title = report.getReportName() + "（全量过程）";
+                }
+            }
+            if (agents.isEmpty()) {
+                // report 模式，或 full 模式无过程数据 → 回退到最终报告
+                String finalText = root.path("final").asText("");
+                if (!finalText.isBlank()) {
+                    java.util.Map<String, String> m = new java.util.LinkedHashMap<>();
+                    m.put("name", report.getReportName());
+                    m.put("content", finalText);
+                    agents.add(m);
+                } else {
+                    for (com.fasterxml.jackson.databind.JsonNode a : root.path("agents")) {
+                        java.util.Map<String, String> m = new java.util.LinkedHashMap<>();
+                        m.put("name", a.path("name").asText("报告章节"));
+                        m.put("content", a.path("content").asText(""));
+                        agents.add(m);
+                    }
+                }
             }
         } catch (Exception e) {
             System.err.println("解析报告内容失败，导出纯文本: " + e.getMessage());
         }
-        byte[] pdf = careerReportPdfService.render(report.getReportName(), agents);
-        String filename = "career-report-" + id + ".pdf";
+        byte[] pdf = careerReportPdfService.render(title, agents);
+        String filename = "career-report-" + id + (full ? "-full" : "") + ".pdf";
         return org.springframework.http.ResponseEntity.ok()
                 .header(org.springframework.http.HttpHeaders.CONTENT_DISPOSITION,
                         "attachment; filename=\"" + filename + "\"")
