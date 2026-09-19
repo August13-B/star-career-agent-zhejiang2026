@@ -397,6 +397,58 @@ public class TboxAgentServiceImpl implements TboxAgentService {
         return toJson(m);
     }
 
+    // ====================== 纯文本对话流式（平台专用 HTTP SSE 接口） ======================
+
+    @Override
+    public Flux<String> chatStreamHttp(Long userId, String platformConversationId, String message) {
+        if (!props.isConfigured()) {
+            return Flux.just(errorChunk("AI 服务暂不可用：后端未配置百宝箱地址（TBOX_API_URL）。"));
+        }
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("message", message == null ? "" : message);
+        if (userId != null) {
+            body.put("userId", String.valueOf(userId));
+        }
+        if (platformConversationId != null && !platformConversationId.isBlank()) {
+            body.put("conversationId", platformConversationId);
+        }
+        log.info("调用百宝箱对话接口 /api/chat/stream (userId={}, conversationId={}, messageLen={})",
+                userId, platformConversationId, message == null ? 0 : message.length());
+        final java.util.concurrent.atomic.AtomicInteger frames = new java.util.concurrent.atomic.AtomicInteger();
+        return http.post()
+                .uri("/api/chat/stream")
+                .contentType(MediaType.APPLICATION_JSON)
+                .accept(MediaType.TEXT_EVENT_STREAM)
+                .headers(h -> {
+                    String key = props.getApiKey();
+                    if (key != null && !key.isBlank()) {
+                        h.set(HttpHeaders.AUTHORIZATION, key.startsWith("Bearer ") ? key : "Bearer " + key);
+                    }
+                })
+                .bodyValue(body)
+                .exchangeToFlux(resp -> {
+                    if (resp.statusCode().isError()) {
+                        int code = resp.statusCode().value();
+                        return resp.bodyToMono(String.class).defaultIfEmpty("")
+                                .flatMapMany(b -> Flux.just(errorChunk(
+                                        "AI 对话服务返回 " + code + "：" + abbreviate(b, 200))));
+                    }
+                    log.info("平台对话响应: status={}, contentType={}",
+                            resp.statusCode(), resp.headers().contentType().orElse(null));
+                    return resp.bodyToFlux(new ParameterizedTypeReference<ServerSentEvent<String>>() {
+                            })
+                            .map(ServerSentEvent::data)
+                            .filter(java.util.Objects::nonNull);
+                })
+                .doOnNext(json -> frames.incrementAndGet())
+                .doOnComplete(() -> log.info("平台对话流结束，共 {} 帧", frames.get()))
+                .timeout(Duration.ofSeconds(Math.max(30, props.getChatTimeoutSeconds())))
+                .onErrorResume(e -> {
+                    log.error("百宝箱对话流失败: {}", e.toString());
+                    return Flux.just(errorChunk(translateError(e)));
+                });
+    }
+
     // ====================== 结构化卡片 → Markdown（前端零改动） ======================
 
     private String cardToMarkdown(JsonNode value) {

@@ -99,6 +99,8 @@ tbox:
   api-key: ${TBOX_API_KEY:}
   agent-id: ${TBOX_AGENT_ID:}
   timeout-seconds: ${TBOX_TIMEOUT_SECONDS:30}   # 单次对话超时（模型首响较慢）
+  chat-channel: ${TBOX_CHAT_CHANNEL:http}       # 对话通道：http=平台专用 SSE /api/chat/stream；ws=旧 WebSocket（兜底）
+  chat-timeout-seconds: ${TBOX_CHAT_TIMEOUT_SECONDS:180} # 对话（HTTP SSE）超时（含 RAG 检索空窗）
   report-timeout-seconds: ${TBOX_REPORT_TIMEOUT_SECONDS:360} # 职业报告（6 智能体串行，实测 160~185s）
   hello-delay-millis: ${TBOX_HELLO_DELAY_MS:500} # HELLO 与 SEND_MESSAGE 间隔
 

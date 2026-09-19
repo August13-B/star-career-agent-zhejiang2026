@@ -31,6 +31,18 @@ public class TboxProperties {
     /** HELLO 与 SEND_MESSAGE 之间的间隔（毫秒），实测需要短暂间隔 */
     private long helloDelayMillis = 500;
 
+    /**
+     * 对话通道：
+     * <ul>
+     *   <li>{@code http}（默认）—— 平台专用 SSE {@code POST /api/chat/stream}，纯文本对话</li>
+     *   <li>{@code ws} —— 旧 WebSocket {@code /ws}（平台新接口未就绪时的兜底；图片对话始终走 WS）</li>
+     * </ul>
+     */
+    private String chatChannel = "http";
+
+    /** 对话（HTTP SSE）超时（秒），含 RAG 检索空窗 */
+    private int chatTimeoutSeconds = 180;
+
     public boolean isConfigured() {
         return apiUrl != null && !apiUrl.isBlank();
     }

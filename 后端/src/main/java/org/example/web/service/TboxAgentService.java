@@ -25,6 +25,24 @@ public interface TboxAgentService {
     Flux<String> chatStream(Long userId, Long localConversationId, String message);
 
     /**
+     * 纯文本对话流式（平台专用 HTTP SSE 接口 {@code POST /api/chat/stream}）
+     *
+     * <p>平台侧按 {@code conversationId} 托管多轮历史；未传则新建并在 {@code done} 帧回传。
+     * 返回元素即平台原始帧（JSON 字符串）：
+     * <ul>
+     *   <li>{@code {"delta":"增量文本"}}</li>
+     *   <li>{@code {"type":"tool","name":"searchJobs","status":"start"|"end"}}</li>
+     *   <li>{@code {"done":true,"conversationId":"...","messageId":"...","requestId":"..."}}</li>
+     *   <li>{@code {"error":"文案"}}</li>
+     * </ul>
+     *
+     * @param userId               本地用户ID（字符串形式传给平台）
+     * @param platformConversationId 平台侧会话ID（可空：空=新建会话，非空=续接）
+     * @param message              已拼好的提示词（账号画像上下文 + 本轮问题）
+     */
+    Flux<String> chatStreamHttp(Long userId, String platformConversationId, String message);
+
+    /**
      * 同步对话（内部调用）：收集平台 WS 文本输出，返回完整纯文本。
      *
      * <p>用于「非流式」后端内部场景（如岗位图谱对比分析、兼容旧的同步接口）。

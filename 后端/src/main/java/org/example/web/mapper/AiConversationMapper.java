@@ -87,4 +87,8 @@ public interface AiConversationMapper {
     @Select("SELECT * FROM ai_conversation WHERE tbox_conversation_id=#{tboxConversationId} LIMIT 1")
     AiConversation selectByTboxConversationId(@Param("tboxConversationId") String tboxConversationId);
 
+    // 15. 仅更新平台会话ID（HTTP SSE 对话用；不覆盖 WS 的 tbox_session_id）
+    @Update("UPDATE ai_conversation SET tbox_conversation_id=#{tboxConversationId}, update_time=NOW() WHERE id=#{id}")
+    void updateTboxConversationId(@Param("id") Long id, @Param("tboxConversationId") String tboxConversationId);
+
 }
