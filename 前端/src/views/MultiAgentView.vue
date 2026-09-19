@@ -115,7 +115,7 @@ const receivedTotal = computed(() => agents.value.reduce((n, c) => n + ((c.recei
 const reportName = ref('')
 const reportId = ref('')
 const errorMsg = ref('')
-const agents = ref(AGENT_DEFS.map(a => ({ ...a, status: 'waiting', content: '', received: '', expanded: false, autoScroll: true, userToggled: false })))
+const agents = ref(AGENT_DEFS.map(a => ({ ...a, status: 'waiting', content: '', received: '', expanded: false, autoScroll: true })))
 
 // 卡片正文 DOM（收起态/展开态都滚到底；用户上滑后暂停自动滚动）
 const bodyRefs = []
@@ -124,7 +124,6 @@ const toggleExpand = (i) => {
   const card = agents.value[i]
   if (!card) return
   card.expanded = !card.expanded
-  card.userToggled = true          // 用户手动操作过 → 不再自动展开
   // 展开/收起都回到"跟最新"（收起态必须始终显示最新三行）
   card.autoScroll = true
   nextTick(() => {
@@ -139,12 +138,11 @@ const onBodyScroll = (i, e) => {
   if (!card) return
   card.autoScroll = el.scrollTop + el.clientHeight >= el.scrollHeight - 16
 }
-// 开始生成时自动展开（除非用户手动收起/接管过）
+// 开始生成时只把状态置为 running，**默认保持收起**（不自动展开；要展开由用户点）
 const markRunning = (i) => {
   const card = agents.value[i]
   if (!card) return
   if (card.status === 'waiting') card.status = 'running'
-  if (!card.userToggled && !card.expanded) card.expanded = true
 }
 
 const getUserInfo = async () => {
@@ -232,7 +230,7 @@ const reset = () => {
   stopPolling()
   stopTypewriter()
   doneReceived = false
-  agents.value = AGENT_DEFS.map(a => ({ ...a, status: 'waiting', content: '', received: '', expanded: false, autoScroll: true, userToggled: false }))
+  agents.value = AGENT_DEFS.map(a => ({ ...a, status: 'waiting', content: '', received: '', expanded: false, autoScroll: true }))
   finished.value = false
   errorMsg.value = ''
   savedHint.value = ''

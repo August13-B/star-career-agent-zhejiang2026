@@ -96,7 +96,8 @@ public class CareerReportController {
     @org.springframework.web.bind.annotation.GetMapping("/jobs/{jobId}")
     @org.springframework.web.bind.annotation.CrossOrigin
     public Result<?> reportJobStatus(@org.springframework.web.bind.annotation.PathVariable String jobId,
-                                     @org.springframework.web.bind.annotation.RequestParam(value = "offsets", required = false) String offsets) {
+                                     @org.springframework.web.bind.annotation.RequestParam(value = "offsets", required = false) String offsets,
+                                     @org.springframework.web.bind.annotation.RequestHeader(value = "Authorization", required = false) String token) {
         try {
             String json = tboxAgentService.fetchReportJob(jobId, offsets);
             com.fasterxml.jackson.databind.JsonNode n = objectMapper.readTree(json);
@@ -111,7 +112,7 @@ public class CareerReportController {
             out.put("segmentChars", objectMapper.convertValue(n.path("segmentChars"), java.util.Map.class));
 
             if ("done".equalsIgnoreCase(status)) {
-                Long reportId = saveReportOnce(jobId, n);
+                Long reportId = saveReportOnce(jobId, n, currentUserId(token));
                 out.put("platformReportId", n.path("reportId").asText(null));
                 out.put("reportName", n.path("reportName").asText(null));
                 out.put("content", objectMapper.convertValue(n.path("content"), java.util.Map.class));
@@ -135,16 +136,21 @@ public class CareerReportController {
     private final java.util.concurrent.ConcurrentHashMap<String, Long> savedReportByJob =
             new java.util.concurrent.ConcurrentHashMap<>();
 
-    /** 幂等落库：同一个 jobId 只写一次 */
-    private Long saveReportOnce(String jobId, com.fasterxml.jackson.databind.JsonNode n) {
+    /** 幂等落库：同一个 jobId 只写一次。userId 优先取登录态，避免平台回传不一致导致外键失败 */
+    private Long saveReportOnce(String jobId, com.fasterxml.jackson.databind.JsonNode n, Long tokenUserId) {
         Long cached = savedReportByJob.get(jobId);
         if (cached != null) {
             return cached;
         }
-        Long userId;
-        try {
-            userId = Long.parseLong(n.path("userId").asText(""));
-        } catch (Exception e) {
+        Long userId = tokenUserId;
+        if (userId == null) {
+            try {
+                userId = Long.parseLong(n.path("userId").asText(""));
+            } catch (Exception ignore) {
+                userId = null;
+            }
+        }
+        if (userId == null) {
             System.err.println("报告任务缺少 userId，跳过落库: jobId=" + jobId);
             return null;
         }
@@ -337,7 +343,18 @@ public class CareerReportController {
             info.put("reportName", report.getReportName());
             return info;
         } catch (Exception e) {
-            System.err.println("报告落库失败: " + e.getMessage());
+            System.err.println("报告落库失败: " + e);
+            e.printStackTrace();
+            return null;
+        }
+    }
+
+    /** 从登录 token 解析当前用户ID（失败返回 null） */
+    private Long currentUserId(String token) {
+        try {
+            java.util.Map<String, Object> claims = org.example.web.tool.JwtUtil.parseToken(token);
+            return Long.parseLong(String.valueOf(claims.get("id")));
+        } catch (Exception e) {
             return null;
         }
     }
