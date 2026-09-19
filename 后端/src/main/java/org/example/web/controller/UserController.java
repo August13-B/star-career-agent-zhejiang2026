@@ -497,7 +497,12 @@ public class UserController {
         // 检查发送频率
         Long lasttime = userService.getcodetime(session);
         if (lasttime==null || System.currentTimeMillis()-lasttime>60*1000){
-            userService.sendmail(email,session);
+            try {
+                userService.sendmail(email,session);
+            } catch (Exception mailEx) {
+                // 邮件发送失败需明确告知，不能再假成功
+                return Result.error("验证码发送失败：" + mailEx.getMessage());
+            }
             return Result.success("验证码已发送，请注意查收！！");
         } else{
             Integer time = Math.toIntExact((60000-(System.currentTimeMillis()-lasttime)) / 1000);
@@ -586,7 +591,11 @@ public class UserController {
         if (userEmail != null){
             Long lasttime = userService.getcodetime(session);
             if (lasttime==null || System.currentTimeMillis()-lasttime>60*1000){
-                userService.forget_password_sendmail(email,session);
+                try {
+                    userService.forget_password_sendmail(email,session);
+                } catch (Exception mailEx) {
+                    return Result.error("验证码发送失败：" + mailEx.getMessage());
+                }
                 return Result.success("验证码已发送，请注意查收！！");
             } else{
                 Integer time = Math.toIntExact((60000-(System.currentTimeMillis()-lasttime)) / 1000);

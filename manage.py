@@ -167,22 +167,65 @@ EXPECTED_TABLES = 31
 
 
 def _find_mysql() -> str | None:
-    """定位 mysql 客户端：优先 PATH，否则搜常见安装目录。"""
+    """定位 mysql 客户端：环境变量 → PATH → Windows where → 常见安装目录。"""
     import glob
     import shutil
+
+    # 1) 显式配置 / PATH
+    for key in ("MYSQL_BIN", "MYSQL_HOME"):
+        v = os.environ.get(key)
+        if v:
+            cand = Path(v) / "mysql.exe" if Path(v).is_dir() else Path(v)
+            if cand.exists():
+                return str(cand)
+            cand2 = Path(v) / "bin" / "mysql.exe"
+            if cand2.exists():
+                return str(cand2)
     exe = shutil.which("mysql")
     if exe:
         return exe
-    for pat in (r"D:\MySQL\MySQL Server *\bin\mysql.exe",
-                r"C:\Program Files\MySQL\MySQL Server *\bin\mysql.exe",
-                r"C:\xampp\mysql\bin\mysql.exe",
-                "/mnt/d/MySQL/MySQL Server */bin/mysql.exe",
-                "/mnt/c/Program Files/MySQL/MySQL Server */bin/mysql.exe",
-                "/usr/bin/mysql", "/usr/local/bin/mysql"):
-        hits = sorted(glob.glob(pat), reverse=True)
-        if hits:
-            return hits[0]
-    return None
+
+    # 2) Windows where mysql
+    if IS_WINDOWS:
+        try:
+            r = subprocess.run(["where", "mysql"], capture_output=True, text=True, timeout=10)
+            if r.returncode == 0 and r.stdout.strip():
+                first = r.stdout.strip().splitlines()[0].strip()
+                if Path(first).exists():
+                    return first
+        except Exception:
+            pass
+
+    # 3) 常见安装目录（MySQL / XAMPP / phpStudy / wamp / scoop / chocolatey）
+    patterns = (
+        r"D:\MySQL\MySQL Server *\bin\mysql.exe",
+        r"C:\MySQL\MySQL Server *\bin\mysql.exe",
+        r"C:\Program Files\MySQL\MySQL Server *\bin\mysql.exe",
+        r"C:\Program Files (x86)\MySQL\MySQL Server *\bin\mysql.exe",
+        r"D:\Program Files\MySQL\MySQL Server *\bin\mysql.exe",
+        r"E:\MySQL\MySQL Server *\bin\mysql.exe",
+        r"*:\MySQL\*\bin\mysql.exe",
+        r"*:\mysql\*\bin\mysql.exe",
+        r"*:\Program Files\MySQL\*\bin\mysql.exe",
+        r"*:\xampp\mysql\bin\mysql.exe",
+        r"*:\phpstudy_pro\Extensions\MySQL*\bin\mysql.exe",
+        r"*:\phpstudy\Extensions\MySQL*\bin\mysql.exe",
+        r"*:\wamp*\bin\mysql\mysql*\bin\mysql.exe",
+        r"C:\ProgramData\chocolatey\bin\mysql.exe",
+        r"*:\Users\*\scoop\apps\mysql\current\bin\mysql.exe",
+        # WSL 视角（manage.py 也可能在 WSL 里跑）
+        r"/mnt/d/MySQL/MySQL Server */bin/mysql.exe",
+        r"/mnt/c/MySQL/MySQL Server */bin/mysql.exe",
+        r"/mnt/*/MySQL/MySQL Server */bin/mysql.exe",
+        r"/mnt/*/phpstudy_pro/Extensions/MySQL*/bin/mysql.exe",
+        r"/mnt/c/xampp/mysql/bin/mysql.exe",
+        r"/usr/bin/mysql", r"/usr/local/bin/mysql", r"/usr/local/mysql/bin/mysql",
+    )
+    hits = []
+    for pat in patterns:
+        hits += glob.glob(pat)
+    hits = sorted(set(hits), reverse=True)
+    return hits[0] if hits else None
 
 
 def _db_params() -> dict:
@@ -208,16 +251,20 @@ def _mysql_base(p: dict) -> list:
     return cmd
 
 
-def _mysql_scalar(sql: str) -> int | None:
-    """执行查询并返回首个整数值；失败返回 None。"""
+def _mysql_scalar(sql: str, verbose: bool = False) -> int | None:
+    """执行查询并返回首个整数值；失败返回 None（verbose=True 时打印真实错误）。"""
     p = _db_params()
     try:
         r = subprocess.run(_mysql_base(p) + ["-N", "-B", "-e", sql],
                            capture_output=True, text=True, timeout=60)
         if r.returncode != 0:
+            if verbose:
+                print(f"❌ MySQL 连接/查询失败：{(r.stderr or r.stdout or '').strip()[:500]}")
             return None
         return int(r.stdout.strip().splitlines()[0])
-    except Exception:
+    except Exception as e:
+        if verbose:
+            print(f"❌ 调用 mysql 客户端失败：{e}")
         return None
 
 
@@ -237,21 +284,29 @@ def db_seed(force: bool = False) -> bool:
 
     - 结构：数据库/数据库结构.sql（含 CREATE DATABASE）
     - 数据：数据库/数据库数据.sql（岗位 9958 条 + 画像/能力/用户等）
+
+    返回 True=已就绪，False=未就绪（调用方应阻止后端启动）。
     """
-    if not _find_mysql():
-        print("⏭  未找到 mysql 客户端，跳过自动灌库"
-              "（可手动执行 数据库/数据库结构.sql 与 数据库数据.sql）")
-        return False
     if not STRUCTURE_SQL.exists():
-        print(f"⏭  未找到建表脚本：{STRUCTURE_SQL}")
+        print(f"❌ 未找到建表脚本：{STRUCTURE_SQL}")
+        return False
+    if not _find_mysql():
+        print("❌ 未找到 mysql 客户端，无法自动灌库/校验数据库。")
+        print("   请任选一种方式处理后重试：")
+        print("     1) 把 mysql.exe 加入 PATH，或设置环境变量 MYSQL_BIN 指向 bin 目录")
+        print("     2) 手动灌库（Windows 示例，注意用你自己的 MySQL 路径）：")
+        print(f'        "D:\\MySQL\\MySQL Server 8.0\\bin\\mysql.exe" -uroot -p --default-character-set=utf8mb4 < "{STRUCTURE_SQL}"')
+        print(f'        "D:\\MySQL\\MySQL Server 8.0\\bin\\mysql.exe" -uroot -p --default-character-set=utf8mb4 < "{DATA_SQL}"')
         return False
     p = _db_params()
     db = p["db"]
 
     tables = _mysql_scalar(
-        f"SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='{db}'")
+        f"SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='{db}'", verbose=True)
     if tables is None:
-        tables = 0
+        print(f"❌ 无法连接 MySQL（{p['user']}@{p['host']}:{p['port']}）。"
+              f"\n    请确认 MySQL 服务已启动、账号密码与 后端/.env 的 DB_USERNAME/DB_PASSWORD 一致。")
+        return False
     if force or tables < EXPECTED_TABLES:
         print(f"📦 初始化数据库 {db}（当前 {tables}/{EXPECTED_TABLES} 张表）...")
         if not _mysql_file(STRUCTURE_SQL):
@@ -273,8 +328,12 @@ def db_seed(force: bool = False) -> bool:
     # Data too long / 保存成功却查不到（见 数据库/migrations/005）
     _apply_migrations(AUTO_MIGRATIONS)
 
-    print(f"✅ 数据库就绪：{db} | 表 {tables} 张 | job_info {rows} 条")
-    return True
+    ok = tables >= EXPECTED_TABLES and bool(rows)
+    if ok:
+        print(f"✅ 数据库就绪：{db} | 表 {tables} 张 | job_info {rows} 条")
+    else:
+        print(f"❌ 数据库仍不完整：{db} | 表 {tables} 张 | job_info {rows} 条")
+    return ok
 
 
 def _apply_migrations(files: list) -> None:
@@ -293,9 +352,10 @@ def cmd_db(args):
     if action == "status":
         p = _db_params()
         tables = _mysql_scalar(
-            f"SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='{p['db']}'")
-        rows = _mysql_scalar(f"SELECT COUNT(*) FROM `{p['db']}`.job_info")
+            f"SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='{p['db']}'", verbose=True)
+        rows = _mysql_scalar(f"SELECT COUNT(*) FROM `{p['db']}`.job_info", verbose=True)
         print("═" * 46)
+        print(f"  mysql 客户端: {_find_mysql() or '未找到'}")
         print(f"  数据库: {p['user']}@{p['host']}:{p['port']}/{p['db']}")
         print(f"  表数量: {tables if tables is not None else '无法连接'}")
         print(f"  岗位数据: {rows if rows is not None else '—'} 条")
@@ -375,7 +435,11 @@ def start_service(name: str) -> bool:
         return True
     if name == "backend":
         _check_java()
-        db_seed()  # 启动前自动灌库（幂等）
+        # 启动前自动灌库（幂等）；未就绪则中止启动，避免“起来了但所有接口 500”
+        if not db_seed():
+            print("❌ 数据库未就绪，已中止后端启动。请先解决上面的问题后重试。")
+            print("   也可手动诊断：python manage.py db status")
+            return False
 
     # 端口被"非本工具启动"的进程占用时给出明确提示（常见：上次的后端没关）
     _port = svc.get("port")

@@ -392,7 +392,7 @@ const sendCode = async () => {
         }
       }, 1000)
     } else {
-      throw new Error(res.data.msg || '发送验证码失败')
+      throw new Error(res.data.message || res.data.msg || '发送验证码失败')
     }
   } catch (error) {
     isCounting.value = false 
@@ -425,7 +425,7 @@ const nextStep = async () => {
       showToast('邮箱验证成功！', 'success')
       regStep.value = 2
     } else {
-      throw new Error(res.data.msg || '验证码错误')
+      throw new Error(res.data.message || res.data.msg || '验证码错误')
     }
   } catch (error) {
     showToast(error.response?.data?.msg || error.message || '验证失败！', 'error')
@@ -471,7 +471,7 @@ const handleRegister = async () => {
         Object.assign(regForm, { account: '', code: '', nickname: '', password: '', userRole: 1, invitationCode: '', agree: false })
       }, 1000)
     } else {
-      throw new Error(res.data.msg || '注册失败')
+      throw new Error(res.data.message || res.data.msg || '注册失败')
     }
   } catch (error) {
     showToast(error.response?.data?.msg || error.message || '服务器异常！', 'error')
