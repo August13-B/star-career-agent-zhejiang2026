@@ -244,6 +244,91 @@ public class GrowPlanServiceImpl implements GrowPlanService {
 
     @Override
     @Transactional(rollbackFor = Exception.class)
+    public Map<String, Object> addPlan(Long userId, Map<String, Object> body) {
+        if (userId == null) {
+            throw new IllegalArgumentException("缺少用户ID");
+        }
+        int planType = parseInt(body == null ? null : body.get("planType"), 1);
+        if (planType < 1 || planType > 3) {
+            planType = 1;
+        }
+        String name = str(body == null ? null : body.get("planName"));
+        if (name.isBlank()) {
+            name = horizonName(planType) + "自定义目标";
+        }
+        int years = planType == 3 ? 5 : (planType == 2 ? 3 : 1);
+        LocalDateTime now = LocalDateTime.now();
+        GrowPlan plan = new GrowPlan();
+        plan.setId(SnowIdCreater.generateId(30));
+        plan.setUserId(userId);
+        plan.setMatchId(null);
+        plan.setReportId(null);
+        plan.setTargetJob(defaultStr(body.get("targetJob"), "自定义"));
+        plan.setPlanName(name.length() > 120 ? name.substring(0, 120) : name);
+        plan.setPlanContent(str(body.get("planContent")));
+        plan.setPlanType(planType);
+        plan.setStartDate(now);
+        plan.setEndDate(now.plusYears(years));
+        plan.setTotalStatus(0);
+        plan.setProgress(BigDecimal.ZERO);
+        plan.setCreateTime(now);
+        plan.setUpdateTime(now);
+        plan.setIsDeleted(0);
+        growPlanMapper.insert(plan);
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("planId", plan.getId());
+        return out;
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public boolean deleteTask(Long userId, Long taskId) {
+        if (userId == null || taskId == null) {
+            return false;
+        }
+        GrowTask task = growTaskMapper.selectById(taskId);
+        if (task == null) {
+            return false;
+        }
+        GrowPlan plan = growPlanMapper.selectById(task.getPlanId());
+        if (plan == null || !userId.equals(plan.getUserId())) {
+            return false;
+        }
+        growTaskRecordMapper.delete(new QueryWrapper<GrowTaskRecord>().eq("task_id", taskId));
+        growTaskMapper.deleteById(taskId);
+        recomputePlan(task.getPlanId());
+        return true;
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public boolean deletePlan(Long userId, Long planId) {
+        if (userId == null || planId == null) {
+            return false;
+        }
+        GrowPlan plan = growPlanMapper.selectById(planId);
+        if (plan == null || !userId.equals(plan.getUserId())) {
+            return false;
+        }
+        List<GrowTask> tasks = growTaskMapper.selectList(new QueryWrapper<GrowTask>().eq("plan_id", planId));
+        for (GrowTask t : tasks) {
+            growTaskRecordMapper.delete(new QueryWrapper<GrowTaskRecord>().eq("task_id", t.getId()));
+        }
+        growTaskMapper.delete(new QueryWrapper<GrowTask>().eq("plan_id", planId));
+        growPlanMapper.deleteById(planId);
+        return true;
+    }
+
+    private String horizonName(int planType) {
+        return switch (planType) {
+            case 2 -> "3 年";
+            case 3 -> "5 年";
+            default -> "1 年";
+        };
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
     public boolean updateTaskStatus(Long taskId, Map<String, Object> patch) {
         if (taskId == null) {
             return false;

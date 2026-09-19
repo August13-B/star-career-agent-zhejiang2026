@@ -7,8 +7,22 @@
           <h1>我的 1 / 3 / 5 年规划</h1>
           <p class="subtitle">来自职业报告的结构化目标；展开可添待办、记录完成情况、打勾完成</p>
         </div>
-        <button class="btn ghost" @click="load" :disabled="loading">刷新</button>
+        <div class="header-actions">
+          <button class="btn ghost" @click="showPlanForm = !showPlanForm">＋ 新建规划</button>
+          <button class="btn ghost" @click="load" :disabled="loading">刷新</button>
+        </div>
       </header>
+
+      <div v-if="showPlanForm" class="new-plan">
+        <select v-model.number="newPlan.planType">
+          <option :value="1">1 年</option>
+          <option :value="2">3 年</option>
+          <option :value="3">5 年</option>
+        </select>
+        <input v-model="newPlan.planName" placeholder="规划名称，如：转行数据分析（Enter 创建）" @keyup.enter="createPlan" />
+        <button class="btn primary sm" @click="createPlan">创建</button>
+        <button class="btn ghost sm" @click="showPlanForm = false">取消</button>
+      </div>
 
       <div v-if="!userId" class="notice warn">请先登录后再查看成长规划。</div>
       <div v-else-if="loading" class="notice">加载中…</div>
@@ -21,7 +35,7 @@
 
       <section v-else class="plan-list">
         <article v-for="(p, pi) in plans" :key="p.plan.id" class="plan-card">
-          <div class="plan-head" @click="togglePlan(pi)">
+          <div class="plan-head" @click="togglePlan(p.plan.id)">
             <span class="plan-badge" :class="'h' + (p.plan.planType || 1)">{{ horizonLabel(p.plan.planType) }}</span>
             <div class="plan-info">
               <h3>{{ p.plan.planName }}</h3>
@@ -31,10 +45,11 @@
               <b>{{ Number(p.plan.progress || 0).toFixed(0) }}%</b>
               <div class="bar"><i :style="{ width: Number(p.plan.progress || 0) + '%' }"></i></div>
             </div>
-            <button class="expand-btn">{{ expanded[pi] ? '收起 ▲' : '展开 ▼' }}</button>
+            <button class="expand-btn" @click.stop="togglePlan(p.plan.id)">{{ expanded[p.plan.id] ? '收起 ▲' : '展开 ▼' }}</button>
+            <button class="expand-btn danger" @click.stop="deletePlan(p)">删除</button>
           </div>
 
-          <div v-if="expanded[pi]" class="plan-body">
+          <div v-if="expanded[p.plan.id]" class="plan-body">
             <div class="task-table">
               <div class="task-head-row">
                 <span class="col-check"></span>
@@ -59,6 +74,7 @@
                     <button class="link" @click="toggleRecords(item.task.id)">
                       {{ openRecords[item.task.id] ? '收起记录' : `记录(${item.records.length})` }}
                     </button>
+                    <button class="link danger" @click="deleteTask(item.task)">删除</button>
                   </span>
                 </div>
 
@@ -106,6 +122,8 @@ const expanded = ref({})
 const openRecords = ref({})
 const recordDraft = ref({})
 const taskDraft = ref({})
+const showPlanForm = ref(false)
+const newPlan = ref({ planType: 1, planName: '' })
 
 const headers = () => {
   const t = localStorage.getItem('token') || ''
@@ -125,7 +143,7 @@ const load = async () => {
         tasks: (p.tasks || []).map(it => (it && it.task ? it : { task: it, records: [] }))
       }))
       if (plans.value.length > 0 && Object.keys(expanded.value).length === 0) {
-        expanded.value[0] = true
+        expanded.value[plans.value[0].plan.id] = true
       }
     }
   } catch (e) {
@@ -135,8 +153,42 @@ const load = async () => {
   }
 }
 
-const togglePlan = (i) => { expanded.value[i] = !expanded.value[i] }
+const togglePlan = (planId) => { expanded.value[planId] = !expanded.value[planId] }
 const toggleRecords = (taskId) => { openRecords.value[taskId] = !openRecords.value[taskId] }
+
+const createPlan = async () => {
+  const name = String(newPlan.value.planName || '').trim()
+  try {
+    await axios.post('/api/grow/plans',
+      { planType: newPlan.value.planType || 1, planName: name },
+      { headers: { ...headers(), 'Content-Type': 'application/json' } })
+    newPlan.value = { planType: 1, planName: '' }
+    showPlanForm.value = false
+    await load()
+  } catch (e) {
+    alert('创建失败，请重试')
+  }
+}
+
+const deletePlan = async (p) => {
+  if (!confirm(`确认删除规划「${p.plan.planName}」？其下任务与完成记录也会一并删除。`)) return
+  try {
+    await axios.delete(`/api/grow/plans/${p.plan.id}`, { headers: headers() })
+    await load()
+  } catch (e) {
+    alert('删除失败，请重试')
+  }
+}
+
+const deleteTask = async (task) => {
+  if (!confirm(`确认删除任务「${task.taskName}」？其完成记录也会一并删除。`)) return
+  try {
+    await axios.delete(`/api/grow/tasks/${task.id}`, { headers: headers() })
+    await load()
+  } catch (e) {
+    alert('删除失败，请重试')
+  }
+}
 
 const toggleDone = async (task) => {
   const next = task.status === 2 ? 0 : 2
@@ -199,6 +251,15 @@ onMounted(load)
 .btn.primary:hover:not(:disabled) { background: #357ABD; }
 .btn.primary:disabled { opacity: .5; cursor: not-allowed; }
 .btn.ghost { background: #FFF; color: #475569; border-color: #DFE6EF; }
+.header-actions { display: flex; gap: 8px; }
+.new-plan { display: flex; gap: 10px; margin-bottom: 14px; background: #FFF; border: 1px solid #E4EAF2; border-radius: 12px; padding: 12px 14px; }
+.new-plan select { padding: 8px 10px; border: 1px solid #DFE6EF; border-radius: 8px; font-size: 0.86rem; font-family: inherit; outline: none; }
+.new-plan input { flex: 1; padding: 8px 11px; border: 1px solid #DFE6EF; border-radius: 8px; font-size: 0.86rem; font-family: inherit; outline: none; }
+.new-plan select:focus, .new-plan input:focus { border-color: #4A90E2; }
+.link.danger { color: #EF4444; }
+.link.danger:hover { background: #FEF2F2; }
+.expand-btn.danger { color: #EF4444; border-color: #FECACA; }
+.expand-btn.danger:hover { background: #FEF2F2; }
 
 .notice { border-radius: 10px; padding: 14px 16px; font-size: 0.88rem; background: #FFF; border: 1px solid #E4EAF2; color: #64748B; }
 .notice.warn { background: #FFFBEB; border-color: #FDE68A; color: #B45309; }

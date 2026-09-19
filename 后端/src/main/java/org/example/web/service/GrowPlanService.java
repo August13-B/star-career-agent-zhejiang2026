@@ -27,6 +27,15 @@ public interface GrowPlanService {
     /** 新增自定义代办任务（归属某个 1/3/5 年计划） */
     Map<String, Object> addTask(Long userId, Map<String, Object> body);
 
+    /** 新增自定义规划（1/3/5 年） */
+    Map<String, Object> addPlan(Long userId, Map<String, Object> body);
+
+    /** 删除任务（逻辑删除，同时删除其完成记录） */
+    boolean deleteTask(Long userId, Long taskId);
+
+    /** 删除规划（逻辑删除，同时删除其任务与记录） */
+    boolean deletePlan(Long userId, Long planId);
+
     /** 为任务追加一条完成情况记录（时间线，可多条） */
     Map<String, Object> addTaskRecord(Long userId, Long taskId, String content);
 
