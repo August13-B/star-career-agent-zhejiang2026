@@ -306,7 +306,7 @@ public class TboxAgentServiceImpl implements TboxAgentService {
         String resp = http.post()
                 .uri("/api/report")
                 .contentType(MediaType.APPLICATION_JSON)
-                .headers(this::applyAuth)
+                .headers(this::applyReportHeaders)
                 .bodyValue(body)
                 .retrieve()
                 .bodyToMono(String.class)
@@ -330,7 +330,7 @@ public class TboxAgentServiceImpl implements TboxAgentService {
                     }
                     return uriBuilder.build(jobId);
                 })
-                .headers(this::applyAuth)
+                .headers(this::applyReportHeaders)
                 .retrieve()
                 .bodyToMono(String.class)
                 .block(Duration.ofSeconds(30));
@@ -342,35 +342,49 @@ public class TboxAgentServiceImpl implements TboxAgentService {
         return http.post()
                 .uri("/api/report/jobs/{jobId}/cancel", jobId)
                 .contentType(MediaType.APPLICATION_JSON)
-                .headers(this::applyAuth)
+                .headers(this::applyReportHeaders)
                 .retrieve()
                 .bodyToMono(String.class)
                 .block(Duration.ofSeconds(20));
     }
 
     @Override
-    public String deleteReports(java.util.List<String> reportIds) {
+    public String deleteReports(java.util.List<String> reportIds, Long userId) {
         if (reportIds == null || reportIds.isEmpty()) {
             return "{\"deleted\":[],\"failed\":[]}";
         }
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("reportIds", reportIds);
-        log.info("删除平台报告 /api/report/delete count={}", reportIds.size());
+        if (userId != null) {
+            // 传 userId → 平台校验归属（不符返回 failed: not_found_or_forbidden）
+            body.put("userId", String.valueOf(userId));
+        }
+        log.info("删除平台报告 /api/report/delete count={}, userId={}", reportIds.size(), userId);
         return http.post()
                 .uri("/api/report/delete")
                 .contentType(MediaType.APPLICATION_JSON)
-                .headers(this::applyAuth)
+                .headers(this::applyReportHeaders)
                 .bodyValue(body)
                 .retrieve()
                 .bodyToMono(String.class)
                 .block(Duration.ofSeconds(30));
     }
 
-    /** 统一的鉴权头（.env 配了 TBOX_API_KEY 就带） */
-    private void applyAuth(HttpHeaders h) {
+    /**
+     * 报告类接口统一请求头：
+     * <ul>
+     *   <li>{@code Authorization: Bearer <TBOX_API_KEY>}（.env 配了就带）</li>
+     *   <li>{@code X-Report-Token: <TBOX_REPORT_TOKEN>}（平台配置 REPORT_API_TOKEN 后必须带）</li>
+     * </ul>
+     */
+    private void applyReportHeaders(HttpHeaders h) {
         String key = props.getApiKey();
         if (key != null && !key.isBlank()) {
             h.set(HttpHeaders.AUTHORIZATION, key.startsWith("Bearer ") ? key : "Bearer " + key);
+        }
+        String rt = props.getReportToken();
+        if (rt != null && !rt.isBlank()) {
+            h.set("X-Report-Token", rt);
         }
     }
 

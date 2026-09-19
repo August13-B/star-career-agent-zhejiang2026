@@ -225,7 +225,7 @@ public class CareerReportController {
         java.util.List<String> platformFailed = new java.util.ArrayList<>();
         if (!platformIds.isEmpty()) {
             try {
-                String resp = tboxAgentService.deleteReports(platformIds);
+                String resp = tboxAgentService.deleteReports(platformIds, userId);
                 com.fasterxml.jackson.databind.JsonNode n = objectMapper.readTree(resp);
                 platformDeleted = n.path("deleted").size();
                 for (com.fasterxml.jackson.databind.JsonNode f : n.path("failed")) {

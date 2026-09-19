@@ -84,9 +84,10 @@ public interface TboxAgentService {
      * 批量删除平台侧报告（平台 {@code POST /api/report/delete}）。
      *
      * @param reportIds 平台报告ID列表（Appwrite $id）
+     * @param userId    调用方用户ID（可空；传了平台会校验归属）
      * @return 平台原始响应 JSON（{@code {"deleted":[...],"failed":[...]}}）
      */
-    String deleteReports(java.util.List<String> reportIds);
+    String deleteReports(java.util.List<String> reportIds, Long userId);
 
     /** 记录本次运行的平台 ID（供保存消息时回填） */
     void rememberRunIds(Long localConversationId, String tboxMessageId, String tboxRequestId);

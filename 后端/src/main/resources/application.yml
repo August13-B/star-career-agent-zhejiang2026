@@ -97,6 +97,7 @@ aes-storage:
 tbox:
   api-url: ${TBOX_API_URL:}
   api-key: ${TBOX_API_KEY:}
+  report-token: ${TBOX_REPORT_TOKEN:}   # 报告类接口专用令牌（平台配置 REPORT_API_TOKEN 后填写）
   agent-id: ${TBOX_AGENT_ID:}
   timeout-seconds: ${TBOX_TIMEOUT_SECONDS:30}   # 单次对话超时（模型首响较慢）
   chat-channel: ${TBOX_CHAT_CHANNEL:http}       # 对话通道：http=平台专用 SSE /api/chat/stream；ws=旧 WebSocket（兜底）

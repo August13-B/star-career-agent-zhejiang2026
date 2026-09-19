@@ -307,6 +307,17 @@ const startPolling = (jobId) => {
         stopTypewriter()
         return
       }
+      // 平台侧已取消（终态）：停止本地轮询并清理
+      if (d.status === 'canceled') {
+        stopPolling()
+        stopTypewriter()
+        pollToken++
+        currentJobId = null
+        localStorage.removeItem('reportJobId')
+        running.value = false
+        errorMsg.value = '任务已取消'
+        return
+      }
       progressChars.value = d.progressChars || progressChars.value
 
       // 1) 追加增量正文（按 agent），并推进本地已读位置（下次 offsets 回传）

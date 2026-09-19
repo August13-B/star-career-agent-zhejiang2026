@@ -19,6 +19,9 @@ public class TboxProperties {
     /** 报名所得密钥（inc-ak...） */
     private String apiKey;
 
+    /** 报告类接口专用令牌：平台配置 REPORT_API_TOKEN 后需带 X-Report-Token（未配置则为空，不发送） */
+    private String reportToken;
+
     /** 应用 ID（/api/tbox/session 返回的 appId） */
     private String agentId;
 
