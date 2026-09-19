@@ -32,6 +32,130 @@ import org.springframework.web.bind.annotation.RestController;
 public class CareerReportController {
 
     @Autowired
+    private org.example.web.service.TboxAgentService tboxAgentService;
+
+    @Autowired
+    private org.example.web.mapper.CareerReportMapper careerReportMapper;
+
+    @Autowired
+    private com.fasterxml.jackson.databind.ObjectMapper objectMapper;
+
+    @Autowired
+    private org.example.web.mapper.CareerReportHistoryMapper careerReportHistoryMapper;
+
+    /** 智能体 key → 中文名（用于落库与前端展示） */
+    private static final java.util.Map<String, String> AGENT_NAMES = java.util.Map.of(
+            "profile_analysis", "画像分析",
+            "career_exploration", "职业探索",
+            "goal_setting", "目标设定",
+            "path_planning", "路径规划",
+            "action_planning", "行动计划",
+            "report_composition", "报告整合");
+
+    /**
+     * 职业报告多智能体流式生成（SSE）
+     *
+     * <p>下发格式：data:{"agent":"profile_analysis","data":"增量文本"}
+     * 结束时：data:{"done":true,"agents":[...],"hasMarkers":true}
+     * 完成后自动落库 career_report（+ 历史版本）
+     */
+    @org.springframework.web.bind.annotation.PostMapping(
+            value = "/generate-stream", produces = org.springframework.http.MediaType.TEXT_EVENT_STREAM_VALUE)
+    @org.springframework.web.bind.annotation.CrossOrigin
+    public reactor.core.publisher.Flux<String> generateReportStream(@RequestBody java.util.Map<String, Object> request) {
+        Object uidRaw = request.get("user_id");
+        if (uidRaw == null) {
+            return reactor.core.publisher.Flux.just(
+                    "{\"agent\":\"report_composition\",\"data\":\"缺少 user_id 参数\"}");
+        }
+        final Long userId = Long.parseLong(String.valueOf(uidRaw));
+        Long conversationId = request.get("conversation_id") == null ? null
+                : Long.parseLong(String.valueOf(request.get("conversation_id")));
+        String message = request.get("content") == null
+                ? "请为我生成一份完整的职业规划报告。若缺少我的画像信息，请基于岗位知识库与通用情况给出，并说明假设。"
+                : String.valueOf(request.get("content"));
+
+        final org.example.web.service.impl.AgentMarkerParser parser =
+                new org.example.web.service.impl.AgentMarkerParser();
+        final java.util.Map<String, String> acc = new java.util.LinkedHashMap<>();
+
+        return tboxAgentService.reportStream(userId, conversationId, message, parser)
+                .doOnNext(json -> accumulateAgentChunk(json, acc))
+                .doOnComplete(() -> saveReport(userId, acc, parser));
+    }
+
+    /** 累加各智能体内容（元素形如 {"agent":"x","data":"..."}） */
+    private void accumulateAgentChunk(String json, java.util.Map<String, String> acc) {
+        try {
+            com.fasterxml.jackson.databind.JsonNode n = objectMapper.readTree(json);
+            if (n.has("done")) {
+                return;
+            }
+            if (n.path("error").asBoolean(false)) {
+                return;   // 错误提示仅下发前端，不落库
+            }
+            String agent = n.path("agent").asText("");
+            String data = n.path("data").asText("");
+            if (!agent.isEmpty() && !data.isEmpty()) {
+                acc.merge(agent, data, String::concat);
+            }
+        } catch (Exception e) {
+            System.err.println("累加报告片段失败: " + e.getMessage());
+        }
+    }
+
+    /** 汇总落库：career_report（最新） + career_report_history（版本快照） */
+    private void saveReport(Long userId, java.util.Map<String, String> acc,
+                            org.example.web.service.impl.AgentMarkerParser parser) {
+        if (acc.isEmpty()) {
+            System.err.println("报告内容为空，跳过落库");
+            return;
+        }
+        try {
+            java.util.List<java.util.Map<String, Object>> agents = new java.util.ArrayList<>();
+            StringBuilder fullText = new StringBuilder();
+            for (java.util.Map.Entry<String, String> e : parser.sections().entrySet()) {
+                java.util.Map<String, Object> item = new java.util.LinkedHashMap<>();
+                item.put("key", e.getKey());
+                item.put("name", AGENT_NAMES.getOrDefault(e.getKey(), e.getKey()));
+                item.put("content", e.getValue());
+                agents.add(item);
+                fullText.append(e.getValue()).append("\n\n");
+            }
+            java.util.Map<String, Object> content = new java.util.LinkedHashMap<>();
+            content.put("agents", agents);
+            content.put("fullText", fullText.toString());
+            content.put("hasMarkers", parser.hasMarkers());
+
+            CareerReport report = new CareerReport();
+            report.setId(Long.valueOf(org.example.web.tool.SnowIdCreater.generateId(23)));
+            report.setUserId(userId);
+            report.setReportName("职业规划报告 · " + java.time.LocalDateTime.now()
+                    .format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")));
+            report.setReportType(1);
+            report.setVersion(1);
+            report.setStatus(2);
+            report.setReportContent(objectMapper.writeValueAsString(content));
+            report.setCreateTime(java.time.LocalDateTime.now());
+            report.setUpdateTime(java.time.LocalDateTime.now());
+            careerReportMapper.insert(report);
+            // 版本快照（历史表）
+            CareerReportHistory history = new CareerReportHistory();
+            history.setId(Long.valueOf(org.example.web.tool.SnowIdCreater.generateId(23)));
+            history.setReportId(report.getId());
+            history.setVersion(1);
+            history.setReportContent(report.getReportContent());
+            history.setChangeReason("多智能体生成");
+            history.setCreateTime(java.time.LocalDateTime.now());
+            careerReportHistoryMapper.insert(history);
+            System.out.println("职业报告已落库, id=" + report.getId() + ", 智能体数=" + agents.size());
+        } catch (Exception e) {
+            System.err.println("报告落库失败: " + e.getMessage());
+        }
+    }
+
+
+    @Autowired
     private CareerReportService careerReportService;
 
     /**

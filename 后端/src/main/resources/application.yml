@@ -94,6 +94,7 @@ tbox:
   api-key: ${TBOX_API_KEY:}
   agent-id: ${TBOX_AGENT_ID:}
   timeout-seconds: ${TBOX_TIMEOUT_SECONDS:30}   # 单次对话超时（模型首响较慢）
+  report-timeout-seconds: ${TBOX_REPORT_TIMEOUT_SECONDS:180} # 职业报告（6 智能体串行）超时
   hello-delay-millis: ${TBOX_HELLO_DELAY_MS:500} # HELLO 与 SEND_MESSAGE 间隔
 
 # ── 日志 ──

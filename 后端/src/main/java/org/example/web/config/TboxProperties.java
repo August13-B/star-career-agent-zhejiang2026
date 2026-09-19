@@ -25,6 +25,9 @@ public class TboxProperties {
     /** 单次对话超时（秒），模型首响较慢，默认 30 */
     private int timeoutSeconds = 30;
 
+    /** 职业报告（6 智能体串行）超时（秒），默认 180 */
+    private int reportTimeoutSeconds = 180;
+
     /** HELLO 与 SEND_MESSAGE 之间的间隔（毫秒），实测需要短暂间隔 */
     private long helloDelayMillis = 500;
 

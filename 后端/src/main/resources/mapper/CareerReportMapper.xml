@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="org.example.web.mapper.CareerReportMapper">
+
+    <sql id="cols">
+        id, user_id, match_id, report_name, report_type, version, status,
+        report_content, template_id, feedback, feedback_score, feedback_time,
+        create_time, update_time, is_deleted
+    </sql>
+
+    <insert id="insert" parameterType="org.example.web.entity.CareerReport">
+        INSERT INTO career_report
+            (id, user_id, match_id, report_name, report_type, version, status,
+             report_content, template_id, feedback, feedback_score, feedback_time,
+             create_time, update_time, is_deleted)
+        VALUES
+            (#{id}, #{userId}, #{matchId}, #{reportName}, #{reportType}, #{version}, #{status},
+             #{reportContent}, #{templateId}, #{feedback}, #{feedbackScore}, #{feedbackTime},
+             COALESCE(#{createTime}, NOW()), COALESCE(#{updateTime}, NOW()), COALESCE(#{isDeleted}, 0))
+    </insert>
+
+    <update id="update" parameterType="org.example.web.entity.CareerReport">
+        UPDATE career_report
+        <set>
+            <if test="matchId != null">match_id = #{matchId},</if>
+            <if test="reportName != null">report_name = #{reportName},</if>
+            <if test="reportType != null">report_type = #{reportType},</if>
+            <if test="version != null">version = #{version},</if>
+            <if test="status != null">status = #{status},</if>
+            <if test="reportContent != null">report_content = #{reportContent},</if>
+            <if test="templateId != null">template_id = #{templateId},</if>
+            <if test="feedback != null">feedback = #{feedback},</if>
+            <if test="feedbackScore != null">feedback_score = #{feedbackScore},</if>
+            <if test="feedbackTime != null">feedback_time = #{feedbackTime},</if>
+            update_time = NOW()
+        </set>
+        WHERE id = #{id}
+    </update>
+
+    <delete id="deleteById">
+        DELETE FROM career_report WHERE id = #{id}
+    </delete>
+
+    <select id="selectById" resultType="org.example.web.entity.CareerReport">
+        SELECT <include refid="cols"/> FROM career_report WHERE id = #{id} AND is_deleted = 0
+    </select>
+
+    <select id="selectByUserId" resultType="org.example.web.entity.CareerReport">
+        SELECT <include refid="cols"/> FROM career_report
+        WHERE user_id = #{userId} AND is_deleted = 0 ORDER BY create_time DESC
+    </select>
+
+    <select id="selectByMatchId" resultType="org.example.web.entity.CareerReport">
+        SELECT <include refid="cols"/> FROM career_report
+        WHERE match_id = #{matchId} AND is_deleted = 0 ORDER BY create_time DESC LIMIT 1
+    </select>
+
+    <select id="selectByReportType" resultType="org.example.web.entity.CareerReport">
+        SELECT <include refid="cols"/> FROM career_report
+        WHERE report_type = #{reportType} AND is_deleted = 0 ORDER BY create_time DESC
+    </select>
+
+    <select id="selectByUserIdAndType" resultType="org.example.web.entity.CareerReport">
+        SELECT <include refid="cols"/> FROM career_report
+        WHERE user_id = #{userId} AND report_type = #{reportType} AND is_deleted = 0
+        ORDER BY create_time DESC
+    </select>
+
+    <update id="updateStatus">
+        UPDATE career_report SET status = #{status}, update_time = NOW() WHERE id = #{id}
+    </update>
+
+    <update id="updateVersion">
+        UPDATE career_report SET version = #{version}, update_time = NOW() WHERE id = #{id}
+    </update>
+
+    <update id="updateFeedback">
+        UPDATE career_report
+        SET feedback = #{feedback}, feedback_score = #{feedbackScore}, feedback_time = NOW(), update_time = NOW()
+        WHERE id = #{id}
+    </update>
+
+    <update id="logicDeleteById">
+        UPDATE career_report SET is_deleted = 1, update_time = NOW() WHERE id = #{id}
+    </update>
+
+</mapper>

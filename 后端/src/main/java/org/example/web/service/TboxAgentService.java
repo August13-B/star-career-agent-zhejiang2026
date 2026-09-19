@@ -24,6 +24,14 @@ public interface TboxAgentService {
      */
     Flux<String> chatStream(Long userId, Long localConversationId, String message);
 
+    /**
+     * 职业报告多智能体流式（按段标记切分）
+     *
+     * <p>返回元素为结构化 JSON：{"agent":"<智能体key>","data":"<增量文本>"}；
+     * 结束时额外返回一条 {"done":true,"agents":[...],"hasMarkers":true|false}
+     */
+    Flux<String> reportStream(Long userId, Long localConversationId, String message, org.example.web.service.impl.AgentMarkerParser parser);
+
     /** 记录本次运行的平台 ID（供保存消息时回填） */
     void rememberRunIds(Long localConversationId, String tboxMessageId, String tboxRequestId);
 
