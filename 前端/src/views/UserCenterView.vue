@@ -480,22 +480,48 @@ onMounted(async () => {
       displayNickname.value = userInfo.value.nickname || `新星用户_${String(userInfo.value.userAccount || '8888').slice(-4)}`
       localStorage.setItem('userName', displayNickname.value)
       // 关键：用最新用户信息刷新 userId，避免 localStorage 残留旧 id 导致保存时外键失败
+      // 注意：ID 是 64 位雪花值，必须保持字符串，切勿 Number()
       if (userInfo.value.id) {
         currentUserId.value = String(userInfo.value.id)
         localStorage.setItem('userId', currentUserId.value)
       }
+    } else {
+      // 服务端明确告知 token 失效 / 用户不存在（token 仍在但账号已被重建/清理）
+      // 此时继续用 localStorage 旧 userId 会必然触发外键失败，必须清掉并回登录页
+      handleAuthInvalid(res.data && res.data.message)
+      return
     }
-  } catch (error) { displayNickname.value = '探索者' }
+  } catch (error) {
+    displayNickname.value = '探索者'
+    handleAuthInvalid('获取用户信息失败')
+    return
+  }
 
   // 2. 拉取档案和能力
   fetchMyProfile()
   fetchMyAbility()
 })
 
+// 登录态失效统一处理：清本地身份 + 回登录页
+const handleAuthInvalid = (msg) => {
+  localStorage.removeItem('userId')
+  localStorage.removeItem('userRole')
+  localStorage.removeItem('userName')
+  alert(`登录状态已失效（${msg || '账号信息与服务器不一致'}）。\n请重新登录后再操作。`)
+  router.push('/login')
+}
+
+// 64 位雪花 ID 校验：必须是纯数字且 > 0（保持字符串，不做 Number 转换）
+const isValidId = (v) => {
+  const s = String(v ?? '').trim()
+  return /^\d+$/.test(s) && s !== '0'
+}
+
 const fetchMyProfile = async () => {
   if (!currentUserId.value) return
   try {
-    const res = await studentApi.post('/api/student/condition', { userId: Number(currentUserId.value) })
+    // userId 保持字符串，避免 64 位 ID 在 JS 中丢精度
+    const res = await studentApi.post('/api/student/condition', { userId: String(currentUserId.value) })
     if (res.data.code === 200 && res.data.data && res.data.data.length > 0) {
       myProfile.value = res.data.data[0]
     }
@@ -514,7 +540,7 @@ const fetchMyAbility = async () => {
   } catch (err) {
     // 兜底策略：使用文档里写的 post condition 查询
     try {
-      const resFallback = await abilityApi.post(`/api/ability/condition`, { userId: Number(currentUserId.value) })
+      const resFallback = await abilityApi.post(`/api/ability/condition`, { userId: String(currentUserId.value) })
       if (resFallback.data.code === 200 && resFallback.data.data && resFallback.data.data.length > 0) {
         myAbility.value = resFallback.data.data[0]
       }
@@ -532,11 +558,11 @@ const openBasicModal = () => { basicForm.value = { ...myProfile.value }; basicVi
 const saveBasicInfo = async () => {
   if (!basicForm.value.userName) return alert('姓名不能为空')
   isSavingBasic.value = true
-  if (!currentUserId.value || Number(currentUserId.value) <= 0) {
+  if (!isValidId(currentUserId.value)) {
     isSavingBasic.value = false
     return alert('登录状态已失效，请重新登录后再保存')
   }
-  const payload = { ...basicForm.value, userId: Number(currentUserId.value) }
+  const payload = { ...basicForm.value, userId: String(currentUserId.value) }
   try {
     let res
     if (myProfile.value.id) {
@@ -552,8 +578,8 @@ const saveBasicInfo = async () => {
       }
     }
     if (res.data.code === 200) { basicVis.value = false; fetchMyProfile() }
-    else alert('保存失败: ' + (res.data.message || '未知错误'))
-  } catch (err) { console.error(err); alert('保存出错，请检查登录状态') } finally { isSavingBasic.value = false }
+    else handleSaveError(res.data.message)
+  } catch (err) { console.error(err); handleSaveError(err?.response?.data?.message || err.message) } finally { isSavingBasic.value = false }
 }
 
 // ===== 职业意向编辑 =====
@@ -566,11 +592,11 @@ const cancelEdit = () => { isEdit.value = false }
 
 const saveJobIntent = async () => {
   isSavingIntent.value = true
-  if (!currentUserId.value || Number(currentUserId.value) <= 0) {
+  if (!isValidId(currentUserId.value)) {
     isSavingIntent.value = false
     return alert('登录状态已失效，请重新登录后再保存')
   }
-  const payload = { ...intentForm.value, userId: Number(currentUserId.value) }
+  const payload = { ...intentForm.value, userId: String(currentUserId.value) }
   try {
     let res
     if (myProfile.value.id) {
@@ -585,8 +611,8 @@ const saveJobIntent = async () => {
       }
     }
     if (res.data.code === 200) { isEdit.value = false; fetchMyProfile() }
-    else alert('保存失败: ' + (res.data.message || '未知错误'))
-  } catch (err) { console.error(err); alert('保存出错，请检查登录状态') } finally { isSavingIntent.value = false }
+    else handleSaveError(res.data.message)
+  } catch (err) { console.error(err); handleSaveError(err?.response?.data?.message || err.message) } finally { isSavingIntent.value = false }
 }
 
 // ===== 🚀 能力模型编辑 (新增) =====
@@ -601,14 +627,14 @@ const openAbilityModal = () => {
 
 const saveAbility = async () => {
   isSavingAbility.value = true
-  if (!currentUserId.value || Number(currentUserId.value) <= 0) {
+  if (!isValidId(currentUserId.value)) {
     isSavingAbility.value = false
     return alert('登录状态已失效，请重新登录后再保存')
   }
   // 组装参数，必须带上 userId。如果有 profileId 也可以顺带关联。
   const payload = { 
     ...abilityForm.value, 
-    userId: Number(currentUserId.value),
+    userId: String(currentUserId.value),
     profileId: myProfile.value.id || null
   }
   

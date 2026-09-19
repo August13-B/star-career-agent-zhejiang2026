@@ -256,8 +256,18 @@ const getUserInfo = async () => {
     if (res.data.code === 10001 || res.data.code === 200 || res.data.code === 0) {
       userId.value = String(res.data.data.id)
       localStorage.setItem('userId', userId.value)
+    } else {
+      // token 失效 / 用户已被清理：旧的 localStorage.userId 会导致对话落库外键失败
+      localStorage.removeItem('userId')
+      userId.value = ''
+      alert('登录状态已失效，请重新登录')
+      router.push('/login')
     }
-  } catch (error) { console.error('获取用户信息失败', error) }
+  } catch (error) {
+    console.error('获取用户信息失败', error)
+    localStorage.removeItem('userId')
+    userId.value = ''
+  }
 }
 
 const fetchChatList = async () => {
