@@ -59,3 +59,11 @@ python manage.py free-port backend
 - `README.md`、`问题汇总与修复记录.md`、`国赛A13至省赛A02差异分析与待办清单.md`
 - `百宝箱/接口清单与接入说明.md`、`百宝箱/提示词-*.md`
 - `数据库/README.md`、`多智能体报告-完整流程指引.md`
+
+## 7. 协作约定（本仓库）
+
+- **「自动化推送」= 管理员 + 合并后删除分支**（用户已设为默认，无需再问身份与删除意向）。
+  流程：`git pull origin develop` → `git push -u origin <分支>` → `gh pr create --base develop`
+  → `gh pr checks`（无 CI 则跳过）→ `gh pr merge --merge --delete-branch`。
+- 其它改动遵循「小步提交」；后端 Java 改动需用户重启后端，前端改动 Vite 热更新。
+- Agent 不启动/构建项目（`npm run build`、`mvnw spring-boot:run` 等由用户在 Windows 侧执行）。
