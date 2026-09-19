@@ -118,7 +118,12 @@ const load = async () => {
   try {
     const res = await axios.get('/api/grow/plans', { params: { userId: userId.value }, headers: headers() })
     if (res.data.code === 10001 || res.data.code === 200 || res.data.code === 0) {
-      plans.value = Array.isArray(res.data.data) ? res.data.data : []
+      const raw = Array.isArray(res.data.data) ? res.data.data : []
+      // 兼容两种 tasks 结构：新 [{task, records}] / 旧 [GrowTask]
+      plans.value = raw.map(p => ({
+        ...p,
+        tasks: (p.tasks || []).map(it => (it && it.task ? it : { task: it, records: [] }))
+      }))
       if (plans.value.length > 0 && Object.keys(expanded.value).length === 0) {
         expanded.value[0] = true
       }
