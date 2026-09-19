@@ -55,14 +55,14 @@ public interface TboxAgentService {
     String chatSync(Long userId, Long localConversationId, String message);
 
     /**
-     * 职业报告多智能体流式（平台专用 HTTP SSE 接口 {@code POST /api/report/stream}）
+     * 职业报告生成：平台异步任务 + 轮询（平台网关缓冲长响应，SSE 从公网不可用）。
      *
-     * <p>平台侧已按固定顺序串行编排 6 个智能体并逐段打 {@code agent} 标签，
-     * 因此返回元素即平台原始帧（JSON 字符串）：
+     * <p>实现：{@code POST /api/report} 起任务 → 轮询 {@code GET /api/report/jobs/{jobId}}，
+     * 返回元素为下发给 Controller 的帧（JSON 字符串）：
      * <ul>
-     *   <li>{@code {"agent":"<key>","data":"<增量文本>"}}（按 key 分组拼接 = 完整章节）</li>
-     *   <li>{@code {"done":true,"agents":[...],"reportName":"...","reportId":"..."}}</li>
-     *   <li>{@code {"error":"文案"}}</li>
+     *   <li>进度帧：{@code {"progress":true,"currentAgent":"profile_analysis","agentsDone":[...],"progressChars":N}}</li>
+     *   <li>完成帧：{@code {"status":"done","agents":[...],"reportId":"...","reportName":"...","content":{"agents":[{key,name,content}]}}}</li>
+     *   <li>失败帧：{@code {"error":"文案"}}</li>
      * </ul>
      *
      * @param userId  本地用户ID（字符串形式传给平台，用于平台侧落库与"上一份报告"注入）

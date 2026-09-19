@@ -28,6 +28,9 @@ public class TboxProperties {
     /** 职业报告（6 智能体串行）超时（秒），默认 180 */
     private int reportTimeoutSeconds = 180;
 
+    /** 职业报告异步轮询间隔（秒） */
+    private int reportPollSeconds = 4;
+
     /** HELLO 与 SEND_MESSAGE 之间的间隔（毫秒），实测需要短暂间隔 */
     private long helloDelayMillis = 500;
 

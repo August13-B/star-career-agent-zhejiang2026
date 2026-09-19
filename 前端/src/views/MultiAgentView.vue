@@ -29,6 +29,8 @@
         ></textarea>
       </section>
 
+      <p v-if="running" class="progress-hint">平台正在生成… 已输出 {{ progressChars }} 字（共 6 个智能体，预计 3~4 分钟）</p>
+
       <section class="agents">
         <article
           v-for="(agent, i) in agents"
@@ -99,8 +101,8 @@ const userId = ref(localStorage.getItem('userId') || '')
 const extraInput = ref('')
 const running = ref(false)
 const finished = ref(false)
-const hasMarkers = ref(true)
 const savedHint = ref('')
+const progressChars = ref(0)
 const reportName = ref('')
 const reportId = ref('')
 const errorMsg = ref('')
@@ -147,9 +149,55 @@ const markPreviousDone = (idx) => {
   }
 }
 
+// 平台 done 帧携带完整分段内容 → 前端按段打字机渲染
+const revealSegments = (list) => {
+  if (!Array.isArray(list) || list.length === 0) {
+    agents.value.forEach(a => { if (a.status !== 'error') a.status = 'done' })
+    finished.value = true
+    running.value = false
+    return
+  }
+  let i = 0
+  const typeNext = () => {
+    if (i >= list.length) {
+      agents.value.forEach(a => { if (a.status !== 'error') a.status = 'done' })
+      finished.value = true
+      running.value = false
+      return
+    }
+    const seg = list[i]
+    const idx = agents.value.findIndex(a => a.key === (seg.key || seg.name))
+    if (idx < 0) { i++; typeNext(); return }
+    for (let j = 0; j < idx; j++) {
+      if (agents.value[j].status !== 'done') agents.value[j].status = 'done'
+    }
+    const card = agents.value[idx]
+    card.status = 'running'
+    card.content = ''
+    const text = String(seg.content || '')
+    let pos = 0
+    // 每段约 1.5s 左右打完（步长自适应）
+    const step = Math.max(12, Math.ceil(text.length / 90))
+    const timer = setInterval(() => {
+      pos += step
+      card.content = text.slice(0, pos)
+      if (pos >= text.length) {
+        clearInterval(timer)
+        card.content = text
+        card.status = 'done'
+        i++
+        typeNext()
+      }
+    }, 16)
+  }
+  typeNext()
+}
+
 const generate = async () => {
   reset()
   running.value = true
+  progressChars.value = 0
+  let doneReceived = false
   const token = localStorage.getItem('token') || ''
   const headers = {
     'Content-Type': 'application/json',
@@ -184,14 +232,6 @@ const generate = async () => {
         let msg
         try { msg = JSON.parse(raw) } catch { continue }
 
-        if (msg.done) {
-          // 后端结束帧：{done, agents, reportName, reportId(我们的), platformReportId, saved}
-          hasMarkers.value = msg.hasMarkers !== false
-          reportName.value = msg.reportName || ''
-          reportId.value = msg.reportId ? String(msg.reportId) : ''
-          savedHint.value = msg.saved === false ? '（但落库失败，详见后端日志）' : '并已保存'
-          continue
-        }
         if (msg.error) {
           // 平台失败帧：{error:"文案"}
           errorMsg.value = String(msg.error)
@@ -199,6 +239,34 @@ const generate = async () => {
           if (runningAgent) runningAgent.status = 'error'
           continue
         }
+        if (msg.done) {
+          // 结束帧：{done, agents, reportName, reportId(我们的), platformReportId, content:{agents}}
+          doneReceived = true
+          reportName.value = msg.reportName || ''
+          reportId.value = msg.reportId ? String(msg.reportId) : ''
+          savedHint.value = msg.saved === false ? '（但落库失败，详见后端日志）' : '并已保存'
+          const list = msg.content && Array.isArray(msg.content.agents) ? msg.content.agents : []
+          revealSegments(list)
+          continue
+        }
+        // 平台异步任务进度帧：{progress:true, currentAgent, agentsDone, progressChars}
+        if (msg.progress || msg.status === 'running') {
+          const ca = msg.currentAgent
+          const idx = agents.value.findIndex(a => a.key === ca)
+          if (idx >= 0) {
+            markPreviousDone(idx)
+            if (agents.value[idx].status === 'waiting') agents.value[idx].status = 'running'
+          }
+          if (Array.isArray(msg.agentsDone)) {
+            msg.agentsDone.forEach(k => {
+              const j = agents.value.findIndex(a => a.key === k)
+              if (j >= 0) agents.value[j].status = 'done'
+            })
+          }
+          progressChars.value = msg.progressChars || 0
+          continue
+        }
+        // 兼容旧的 {agent,data} 增量帧
         const idx = agents.value.findIndex(a => a.key === msg.agent)
         if (idx < 0) continue
         markPreviousDone(idx)
@@ -207,14 +275,18 @@ const generate = async () => {
         agent.content += msg.data || ''
       }
     }
-    agents.value.forEach(a => { if (a.status === 'running') a.status = 'done' })
-    finished.value = true
+    if (!doneReceived) {
+      // 未收到 done（断流/失败）：把进行中的卡片收尾
+      agents.value.forEach(a => { if (a.status === 'running') a.status = 'done' })
+      finished.value = true
+    }
   } catch (e) {
-    errorMsg.value = `生成失败：${e.message}（请确认后端已启动、模型网关已开通）`
+    errorMsg.value = `生成失败：${e.message}（请确认后端已启动、平台报告服务已就绪）`
     const runningAgent = agents.value.find(a => a.status === 'running')
     if (runningAgent) runningAgent.status = 'error'
   } finally {
-    running.value = false
+    // 收到 done 时由 revealSegments 负责收尾（打字机期间保持按钮禁用）
+    if (!doneReceived) running.value = false
   }
 }
 
@@ -246,6 +318,8 @@ onMounted(getUserInfo)
 .badge { display: inline-flex; align-items: center; gap: 6px; font-size: 0.74rem; font-weight: 600;
          color: #2563EB; background: #EFF6FF; padding: 4px 10px; border-radius: 6px; }
 .subtitle { margin: 0; color: #64748B; font-size: 0.9rem; }
+.progress-hint { margin: 0 0 12px; padding: 8px 14px; background: #EFF6FF; border: 1px solid #DBEAFE; border-radius: 8px;
+                 color: #1D4ED8; font-size: 0.84rem; }
 .header-actions { display: flex; gap: 8px; }
 
 .btn { display: inline-flex; align-items: center; gap: 6px; border: 1px solid transparent; border-radius: 8px;

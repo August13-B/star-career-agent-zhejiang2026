@@ -59,11 +59,11 @@ public class CareerReportController {
             "report_composition", "报告整合");
 
     /**
-     * 职业报告多智能体流式生成（SSE）
+     * 职业报告生成（平台异步任务 + 轮询）
      *
-     * <p>后端角色：拼「画像上下文 + 用户本次诉求」→ 调平台 {@code POST /api/report/stream} →
-     * 原样透传平台的 {@code agent/data}、{@code done}、{@code error} 帧；
-     * 在 {@code done} 帧到达时落库我们自己的 {@code career_report}（+ 历史快照）。
+     * <p>后端：拼「画像上下文 + 用户本次诉求」→ 平台 {@code POST /api/report} 起任务 →
+     * 轮询 {@code /api/report/jobs/{jobId}} 并把进度帧透传给前端；
+     * done 时落库我们自己的 {@code career_report}（+ 历史快照）并回填我们的 reportId。
      */
     @org.springframework.web.bind.annotation.PostMapping(
             value = "/generate-stream", produces = org.springframework.http.MediaType.TEXT_EVENT_STREAM_VALUE)
@@ -81,33 +81,37 @@ public class CareerReportController {
         // 平台已接管 6 智能体编排与「上一份报告」注入；这里只送「账号画像上下文（内含用户本次诉求）」
         String message = studentProfileContextService.build(userId, targetJob, userInput);
 
-        final java.util.Map<String, String> acc = new java.util.LinkedHashMap<>();
-
         return tboxAgentService.reportStream(userId, message)
-                .doOnNext(json -> accumulateAgentChunk(json, acc))
-                // 结束帧到达时立即落库，并把我们的 reportId/reportName 回填到结束帧，便于前端展示
-                .map(json -> enrichDoneChunk(json, userId, acc));
+                // 进度帧原样透传；done 帧落库并回填我们的 reportId
+                .map(json -> enrichDoneChunk(json, userId));
     }
 
-    /** 结束帧（{"done":true,...}）：落库并回填我们的 reportId/reportName（平台 reportId 另存为 platformReportId） */
-    private String enrichDoneChunk(String json, Long userId, java.util.Map<String, String> acc) {
+    /** done 帧（{status:"done", content:{agents:[...]}}）：落库并回填我们的 reportId/reportName */
+    private String enrichDoneChunk(String json, Long userId) {
         try {
             com.fasterxml.jackson.databind.JsonNode n = objectMapper.readTree(json);
-            if (!n.path("done").asBoolean(false)) {
-                return json;
+            if (!"done".equalsIgnoreCase(n.path("status").asText(""))) {
+                return json;   // 进度帧原样透传
             }
-            java.util.Map<String, Object> info = saveReport(userId, acc);
+            java.util.Map<String, Object> info = saveReport(userId,
+                    n.path("content").path("agents"), n.path("reportName").asText(null));
             java.util.Map<String, Object> done = new java.util.LinkedHashMap<>();
-            n.fields().forEachRemaining(e ->
-                    done.put(e.getKey(), objectMapper.convertValue(e.getValue(), Object.class)));
+            done.put("done", true);
+            done.put("status", "done");
+            done.put("agents", objectMapper.convertValue(n.path("agents"), java.util.List.class));
+            done.put("progressChars", n.path("progressChars").asInt(0));
             // 平台 reportId（Appwrite $id，可能为 null）保留为外部引用
-            done.put("platformReportId", done.get("reportId"));
+            done.put("platformReportId", n.path("reportId").asText(null));
+            // 完整内容一并下发，前端按段渲染
+            done.put("content", objectMapper.convertValue(n.path("content"), java.util.Map.class));
+            String platformName = n.path("reportName").asText(null);
             if (info != null) {
                 // 前端详情/PDF 使用我们的 MySQL reportId
                 done.put("reportId", info.get("reportId"));
-                done.put("reportName", info.get("reportName"));
+                done.put("reportName", platformName != null ? platformName : info.get("reportName"));
                 done.put("saved", true);
             } else {
+                done.put("reportName", platformName);
                 done.put("saved", false);
             }
             return objectMapper.writeValueAsString(done);
@@ -149,52 +153,41 @@ public class CareerReportController {
                 .body(pdf);
     }
 
-    /** 累加各智能体内容（元素形如 {"agent":"x","data":"..."}） */
-    private void accumulateAgentChunk(String json, java.util.Map<String, String> acc) {
-        try {
-            com.fasterxml.jackson.databind.JsonNode n = objectMapper.readTree(json);
-            if (n.has("done")) {
-                return;
-            }
-            if (n.has("error")) {
-                return;   // 错误提示仅下发前端，不落库
-            }
-            String agent = n.path("agent").asText("");
-            String data = n.path("data").asText("");
-            if (!agent.isEmpty() && !data.isEmpty()) {
-                acc.merge(agent, data, String::concat);
-            }
-        } catch (Exception e) {
-            System.err.println("累加报告片段失败: " + e.getMessage());
-        }
-    }
-
     /** 汇总落库：career_report（最新） + career_report_history（版本快照）；返回 {reportId, reportName}，失败返回 null */
-    private java.util.Map<String, Object> saveReport(Long userId, java.util.Map<String, String> acc) {
-        if (acc.isEmpty()) {
+    private java.util.Map<String, Object> saveReport(Long userId,
+                                                     com.fasterxml.jackson.databind.JsonNode agentsNode,
+                                                     String platformName) {
+        if (agentsNode == null || !agentsNode.isArray() || agentsNode.isEmpty()) {
             System.err.println("报告内容为空，跳过落库");
             return null;
         }
         try {
             java.util.List<java.util.Map<String, Object>> agents = new java.util.ArrayList<>();
             StringBuilder fullText = new StringBuilder();
-            for (java.util.Map.Entry<String, String> e : acc.entrySet()) {
+            for (com.fasterxml.jackson.databind.JsonNode a : agentsNode) {
+                String key = a.path("key").asText("");
+                String name = a.path("name").asText(AGENT_NAMES.getOrDefault(key, key));
+                String content = a.path("content").asText("");
                 java.util.Map<String, Object> item = new java.util.LinkedHashMap<>();
-                item.put("key", e.getKey());
-                item.put("name", AGENT_NAMES.getOrDefault(e.getKey(), e.getKey()));
-                item.put("content", e.getValue());
+                item.put("key", key);
+                item.put("name", name);
+                item.put("content", content);
                 agents.add(item);
-                fullText.append(e.getValue()).append("\n\n");
+                fullText.append(content).append("\n\n");
             }
             java.util.Map<String, Object> content = new java.util.LinkedHashMap<>();
             content.put("agents", agents);
             content.put("fullText", fullText.toString());
 
+            String reportName = (platformName != null && !platformName.isBlank())
+                    ? platformName
+                    : "职业规划报告 · " + java.time.LocalDateTime.now()
+                        .format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"));
+
             CareerReport report = new CareerReport();
-            report.setId(Long.valueOf(org.example.web.tool.SnowIdCreater.generateId(23)));
+            report.setId(org.example.web.tool.SnowIdCreater.generateId(23));
             report.setUserId(userId);
-            report.setReportName("职业规划报告 · " + java.time.LocalDateTime.now()
-                    .format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")));
+            report.setReportName(reportName);
             report.setReportType(1);
             report.setVersion(1);
             report.setStatus(2);
@@ -204,7 +197,7 @@ public class CareerReportController {
             careerReportMapper.insert(report);
             // 版本快照（历史表）
             CareerReportHistory history = new CareerReportHistory();
-            history.setId(Long.valueOf(org.example.web.tool.SnowIdCreater.generateId(23)));
+            history.setId(org.example.web.tool.SnowIdCreater.generateId(23));
             history.setReportId(report.getId());
             history.setVersion(1);
             history.setReportContent(report.getReportContent());
