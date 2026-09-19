@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<!--
+  人岗匹配 10 维详情表映射
+  注意：该 Mapper 早期与 CareerReportMapper 一样「零实现」（无 XML 无注解），
+  导致 batchInsert / selectByMatchId 等全部报
+  `Invalid bound statement (not found): org.example.web.mapper.MatchDetailMapper.*`。
+-->
+<mapper namespace="org.example.web.mapper.MatchDetailMapper">
+
+    <resultMap id="MatchDetailMap" type="org.example.web.entity.MatchDetail">
+        <id column="id" property="id"/>
+        <result column="match_id" property="matchId"/>
+        <result column="dim_code" property="dimCode"/>
+        <result column="dim_name" property="dimName"/>
+        <result column="dim_type" property="dimType"/>
+        <result column="student_content" property="studentContent"/>
+        <result column="job_require" property="jobRequire"/>
+        <result column="score" property="score"/>
+        <result column="gap_analysis" property="gapAnalysis"/>
+        <result column="improvement_suggestion" property="improvementSuggestion"/>
+        <result column="match_desc" property="matchDesc"/>
+        <result column="create_time" property="createTime"/>
+    </resultMap>
+
+    <sql id="cols">
+        id, match_id, dim_code, dim_name, dim_type,
+        student_content, job_require, score, gap_analysis,
+        improvement_suggestion, match_desc, create_time
+    </sql>
+
+    <insert id="insert" parameterType="org.example.web.entity.MatchDetail">
+        INSERT INTO match_detail
+            (id, match_id, dim_code, dim_name, dim_type,
+             student_content, job_require, score, gap_analysis,
+             improvement_suggestion, match_desc, create_time)
+        VALUES
+            (#{id}, #{matchId}, #{dimCode}, #{dimName}, #{dimType},
+             #{studentContent}, #{jobRequire}, #{score}, #{gapAnalysis},
+             #{improvementSuggestion}, #{matchDesc}, COALESCE(#{createTime}, NOW()))
+    </insert>
+
+    <update id="update" parameterType="org.example.web.entity.MatchDetail">
+        UPDATE match_detail
+        <set>
+            <if test="matchId != null">match_id = #{matchId},</if>
+            <if test="dimCode != null">dim_code = #{dimCode},</if>
+            <if test="dimName != null">dim_name = #{dimName},</if>
+            <if test="dimType != null">dim_type = #{dimType},</if>
+            <if test="studentContent != null">student_content = #{studentContent},</if>
+            <if test="jobRequire != null">job_require = #{jobRequire},</if>
+            <if test="score != null">score = #{score},</if>
+            <if test="gapAnalysis != null">gap_analysis = #{gapAnalysis},</if>
+            <if test="improvementSuggestion != null">improvement_suggestion = #{improvementSuggestion},</if>
+            <if test="matchDesc != null">match_desc = #{matchDesc},</if>
+        </set>
+        WHERE id = #{id}
+    </update>
+
+    <delete id="deleteById">
+        DELETE FROM match_detail WHERE id = #{id}
+    </delete>
+
+    <delete id="deleteByMatchId">
+        DELETE FROM match_detail WHERE match_id = #{matchId}
+    </delete>
+
+    <select id="selectById" resultMap="MatchDetailMap">
+        SELECT <include refid="cols"/> FROM match_detail WHERE id = #{id}
+    </select>
+
+    <select id="selectByMatchId" resultMap="MatchDetailMap">
+        SELECT <include refid="cols"/> FROM match_detail
+        WHERE match_id = #{matchId} ORDER BY dim_type ASC, dim_code ASC
+    </select>
+
+    <select id="selectByMatchIdAndDimType" resultMap="MatchDetailMap">
+        SELECT <include refid="cols"/> FROM match_detail
+        WHERE match_id = #{matchId} AND dim_type = #{dimType} ORDER BY dim_code ASC
+    </select>
+
+    <select id="selectByMatchIdAndDimCode" resultMap="MatchDetailMap">
+        SELECT <include refid="cols"/> FROM match_detail
+        WHERE match_id = #{matchId} AND dim_code = #{dimCode} LIMIT 1
+    </select>
+
+    <insert id="batchInsert">
+        INSERT INTO match_detail
+            (id, match_id, dim_code, dim_name, dim_type,
+             student_content, job_require, score, gap_analysis,
+             improvement_suggestion, match_desc, create_time)
+        VALUES
+        <foreach collection="list" item="item" separator=",">
+            (#{item.id}, #{item.matchId}, #{item.dimCode}, #{item.dimName}, #{item.dimType},
+             #{item.studentContent}, #{item.jobRequire}, #{item.score}, #{item.gapAnalysis},
+             #{item.improvementSuggestion}, #{item.matchDesc}, COALESCE(#{item.createTime}, NOW()))
+        </foreach>
+    </insert>
+
+</mapper>
