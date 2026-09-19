@@ -313,7 +313,10 @@ public class TboxAgentServiceImpl implements TboxAgentService {
             // 64 位雪花 ID：必须字符串传输（JS Number 会丢精度）
             body.put("userId", String.valueOf(userId));
         }
-        log.info("调用百宝箱报告接口 /api/report/stream (userId={})", userId);
+        log.info("调用百宝箱报告接口 /api/report/stream (userId={}, messageLen={})",
+                userId, message == null ? 0 : message.length());
+        final java.util.concurrent.atomic.AtomicInteger frames = new java.util.concurrent.atomic.AtomicInteger();
+        final java.util.concurrent.atomic.AtomicReference<String> lastAgent = new java.util.concurrent.atomic.AtomicReference<>("");
         return http.post()
                 .uri("/api/report/stream")
                 .contentType(MediaType.APPLICATION_JSON)
@@ -325,16 +328,56 @@ public class TboxAgentServiceImpl implements TboxAgentService {
                     }
                 })
                 .bodyValue(body)
-                .retrieve()
-                .bodyToFlux(new ParameterizedTypeReference<ServerSentEvent<String>>() {
+                .exchangeToFlux(resp -> {
+                    log.info("平台报告响应: status={}, contentType={}",
+                            resp.statusCode(), resp.headers().contentType().orElse(null));
+                    if (resp.statusCode().isError()) {
+                        return resp.bodyToMono(String.class).defaultIfEmpty("")
+                                .flatMapMany(b -> Flux.just(errorChunk(
+                                        "AI 服务返回 " + resp.statusCode().value() + "：" + abbreviate(b, 200))));
+                    }
+                    return resp.bodyToFlux(new ParameterizedTypeReference<ServerSentEvent<String>>() {
+                            })
+                            .map(ServerSentEvent::data)
+                            .filter(java.util.Objects::nonNull);
                 })
-                .map(ServerSentEvent::data)
-                .filter(java.util.Objects::nonNull)
+                .doOnNext(json -> {
+                    int n = frames.incrementAndGet();
+                    String agent = extractAgentKey(json);
+                    boolean keyFrame = n <= 3 || json.contains("\"done\"") || json.contains("\"error\"");
+                    if (keyFrame || (agent != null && !agent.equals(lastAgent.get()))) {
+                        log.info("平台报告帧 #{}: {}", n, abbreviate(json, 300));
+                    }
+                    if (agent != null) {
+                        lastAgent.set(agent);
+                    }
+                })
+                .doOnComplete(() -> log.info("平台报告流结束，共 {} 帧", frames.get()))
                 .timeout(Duration.ofSeconds(Math.max(60, props.getReportTimeoutSeconds())))
                 .onErrorResume(e -> {
                     log.error("百宝箱报告流失败: {}", e.toString());
                     return Flux.just(errorChunk(translateError(e)));
                 });
+    }
+
+    /** 从帧 JSON 中取 agent key（无则 null） */
+    private String extractAgentKey(String json) {
+        try {
+            JsonNode n = objectMapper.readTree(json);
+            String a = n.path("agent").asText("");
+            return a.isEmpty() ? null : a;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /** 日志用短文本（压掉换行，超长截断） */
+    private String abbreviate(String s, int max) {
+        if (s == null) {
+            return "";
+        }
+        String t = s.replaceAll("\\s+", " ");
+        return t.length() <= max ? t : t.substring(0, max) + "…";
     }
 
     /** 错误帧（与平台失败帧同构：{"error":"..."}） */
