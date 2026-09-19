@@ -44,6 +44,10 @@ python manage.py free-port backend
 8. **端口/IPv4**：Vite 代理与后端检查一律用 `127.0.0.1`，避免 localhost 解析到 IPv6 `::1`。
 9. **`数据库结构.sql` 与 `migrations/` 必须同步**：历史上出现「结构漂移」——建表脚本仍是旧列宽，只有迁移修过。
 10. **Mapper 必须「有实现」**：`@Mapper` 接口若无 XML、无注解，运行期报 `Invalid bound statement`（曾漏 `MatchDetailMapper`、`CareerReportMapper`）。
+11. **职业报告走平台专用 SSE 接口**：`POST {TBOX_API_URL}/api/report/stream`（不再用 WS 报告通道 + 段标记协议）。
+   - 总耗时 160~185s，某段内 20~30s 无帧属正常（`searchJobs`）；`report-timeout-seconds` 默认 360s。
+   - `spring.mvc.async.request-timeout=600000` 必须保留，否则长 SSE 被容器提前掉断。
+   - 平台落它的库（给 AI 看，自动注入"上一份报告"），我们 `done` 帧时另存 MySQL（给用户看）；前端详情/PDF 用我们的 `reportId`。
 
 ## 5. 当前阻塞（平台侧）
 
