@@ -125,13 +125,12 @@ const toggleExpand = (i) => {
   if (!card) return
   card.expanded = !card.expanded
   card.userToggled = true          // 用户手动操作过 → 不再自动展开
-  if (card.expanded) {
-    card.autoScroll = true
-    nextTick(() => {
-      const el = bodyRefs[i]
-      if (el) el.scrollTop = el.scrollHeight
-    })
-  }
+  // 展开/收起都回到"跟最新"（收起态必须始终显示最新三行）
+  card.autoScroll = true
+  nextTick(() => {
+    const el = bodyRefs[i]
+    if (el) el.scrollTop = el.scrollHeight
+  })
 }
 // 用户上滑 → 暂停自动滚动；回到最底 → 恢复
 const onBodyScroll = (i, e) => {
@@ -208,8 +207,8 @@ const startTypewriter = () => {
         const step = Math.max(2, Math.ceil(backlog / 30))
         card.content = recv.slice(0, shown.length + step)
         catchingUp = true
-        // 收起/展开态都滚到底（用户上滑后 autoScroll=false 则不打扰）
-        if (card.autoScroll && bodyRefs[i]) {
+        // 收起态：始终跟最新；展开态：尊重用户上滑（autoScroll=false 时暂停，回到底部自动恢复）
+        if (bodyRefs[i] && (card.autoScroll || !card.expanded)) {
           const el = bodyRefs[i]
           el.scrollTop = el.scrollHeight
         }
