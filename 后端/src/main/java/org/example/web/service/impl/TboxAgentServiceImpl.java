@@ -8,6 +8,9 @@ import org.example.web.entity.AiConversation;
 import org.example.web.mapper.AiConversationMapper;
 import org.example.web.service.TboxAgentService;
 import org.springframework.core.ParameterizedTypeReference;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.socket.WebSocketMessage;
 import org.springframework.web.reactive.socket.client.ReactorNettyWebSocketClient;
@@ -20,7 +23,6 @@ import reactor.core.scheduler.Schedulers;
 
 import java.net.URI;
 import java.time.Duration;
-import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -29,14 +31,15 @@ import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
- * 百宝箱应用对接实现（WebSocket / AG-UI 事件流 → {"data":...} 流）
+ * 百宝箱应用对接实现
  *
- * <p>协议（实测）：
- * <pre>
- * 客户端：HELLO{sessionId} → SEND_MESSAGE{content, sessionId, conversationId}
- * 服务端：RUN_STARTED → TOOL_CALL* → TEXT_MESSAGE_CONTENT(delta)*
- *         → CUSTOM('tbox:card') → RUN_FINISHED{requestId} / RUN_ERROR
- * </pre>
+ * <p>两条通道：
+ * <ul>
+ *   <li><b>对话</b>：WebSocket / AG-UI 事件流（HELLO → SEND_MESSAGE → RUN_STARTED → TEXT_MESSAGE_CONTENT* → RUN_FINISHED），
+ *       输出统一包装为 {"data":"..."}</li>
+ *   <li><b>职业报告</b>：平台专用 HTTP SSE 接口 {@code POST /api/report/stream}，
+ *       平台自行串行编排 6 个智能体并逐段打 {@code agent} 标签（不再需要段标记协议）</li>
+ * </ul>
  */
 @Slf4j
 @Service
@@ -285,125 +288,59 @@ public class TboxAgentServiceImpl implements TboxAgentService {
         }
     }
 
-    // ====================== 职业报告多智能体流式（段标记切分） ======================
+    // ====================== 职业报告多智能体流式（平台专用 HTTP SSE 接口） ======================
 
+    /**
+     * 调用平台专用报告接口 {@code POST /api/report/stream}（SSE）。
+     *
+     * <p>请求体：{@code {"message":"...","userId":"..."}}；
+     * 响应帧（全部 {@code data:{json}}）：
+     * <ul>
+     *   <li>{@code {"agent":"profile_analysis","data":"增量文本"}}（按 key 分组拼接）</li>
+     *   <li>{@code {"done":true,"agents":[...],"reportName":"...","reportId":"..."}}</li>
+     *   <li>{@code {"error":"文案"}}</li>
+     * </ul>
+     * 本方法只负责调用与转发，落库由 Controller 在 done 帧完成。
+     */
     @Override
-    public Flux<String> reportStream(Long userId, Long localConversationId, String message, AgentMarkerParser parser) {
+    public Flux<String> reportStream(Long userId, String message) {
         if (!props.isConfigured()) {
-            return Flux.just("{\"agent\":\"report_composition\",\"data\":\"AI 服务暂不可用：未配置 TBOX_API_URL\",\"error\":true}",
-                    "{\"done\":true,\"agents\":[],\"hasMarkers\":false}");
+            return Flux.just(errorChunk("AI 服务暂不可用：后端未配置百宝箱地址（TBOX_API_URL）。"));
         }
-        return Mono.fromCallable(() -> resolveSession(userId, localConversationId))
-                .subscribeOn(Schedulers.boundedElastic())
-                .flatMapMany(session -> streamReportFromPlatform(session, localConversationId, message, parser))
-                .timeout(Duration.ofSeconds(Math.max(30, props.getReportTimeoutSeconds())))
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("message", message == null ? "" : message);
+        if (userId != null) {
+            // 64 位雪花 ID：必须字符串传输（JS Number 会丢精度）
+            body.put("userId", String.valueOf(userId));
+        }
+        log.info("调用百宝箱报告接口 /api/report/stream (userId={})", userId);
+        return http.post()
+                .uri("/api/report/stream")
+                .contentType(MediaType.APPLICATION_JSON)
+                .accept(MediaType.TEXT_EVENT_STREAM)
+                .headers(h -> {
+                    String key = props.getApiKey();
+                    if (key != null && !key.isBlank()) {
+                        h.set(HttpHeaders.AUTHORIZATION, key.startsWith("Bearer ") ? key : "Bearer " + key);
+                    }
+                })
+                .bodyValue(body)
+                .retrieve()
+                .bodyToFlux(new ParameterizedTypeReference<ServerSentEvent<String>>() {
+                })
+                .map(ServerSentEvent::data)
+                .filter(java.util.Objects::nonNull)
+                .timeout(Duration.ofSeconds(Math.max(60, props.getReportTimeoutSeconds())))
                 .onErrorResume(e -> {
                     log.error("百宝箱报告流失败: {}", e.toString());
-                    java.util.Map<String, Object> errChunk = new LinkedHashMap<>();
-                    errChunk.put("agent", "report_composition");
-                    errChunk.put("data", translateError(e));
-                    errChunk.put("error", true);
-                    return Flux.just(toJson(errChunk), doneChunk(parser));
+                    return Flux.just(errorChunk(translateError(e)));
                 });
     }
 
-    private Flux<String> streamReportFromPlatform(Session session, Long localConversationId,
-                                                  String message, AgentMarkerParser parser) {
-        Sinks.Many<String> sink = Sinks.many().unicast().onBackpressureBuffer();
-        AtomicBoolean done = new AtomicBoolean(false);
-        String wsUrl = props.webSocketUrl();
-
-        String hello = toJson(Map.of("type", "HELLO", "sessionId", session.sessionId()));
-        Map<String, Object> sendBody = new LinkedHashMap<>();
-        sendBody.put("type", "SEND_MESSAGE");
-        sendBody.put("content", message);
-        sendBody.put("sessionId", session.sessionId());
-        sendBody.put("conversationId", session.conversationId());
-        String send = toJson(sendBody);
-
-        Mono<Void> sessionMono = wsClient.execute(URI.create(wsUrl), ws ->
-                ws.send(Flux.concat(
-                                Mono.just(ws.textMessage(hello)),
-                                Mono.just(ws.textMessage(send))
-                                        .delayElement(Duration.ofMillis(Math.max(0, props.getHelloDelayMillis())))))
-                        .thenMany(ws.receive()
-                                .map(WebSocketMessage::getPayloadAsText)
-                                .doOnNext(raw -> handleReportEvent(raw, sink, done, localConversationId, parser))
-                                .takeUntil(m -> done.get()))
-                        .then());
-
-        sessionMono.subscribe(
-                null,
-                err -> {
-                    log.error("百宝箱报告 WS 异常", err);
-                    java.util.Map<String, Object> errChunk2 = new LinkedHashMap<>();
-                    errChunk2.put("agent", "report_composition");
-                    errChunk2.put("data", translateError(err));
-                    errChunk2.put("error", true);
-                    sink.tryEmitNext(toJson(errChunk2));
-                    sink.tryEmitNext(doneChunk(parser));
-                    sink.tryEmitComplete();
-                },
-                () -> {
-                    // 流结束：冲刷解析器剩余内容 + 结束标记
-                    for (AgentMarkerParser.Chunk c : parser.finish()) {
-                        sink.tryEmitNext(toJson(Map.of("agent", c.agent(), "data", c.text())));
-                    }
-                    if (!parser.hasMarkers()) {
-                        log.warn("报告流未检测到任何 <<<AGENT:>>> 标记，已按兜底归入 {}", AgentMarkerParser.FALLBACK_AGENT);
-                    }
-                    sink.tryEmitNext(doneChunk(parser));
-                    sink.tryEmitComplete();
-                });
-
-        return sink.asFlux();
-    }
-
-    private void handleReportEvent(String raw, Sinks.Many<String> sink, AtomicBoolean done,
-                                   Long localConversationId, AgentMarkerParser parser) {
-        try {
-            JsonNode n = objectMapper.readTree(raw);
-            String type = n.path("type").asText("");
-            switch (type) {
-                case "TEXT_MESSAGE_CONTENT" -> {
-                    String delta = firstNonBlank(n, "delta", "content", "text");
-                    if (delta != null && !delta.isEmpty()) {
-                        for (AgentMarkerParser.Chunk c : parser.feed(delta)) {
-                            sink.tryEmitNext(toJson(Map.of("agent", c.agent(), "data", c.text())));
-                        }
-                    }
-                }
-                case "RUN_FINISHED" -> {
-                    String requestId = n.path("rawEvent").path("requestId").asText(null);
-                    rememberRunIds(localConversationId, null, requestId);
-                    done.set(true);   // 关键：结束接收循环，触发解析器冲刷
-                }
-                case "RUN_ERROR" -> {
-                    String msg = n.path("message").asText("");
-                    log.warn("百宝箱报告返回错误: {} (raw={})", msg, raw);
-                    for (AgentMarkerParser.Chunk c : parser.finish()) {
-                        sink.tryEmitNext(toJson(Map.of("agent", c.agent(), "data", c.text())));
-                    }
-                    java.util.Map<String, Object> pe = new LinkedHashMap<>();
-                    pe.put("agent", AgentMarkerParser.FALLBACK_AGENT);
-                    pe.put("data", "\n\n" + translatePlatformMessage(msg));
-                    pe.put("error", true);
-                    sink.tryEmitNext(toJson(pe));
-                    done.set(true);
-                }
-                default -> {
-                }
-            }
-        } catch (Exception e) {
-            log.warn("解析报告事件失败: {}", raw, e);
-        }
-    }
-
-    private String doneChunk(AgentMarkerParser parser) {
+    /** 错误帧（与平台失败帧同构：{"error":"..."}） */
+    private String errorChunk(String text) {
         Map<String, Object> m = new LinkedHashMap<>();
-        m.put("done", true);
-        m.put("agents", new ArrayList<>(parser.sections().keySet()));
-        m.put("hasMarkers", parser.hasMarkers());
+        m.put("error", text == null ? "AI 服务调用失败" : text);
         return toJson(m);
     }
 

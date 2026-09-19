@@ -65,7 +65,6 @@
           <AppIcon name="check" :size="15" />
           <span>报告已生成{{ savedHint }}<template v-if="reportName">：{{ reportName }}</template></span>
           <span v-if="reportId" class="report-id">ID {{ reportId }}</span>
-          <span v-if="!hasMarkers" class="warn-text">（未检测到智能体标记，已按兜底归入「报告整合」）</span>
         </div>
         <router-link class="btn ghost" to="/profile">前往个人中心查看</router-link>
       </footer>
@@ -182,11 +181,18 @@ const generate = async () => {
         try { msg = JSON.parse(raw) } catch { continue }
 
         if (msg.done) {
-          // 后端结束帧：{done, agents, hasMarkers, saved, reportId, reportName}
+          // 后端结束帧：{done, agents, reportName, reportId(我们的), platformReportId, saved}
           hasMarkers.value = msg.hasMarkers !== false
           reportName.value = msg.reportName || ''
           reportId.value = msg.reportId ? String(msg.reportId) : ''
           savedHint.value = msg.saved === false ? '（但落库失败，详见后端日志）' : '并已保存'
+          continue
+        }
+        if (msg.error) {
+          // 平台失败帧：{error:"文案"}
+          errorMsg.value = String(msg.error)
+          const runningAgent = agents.value.find(a => a.status === 'running')
+          if (runningAgent) runningAgent.status = 'error'
           continue
         }
         const idx = agents.value.findIndex(a => a.key === msg.agent)
