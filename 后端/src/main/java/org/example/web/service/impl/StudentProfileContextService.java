@@ -31,17 +31,33 @@ public class StudentProfileContextService {
     private final MatchRecordMapper matchRecordMapper;
     private final org.example.web.tool.RSA_256 rsa256;
 
-    /** 画像中的敏感字段以 RSA 密文存储，取用前需解密；失败则回退原值 */
+    /**
+     * 画像敏感字段解密
+     * <p>写入用 {@code rsaEncrypt}（RSA），故优先 {@code rsaDecrypt}；
+     * 兼容早期用 AES({@code encryptForDB}) 写入的数据；均失败则回退原值。
+     */
     private String dec(String v) {
         if (v == null || v.isBlank()) {
             return v;
         }
+        String t = v.trim();
         try {
-            String plain = rsa256.decryptFromDB(v.trim());
-            return (plain == null || plain.isBlank()) ? v : plain;
-        } catch (Exception e) {
-            return v;
+            String plain = rsa256.rsaDecrypt(t);
+            if (plain != null && !plain.isBlank()) {
+                return plain;
+            }
+        } catch (Exception ignore) {
+            // 非 RSA 密文，继续尝试 AES
         }
+        try {
+            String plain = rsa256.decryptFromDB(t);
+            if (plain != null && !plain.isBlank()) {
+                return plain;
+            }
+        } catch (Exception ignore) {
+            // 非密文，保持原值
+        }
+        return v;
     }
 
     /**
@@ -54,7 +70,7 @@ public class StudentProfileContextService {
         sb.append("【用户账号下的画像数据】\n");
 
         try {
-            StudentProfile p = firstOf(studentProfileMapper.selectByCondition(profileQuery(userId)));
+            StudentProfile p = firstOf(studentProfileMapper.selectByUserId(userId));
             if (p != null) {
                 sb.append("[基本信息]\n");
                 append(sb, "学历", p.getEducation());
@@ -81,7 +97,7 @@ public class StudentProfileContextService {
                 sb.append("[基本信息] 未填写（请在报告中按常见情况做假设）\n\n");
             }
 
-            StudentAbilityScore score = firstOf(studentAbilityScoreMapper.selectByCondition(scoreQuery(userId)));
+            StudentAbilityScore score = firstOf(studentAbilityScoreMapper.selectByUserId(userId));
             if (score != null) {
                 sb.append("[10 维能力评分（0-100）]\n");
                 sb.append("- 学历背景：").append(n(score.getEducationScore())).append("\n");
@@ -99,7 +115,7 @@ public class StudentProfileContextService {
                 sb.append("[10 维能力评分] 暂无数据\n\n");
             }
 
-            StudentAbility ability = firstOf(studentAbilityMapper.selectByCondition(abilityQuery(userId)));
+            StudentAbility ability = firstOf(studentAbilityMapper.selectByUserId(userId));
             if (ability != null) {
                 sb.append("[能力描述文本]\n");
                 append(sb, "专业技能", dec(ability.getProfessionalSkill()));
@@ -141,25 +157,6 @@ public class StudentProfileContextService {
             sb.append("[用户补充说明]\n").append(extraNote.strip()).append("\n");
         }
         return sb.toString();
-    }
-
-    // ── 查询条件构造（这些 Mapper 采用 selectByCondition 模式）──
-    private StudentProfile profileQuery(Long userId) {
-        StudentProfile q = new StudentProfile();
-        q.setUserId(userId);
-        return q;
-    }
-
-    private StudentAbility abilityQuery(Long userId) {
-        StudentAbility q = new StudentAbility();
-        q.setUserId(userId);
-        return q;
-    }
-
-    private StudentAbilityScore scoreQuery(Long userId) {
-        StudentAbilityScore q = new StudentAbilityScore();
-        q.setUserId(userId);
-        return q;
     }
 
     private <T> T firstOf(List<T> list) {
