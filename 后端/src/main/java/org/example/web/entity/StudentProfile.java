@@ -36,7 +36,7 @@ public class StudentProfile {
     /**
      * 性别：1-男，2-女，0-未填写
      */
-    private Integer gender;
+    private String gender;
 
     /**
      * 联系电话
@@ -66,12 +66,12 @@ public class StudentProfile {
     /**
      * 画像状态
      */
-    private Integer profileStatus;
+    private String profileStatus;
 
     /**
      * 年龄
      */
-    private Integer age;
+    private String age;
 
     /**
      * 毕业日期
@@ -107,7 +107,7 @@ public class StudentProfile {
     /**
      * 工作性质偏好：1-国企，2-私企，3-考公，4-外企
      */
-    private Integer workTypePreference;
+    private String workTypePreference;
 
     /**
      * 可接受的最长学习周期（月）
@@ -142,12 +142,12 @@ public class StudentProfile {
     /**
      * 学生群体：1-低年级，2-应届毕业生，3-考研/考公失利，4-跨专业求职
      */
-    private Integer studentGroup;
+    private String studentGroup;
 
     /**
      * 隐私等级：1-仅自己可见，2-对指导老师可见，3-对授权企业可见
      */
-    private Integer privacyLevel;
+    private String privacyLevel;
 
     /**
      * 创建时间
