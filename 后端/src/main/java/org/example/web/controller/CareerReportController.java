@@ -43,6 +43,12 @@ public class CareerReportController {
     @Autowired
     private org.example.web.mapper.CareerReportHistoryMapper careerReportHistoryMapper;
 
+    @Autowired
+    private org.example.web.service.impl.StudentProfileContextService studentProfileContextService;
+
+    @Autowired
+    private org.example.web.service.impl.CareerReportPdfService careerReportPdfService;
+
     /** 智能体 key → 中文名（用于落库与前端展示） */
     private static final java.util.Map<String, String> AGENT_NAMES = java.util.Map.of(
             "profile_analysis", "画像分析",
@@ -71,11 +77,13 @@ public class CareerReportController {
         final Long userId = Long.parseLong(String.valueOf(uidRaw));
         Long conversationId = request.get("conversation_id") == null ? null
                 : Long.parseLong(String.valueOf(request.get("conversation_id")));
-        String userInput = request.get("content") == null
-                ? "我是用户，请基于我的画像信息生成完整报告；如缺少信息请基于岗位知识库与通用情况给出并说明假设。"
-                : String.valueOf(request.get("content"));
-        // 在请求中注入「6 智能体协议」提示词（不依赖平台系统提示词配置）
-        String message = loadReportProtocol() + userInput;
+        String userInput = request.get("content") == null ? "" : String.valueOf(request.get("content"));
+        // 前端可覆盖的目标岗位与补充说明
+        String targetJob = request.get("target_job") == null ? null : String.valueOf(request.get("target_job"));
+        // 账号下的画像（基本信息 + 10 维评分 + 能力文本 + 最近匹配 + 覆盖项）
+        String profileContext = studentProfileContextService.build(userId, targetJob, userInput);
+        // 请求 = 6 智能体协议 + 画像上下文（含用户输入）
+        String message = loadReportProtocol() + profileContext;
 
         final org.example.web.service.impl.AgentMarkerParser parser =
                 new org.example.web.service.impl.AgentMarkerParser();
@@ -97,6 +105,38 @@ public class CareerReportController {
                     + "顺序为 profile_analysis → career_exploration → goal_setting → path_planning → action_planning → report_composition，"
                     + "标记之外禁止任何内容（不要英文开场白）。\n\n";
         }
+    }
+
+    /**
+     * 导出报告为 PDF（服务端生成，PDFBox + 系统中文字体）
+     */
+    @org.springframework.web.bind.annotation.GetMapping("/{id}/export/pdf")
+    @org.springframework.web.bind.annotation.CrossOrigin
+    public org.springframework.http.ResponseEntity<byte[]> exportReportPdf(
+            @org.springframework.web.bind.annotation.PathVariable Long id) {
+        CareerReport report = careerReportMapper.selectById(id);
+        if (report == null) {
+            return org.springframework.http.ResponseEntity.notFound().build();
+        }
+        java.util.List<java.util.Map<String, String>> agents = new java.util.ArrayList<>();
+        try {
+            com.fasterxml.jackson.databind.JsonNode root = objectMapper.readTree(report.getReportContent());
+            for (com.fasterxml.jackson.databind.JsonNode a : root.path("agents")) {
+                java.util.Map<String, String> m = new java.util.LinkedHashMap<>();
+                m.put("name", a.path("name").asText("报告章节"));
+                m.put("content", a.path("content").asText(""));
+                agents.add(m);
+            }
+        } catch (Exception e) {
+            System.err.println("解析报告内容失败，导出纯文本: " + e.getMessage());
+        }
+        byte[] pdf = careerReportPdfService.render(report.getReportName(), agents);
+        String filename = "career-report-" + id + ".pdf";
+        return org.springframework.http.ResponseEntity.ok()
+                .header(org.springframework.http.HttpHeaders.CONTENT_DISPOSITION,
+                        "attachment; filename=\"" + filename + "\"")
+                .contentType(org.springframework.http.MediaType.APPLICATION_PDF)
+                .body(pdf);
     }
 
     /** 累加各智能体内容（元素形如 {"agent":"x","data":"..."}） */

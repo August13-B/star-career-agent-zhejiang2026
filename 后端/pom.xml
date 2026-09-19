@@ -66,11 +66,18 @@
 			<version>4.5.0</version>
 		</dependency>
 
-		<!-- Excel（业务服务：简历/报告导出） -->
+		<!-- Excel/Word（业务服务：简历/报告导出） -->
 		<dependency>
 			<groupId>org.apache.poi</groupId>
 			<artifactId>poi-ooxml</artifactId>
 			<version>5.2.5</version>
+		</dependency>
+
+		<!-- PDF 导出（职业报告）Apache-2.0 -->
+		<dependency>
+			<groupId>org.apache.pdfbox</groupId>
+			<artifactId>pdfbox</artifactId>
+			<version>3.0.3</version>
 		</dependency>
 
 		<!-- Hutool 工具集（两个模块都依赖） -->
