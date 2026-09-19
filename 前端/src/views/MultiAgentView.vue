@@ -63,7 +63,8 @@
       <footer class="result-bar" v-if="finished">
         <div class="result-info">
           <AppIcon name="check" :size="15" />
-          <span>报告已生成{{ savedHint }}</span>
+          <span>报告已生成{{ savedHint }}<template v-if="reportName">：{{ reportName }}</template></span>
+          <span v-if="reportId" class="report-id">ID {{ reportId }}</span>
           <span v-if="!hasMarkers" class="warn-text">（未检测到智能体标记，已按兜底归入「报告整合」）</span>
         </div>
         <router-link class="btn ghost" to="/profile">前往个人中心查看</router-link>
@@ -94,6 +95,8 @@ const running = ref(false)
 const finished = ref(false)
 const hasMarkers = ref(true)
 const savedHint = ref('')
+const reportName = ref('')
+const reportId = ref('')
 const errorMsg = ref('')
 const agents = ref(AGENT_DEFS.map(a => ({ ...a, status: 'waiting', content: '' })))
 
@@ -116,6 +119,8 @@ const reset = () => {
   finished.value = false
   errorMsg.value = ''
   savedHint.value = ''
+  reportName.value = ''
+  reportId.value = ''
 }
 
 const markPreviousDone = (idx) => {
@@ -162,7 +167,10 @@ const generate = async () => {
         try { msg = JSON.parse(raw) } catch { continue }
 
         if (msg.done) {
+          // 兼容两种后端契约：{done,agents,hasMarkers} 与 {done,agents,reportName,reportId}
           hasMarkers.value = msg.hasMarkers !== false
+          reportName.value = msg.reportName || ''
+          reportId.value = msg.reportId ? String(msg.reportId) : ''
           savedHint.value = '并已保存'
           continue
         }
@@ -265,6 +273,7 @@ onMounted(getUserInfo)
 .result-bar { display: flex; justify-content: space-between; align-items: center; margin-top: 16px;
               background: #FFFFFF; border: 1px solid #CDE7D6; border-radius: 12px; padding: 12px 16px; }
 .result-info { display: flex; align-items: center; gap: 8px; color: #059669; font-size: 0.88rem; font-weight: 600; }
+.report-id { font-size: 0.76rem; color: #94A3B8; font-family: Consolas, monospace; }
 .warn-text { color: #D97706; font-weight: 500; font-size: 0.8rem; }
 
 .notice { border-radius: 8px; padding: 10px 14px; font-size: 0.86rem; margin-bottom: 14px; }
