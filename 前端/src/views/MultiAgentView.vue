@@ -551,11 +551,13 @@ onMounted(async () => {
 .input-area:focus { border-color: #4A90E2; box-shadow: 0 0 0 3px rgba(74,144,226,0.10); }
 
 .agents { display: flex; flex-direction: column; gap: 10px; }
-/* 卡片固定尺寸（纵向单列，宽度随容器）：收起 150px（头~55 + 正文3行）/ 展开 400px */
+/* 卡片尺寸：未开始=更矮更窄（70px / 88% 宽，首屏不溢出）；轮到生成=收起 200px；展开=520px */
 .agent-card { background: #FFFFFF; border: 1px solid #E4EAF2; border-radius: 12px; padding: 0 15px;
-              height: 150px; box-sizing: border-box; display: flex; flex-direction: column; overflow: hidden;
-              transition: border-color 0.16s ease, height 0.18s ease; }
-.agent-card.is-expanded { height: 400px; }
+              height: 200px; max-width: 100%; box-sizing: border-box;
+              display: flex; flex-direction: column; overflow: hidden;
+              transition: border-color 0.16s ease, height 0.18s ease, width 0.18s ease; }
+.agent-card.waiting { height: 84px; }
+.agent-card.is-expanded { height: 520px; width: 100%; margin: 0; }
 .agent-card.running { border-color: #4A90E2; box-shadow: 0 0 0 3px rgba(74,144,226,0.08); }
 .agent-card.done { border-color: #CDE7D6; }
 .agent-card.error { border-color: #FECACA; }
@@ -577,7 +579,7 @@ onMounted(async () => {
 
 .agent-body { flex: 1 1 auto; min-height: 0; border-top: 1px solid #F1F5F9; display: flex; flex-direction: column; }
 /* 收起态：固定 3 行高，隐藏滚动条，JS 滚到最新（最新三行） */
-.agent-body .markdown { flex: 1 1 auto; min-height: 0; overflow-y: hidden; padding: 6px 0; }
+.agent-body .markdown { flex: 1 1 auto; min-height: 0; overflow-y: hidden; overflow-x: hidden; padding: 6px 0; word-break: break-word; }
 /* 展开态：固定高可滚动，JS 自动跟到最新；用户上滑后暂停 */
 .agent-card.is-expanded .agent-body .markdown { overflow-y: auto; padding-right: 6px; }
 .expand-btn { flex: 0 0 auto; background: none; border: none; color: #2563EB; font-size: 0.78rem; font-weight: 600; cursor: pointer; padding: 2px 4px; }
