@@ -9,6 +9,7 @@
         </div>
         <div class="header-actions">
           <button class="btn ghost" @click="reset" :disabled="running">清空</button>
+          <button v-if="running" class="btn danger" @click="stopGenerating">停止生成</button>
           <button class="btn primary" @click="generate" :disabled="running || !userId">
             <AppIcon name="sparkle" :size="15" />
             {{ running ? '生成中…' : '生成职业报告' }}
@@ -169,6 +170,7 @@ let currentPollTick = null    // 供可见性回调/看门狗立即补拉
 let pollFailures = 0
 let pollToken = 0
 let typeTimer = null
+let currentJobId = null       // 当前报告任务ID（供「停止生成」）
 let offsets = {}            // 各智能体已读字符数（每次轮询回传给平台做切片，保证不重不漏）
 let doneReceived = false
 const POLL_MS = 1500
@@ -256,6 +258,7 @@ const generate = async () => {
     }
     const jobId = data.data && data.data.jobId
     if (!jobId) throw new Error('未获取到 jobId')
+    currentJobId = jobId
     // 持久化 jobId：任务在平台侧独立运行，刷新页面后仍可续跑
     localStorage.setItem('reportJobId', jobId)
     startPolling(jobId)
@@ -269,6 +272,7 @@ const generate = async () => {
 // 健壮性：请求超时 + 失败重试（不中断、不清 jobId） + 页面可见时立即补拉
 const startPolling = (jobId) => {
   stopPolling()
+  currentJobId = jobId
   pollFailures = 0
   const myToken = ++pollToken
   const tick = async () => {
@@ -370,6 +374,30 @@ const startPolling = (jobId) => {
   tick()
   // 固定节拍驱动：即使某一拍异常/请求卡住，后续拍仍会继续
   pollTimer = setInterval(tick, POLL_MS)
+}
+
+// 随时停止：通知后端取消平台任务 → 丢弃本次内容（不落库）、清空界面
+const stopGenerating = async () => {
+  const jobId = currentJobId || localStorage.getItem('reportJobId')
+  if (jobId) {
+    try {
+      const token = localStorage.getItem('token') || ''
+      await axios.post(`/api/career-report/jobs/${jobId}/cancel`, {}, {
+        timeout: 15000,
+        headers: token ? { Authorization: token.startsWith('Bearer ') ? token : `Bearer ${token}` } : {}
+      })
+    } catch (e) {
+      console.warn('[report] 取消平台任务失败（仍会停止本地生成）', e && e.message)
+    }
+  }
+  stopPolling()
+  stopTypewriter()
+  pollToken++                 // 令在途轮询响应作废
+  currentJobId = null
+  localStorage.removeItem('reportJobId')
+  running.value = false
+  reset()
+  errorMsg.value = '已停止生成（本次内容已丢弃）'
 }
 
 const escapeHtml = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -488,6 +516,8 @@ onMounted(async () => {
 .btn.primary:disabled { opacity: 0.5; cursor: not-allowed; }
 .btn.ghost { background: #FFFFFF; color: #475569; border-color: #DFE6EF; }
 .btn.ghost:hover { background: #F1F5F9; }
+.btn.danger { background: #FFFFFF; color: #DC2626; border-color: #FECACA; }
+.btn.danger:hover { background: #FEF2F2; }
 
 .input-panel { background: #FFFFFF; border: 1px solid #E4EAF2; border-radius: 12px; padding: 12px 15px; margin-bottom: 14px; }
 .input-label { display: block; font-size: 0.78rem; font-weight: 600; color: #64748B; margin-bottom: 8px; }

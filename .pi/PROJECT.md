@@ -56,6 +56,12 @@ python manage.py free-port backend
     平台未就绪时设 `TBOX_CHAT_CHANNEL=ws` 回退 WS。带图片对话始终走 `WS /ws`。
     - 对话上下文：后端用 `StudentProfileContextService.build()` 注入账号画像 + 本轮问题；多轮历史由平台按 `conversationId` 注入。
     - 帧：`{"delta":...}`* + `{"type":"tool",...}` + `{"done":...}` + `{"error":...}`；我们 `done` 时另存 MySQL。
+13. **报告可随时停止**：前端「停止生成」→ 后端 `POST /api/career-report/jobs/{jobId}/cancel`
+    → 平台 `POST /api/report/jobs/{jobId}/cancel`（契约见 `百宝箱/提示词-报告取消与删除.md`，待平台提供）；
+    停止后丢弃本次内容（**不写 MySQL**）。
+14. **报告批量删除**：个人中心「管理」→ 后端 `POST /api/career-report/batch-delete`：
+    - 我们侧**逻辑删除**（`is_deleted=1`）；平台侧**物理删除**（`POST /api/report/delete`，待平台提供）
+    - 平台失败**不阻塞**；需 `career_report.platform_report_id`（迁移 **006**）；无该字段的历史报告仅本地删。
 
 ## 5. 当前阻塞（平台侧）
 
