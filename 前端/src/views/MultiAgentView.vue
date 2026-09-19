@@ -53,7 +53,7 @@
               <span v-else-if="agent.status === 'done'" class="tag done">完成</span>
               <span v-else-if="agent.status === 'error'" class="tag error">失败</span>
             </div>
-            <button class="expand-btn" @click="toggleExpand(i)">{{ agent.expanded ? '收起' : '展开' }}</button>
+            <button v-if="agent.content" class="expand-btn" @click="toggleExpand(i)">{{ agent.expanded ? '收起' : '展开' }}</button>
           </div>
           <div class="agent-body" v-if="agent.content">
             <div
@@ -551,9 +551,9 @@ onMounted(async () => {
 .input-area:focus { border-color: #4A90E2; box-shadow: 0 0 0 3px rgba(74,144,226,0.10); }
 
 .agents { display: flex; flex-direction: column; gap: 10px; }
-/* 卡片固定尺寸（纵向单列，宽度随容器）：收起 120px / 展开 400px；流式输出时布局不跳动 */
+/* 卡片固定尺寸（纵向单列，宽度随容器）：收起 150px（头~55 + 正文3行）/ 展开 400px */
 .agent-card { background: #FFFFFF; border: 1px solid #E4EAF2; border-radius: 12px; padding: 0 15px;
-              height: 120px; box-sizing: border-box; display: flex; flex-direction: column; overflow: hidden;
+              height: 150px; box-sizing: border-box; display: flex; flex-direction: column; overflow: hidden;
               transition: border-color 0.16s ease, height 0.18s ease; }
 .agent-card.is-expanded { height: 400px; }
 .agent-card.running { border-color: #4A90E2; box-shadow: 0 0 0 3px rgba(74,144,226,0.08); }
@@ -577,7 +577,7 @@ onMounted(async () => {
 
 .agent-body { flex: 1 1 auto; min-height: 0; border-top: 1px solid #F1F5F9; display: flex; flex-direction: column; }
 /* 收起态：固定 3 行高，隐藏滚动条，JS 滚到最新（最新三行） */
-.agent-body .markdown { flex: 1 1 auto; min-height: 0; overflow-y: hidden; padding: 8px 0; }
+.agent-body .markdown { flex: 1 1 auto; min-height: 0; overflow-y: hidden; padding: 6px 0; }
 /* 展开态：固定高可滚动，JS 自动跟到最新；用户上滑后暂停 */
 .agent-card.is-expanded .agent-body .markdown { overflow-y: auto; padding-right: 6px; }
 .expand-btn { flex: 0 0 auto; background: none; border: none; color: #2563EB; font-size: 0.78rem; font-weight: 600; cursor: pointer; padding: 2px 4px; }
