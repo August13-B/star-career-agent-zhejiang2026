@@ -51,6 +51,32 @@
         
         <div class="data-card">
           <div class="card-header">
+            <h4>📑 我的职业规划报告</h4>
+            <router-link class="upload-btn" to="/multi-agent">+ 生成新报告</router-link>
+          </div>
+          <div class="report-list">
+            <div v-if="reportLoading" class="report-empty">加载中…</div>
+            <div v-else-if="reportList.length === 0" class="report-empty">
+              还没有职业规划报告，点右上角「生成新报告」开始吧
+            </div>
+            <div v-else v-for="r in reportList" :key="r.id" class="report-item">
+              <div class="report-info">
+                <div class="report-name">{{ r.reportName || '职业规划报告' }}</div>
+                <div class="report-meta">
+                  <span>{{ formatTime(r.createTime) }}</span>
+                  <span class="report-status">{{ statusText(r.status) }}</span>
+                </div>
+              </div>
+              <div class="report-actions">
+                <button class="outline-btn" @click="openReport(r)">查看报告</button>
+                <button class="text-btn" @click="exportReportPdf(r)">导出 PDF</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="data-card">
+          <div class="card-header">
             <h4>🎯 我的职业意向</h4>
             <div v-if="!isEdit">
               <button class="text-btn" @click="startEdit">修改</button>
@@ -224,6 +250,28 @@
 
       </div>
     </div>
+
+    <transition name="modal-fade">
+      <div class="modal-overlay" v-if="reportVis" @click.self="reportVis = false">
+        <div class="modal-content report-modal">
+          <div class="modal-header">
+            <h3>{{ currentReportName }}</h3>
+            <button class="close-modal-btn" @click="reportVis = false">✕</button>
+          </div>
+          <div class="modal-body report-view">
+            <section v-for="(a, i) in currentReportAgents" :key="i" class="report-section">
+              <h4 class="report-section-title">{{ a.name || a.key }}</h4>
+              <div class="report-section-body" v-html="renderReportHtml(a.content)"></div>
+            </section>
+            <div v-if="currentReportAgents.length === 0" class="report-empty">报告内容为空</div>
+          </div>
+          <div class="modal-footer">
+            <button class="outline-btn" @click="exportReportPdf(currentReport)">导出 PDF</button>
+            <button class="upload-btn" @click="reportVis = false">关闭</button>
+          </div>
+        </div>
+      </div>
+    </transition>
 
     <transition name="modal-fade">
       <div class="modal-overlay" v-if="basicVis" @click.self="basicVis = false">
@@ -500,6 +548,7 @@ onMounted(async () => {
   // 2. 拉取档案和能力
   fetchMyProfile()
   fetchMyAbility()
+  fetchReports()
 })
 
 // 登录态失效统一处理：清本地身份 + 回登录页
@@ -683,6 +732,80 @@ const handleSaveError = (msg) => {
 
 const goToChat = () => { router.push('/') }
 
+// ===== 📑 职业规划报告 =====
+const reportList = ref([])
+const reportLoading = ref(false)
+const reportVis = ref(false)
+const currentReport = ref(null)
+const currentReportName = ref('')
+const currentReportAgents = ref([])
+
+const fetchReports = async () => {
+  if (!currentUserId.value) return
+  reportLoading.value = true
+  try {
+    const res = await studentApi.get(`/api/career-report/user/${currentUserId.value}`)
+    if (res.data.code === 10001 || res.data.code === 200 || res.data.code === 0) {
+      reportList.value = Array.isArray(res.data.data) ? res.data.data : []
+    }
+  } catch (e) { console.error('获取报告列表失败', e) }
+  finally { reportLoading.value = false }
+}
+
+const parseReportContent = (r) => {
+  currentReport.value = r
+  currentReportName.value = r.reportName || '职业规划报告'
+  currentReportAgents.value = []
+  try {
+    const content = typeof r.reportContent === 'string' ? JSON.parse(r.reportContent) : r.reportContent
+    if (content && Array.isArray(content.agents)) {
+      currentReportAgents.value = content.agents
+    } else if (content && content.fullText) {
+      currentReportAgents.value = [{ name: '报告正文', content: content.fullText }]
+    }
+  } catch (e) { console.error('解析报告内容失败', e) }
+}
+
+const openReport = (r) => { parseReportContent(r); reportVis.value = true }
+
+const formatTime = (t) => (!t ? '' : String(t).replace('T', ' ').slice(0, 16))
+const statusText = (s) => ({ 1: '草稿', 2: '已生成', 3: '已修改', 4: '已确认' }[s] || '已生成')
+
+const renderReportHtml = (text) => {
+  if (!text) return ''
+  let html = String(text).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  html = html.replace(/^#### (.*)$/gm, '<h4>$1</h4>')
+  html = html.replace(/^### (.*)$/gm, '<h3>$1</h3>')
+  html = html.replace(/^## (.*)$/gm, '<h2>$1</h2>')
+  html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+  html = html.replace(/^- (.*)$/gm, '<li>$1</li>')
+  html = html.replace(/(<li>[\s\S]*?<\/li>)/g, '<ul>$1</ul>')
+  html = html.replace(/\n{2,}/g, '</p><p>')
+  html = html.replace(/\n/g, '<br/>')
+  return `<p>${html}</p>`
+}
+
+const exportReportPdf = async (r) => {
+  if (!r || !r.id) return
+  try {
+    const res = await studentApi.get(`/api/career-report/${r.id}/export/pdf`, {
+      responseType: 'blob',
+      timeout: 60000
+    })
+    const url = URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }))
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${r.reportName || '职业规划报告'}.pdf`
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    setTimeout(() => URL.revokeObjectURL(url), 2000)
+  } catch (e) {
+    console.error('导出 PDF 失败', e)
+    alert('导出失败，请确认已登录后重试')
+  }
+}
+
 // ===== 简历上传 =====
 const upVis = ref(false)
 const fileInput = ref(null)
@@ -862,6 +985,28 @@ const changePassword = async () => {
 .action-text.parse:hover { color: #357ABD; }
 .action-text.delete { color: #EF4444; }
 .action-text.delete:hover { color: #DC2626; }
+
+/* ===== 职业规划报告卡片 ===== */
+.card-header a.upload-btn { text-decoration: none; display: inline-block; }
+.report-list { display: flex; flex-direction: column; gap: 12px; }
+.report-empty { padding: 28px; text-align: center; color: #94A3B8; font-size: 0.9rem; background: #F8FAFC; border: 1px dashed #E2E8F0; border-radius: 12px; }
+.report-item { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 14px 16px; border: 1px solid #E2E8F0; border-radius: 12px; transition: 0.2s; background: #F8FAFC; }
+.report-item:hover { border-color: #4A90E2; background: #FFFFFF; box-shadow: 0 4px 12px rgba(0,0,0,0.02); }
+.report-info { min-width: 0; }
+.report-name { font-size: 0.95rem; color: #1E293B; font-weight: 600; margin-bottom: 4px; word-break: break-all; }
+.report-meta { display: flex; align-items: center; gap: 10px; font-size: 0.8rem; color: #94A3B8; }
+.report-status { color: #10B981; font-weight: 600; }
+.report-actions { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+.modal-content.report-modal { display: flex; flex-direction: column; width: 92%; max-width: 860px; max-height: 88vh; overflow: hidden; }
+.modal-content.report-modal .modal-body { flex: 1; overflow-y: auto; }
+.report-view { background: #FFFFFF; }
+.report-section { border-bottom: 1px solid #F1F5F9; padding-bottom: 16px; margin-bottom: 16px; }
+.report-section:last-child { border-bottom: none; margin-bottom: 0; }
+.report-section-title { margin: 0 0 10px; color: #1D4ED8; font-size: 1.05rem; font-weight: 800; border-left: 4px solid #4A90E2; padding-left: 10px; }
+.report-section-body { color: #334155; font-size: 0.92rem; line-height: 1.8; }
+.report-section-body h2, .report-section-body h3, .report-section-body h4 { color: #1E293B; margin: 12px 0 8px; }
+.report-section-body ul { margin: 6px 0 6px 18px; padding: 0; }
+.report-section-body strong { color: #111827; }
 
 /* 账号安全 */
 .security-list { display: flex; flex-direction: column; }

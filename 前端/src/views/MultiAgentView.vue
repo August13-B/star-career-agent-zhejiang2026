@@ -80,6 +80,10 @@ import { useRouter } from 'vue-router'
 import axios from 'axios'
 import AppIcon from '../components/AppIcon.vue'
 
+// 组件名：供 App.vue 的 <keep-alive :include="['MultiAgentView']"> 命中，
+// 保证生成报告期间切页/返回不丢进度（后台 fetch 仍在累积）
+defineOptions({ name: 'MultiAgentView' })
+
 const router = useRouter()
 
 const AGENT_DEFS = [

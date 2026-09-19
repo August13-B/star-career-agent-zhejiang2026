@@ -99,7 +99,10 @@
     <main class="main-content">
       <router-view v-slot="{ Component }">
         <transition name="page-fade" mode="out-in">
-          <component :is="Component" :key="$route.fullPath" />
+          <!-- 多智能体页用 keep-alive 缓存：报告生成中切页/返回不会丢失进度（SSE 仍在后台累积） -->
+          <keep-alive :include="['MultiAgentView']">
+            <component :is="Component" :key="$route.fullPath" />
+          </keep-alive>
         </transition>
       </router-view>
     </main>
