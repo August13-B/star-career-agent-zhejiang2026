@@ -228,11 +228,11 @@ onMounted(getUserInfo)
 </script>
 
 <style scoped>
-.report-page { width: 100%; height: 100%; overflow-y: auto; background: #F6F8FC; padding: 24px; box-sizing: border-box; }
+.report-page { width: 100%; height: 100%; overflow-y: auto; background: #F6F8FC; padding: 20px; box-sizing: border-box; }
 .workspace { max-width: 980px; margin: 0 auto; }
 
-.page-header { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; margin-bottom: 18px; }
-.title-block h1 { margin: 8px 0 4px; font-size: 1.5rem; font-weight: 700; color: #1E293B; }
+.page-header { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; margin-bottom: 14px; }
+.title-block h1 { margin: 6px 0 3px; font-size: 1.4rem; font-weight: 700; color: #1E293B; }
 .badge { display: inline-flex; align-items: center; gap: 6px; font-size: 0.74rem; font-weight: 600;
          color: #2563EB; background: #EFF6FF; padding: 4px 10px; border-radius: 6px; }
 .subtitle { margin: 0; color: #64748B; font-size: 0.9rem; }
@@ -247,14 +247,18 @@ onMounted(getUserInfo)
 .btn.ghost { background: #FFFFFF; color: #475569; border-color: #DFE6EF; }
 .btn.ghost:hover { background: #F1F5F9; }
 
-.input-panel { background: #FFFFFF; border: 1px solid #E4EAF2; border-radius: 12px; padding: 14px 16px; margin-bottom: 16px; }
+.input-panel { background: #FFFFFF; border: 1px solid #E4EAF2; border-radius: 12px; padding: 12px 15px; margin-bottom: 14px; }
 .input-label { display: block; font-size: 0.78rem; font-weight: 600; color: #64748B; margin-bottom: 8px; }
 .input-area { width: 100%; border: 1px solid #DFE6EF; border-radius: 8px; padding: 10px 12px; font-size: 0.9rem;
               color: #1E293B; font-family: inherit; resize: vertical; outline: none; box-sizing: border-box; }
 .input-area:focus { border-color: #4A90E2; box-shadow: 0 0 0 3px rgba(74,144,226,0.10); }
 
-.agents { display: flex; flex-direction: column; gap: 12px; }
+.agents { display: flex; flex-direction: column; gap: 10px; }
 .agent-card { background: #FFFFFF; border: 1px solid #E4EAF2; border-radius: 12px; padding: 14px 16px; transition: border-color 0.16s ease; }
+/* 等待态压扁：保证首屏（页头+输入区+6 张卡片）尽量装得下，不提前出现滚动条；
+   一旦 AI 内容到达卡片撑开，超出视口后再自然出现滚动条 */
+.agent-card.waiting { padding: 9px 15px; }
+.agent-card.waiting .agent-placeholder { display: none; }
 .agent-card.running { border-color: #4A90E2; box-shadow: 0 0 0 3px rgba(74,144,226,0.08); }
 .agent-card.done { border-color: #CDE7D6; }
 .agent-card.error { border-color: #FECACA; }
