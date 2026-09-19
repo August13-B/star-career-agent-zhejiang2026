@@ -28,6 +28,7 @@ python manage.py free-port backend
 ## 4. 关键约定 / 已知坑（务必先看）
 
 1. **token 前缀归一在登录端**：`JwtUtil.genToken()` 自带 `Bearer `；前端登录后必须 `replace(/^Bearer\s+/i,'')` 再存，其它处只判断是否已带前缀。（历史上 `Bearer Bearer` → 401 → 旧 userId 残留 → 外键失败）
+1.5 **64 位雪花 ID 一律以字符串传输**：后端 `JacksonConfig` 已把 `Long/long` 序列化为字符串；前端**切勿 `Number(id)`/`parseInt(id)`**（会静默丢精度 → 外键失败）。请求体里 ID 传字符串，Jackson 会自动转 Long。
 2. **画像敏感字段用 RSA 写入**（`rsaEncrypt`），读取优先 `rsaDecrypt`、兜底 `decryptFromDB`（早期 AES 数据）。用错方法会得到 Base64 乱码。
 3. **加密列宽 ≥ varchar(1000)**：RSA-1024 密文 ≈172 字符；`expected_salary` 曾只有 varchar(50)。
 4. **逻辑删除 `is_deleted` 必须显式写 0**：查询条件是 `is_deleted = 0`，NULL 会导致「保存成功却查不到」。
