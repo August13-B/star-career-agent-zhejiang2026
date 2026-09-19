@@ -11,7 +11,7 @@ import wwy.example.springboot.service.JobDetailService;
 import wwy.example.springboot.service.JobRequirementProfileService;
 
 @RestController
-@CrossOrigin(origins = "*")
+@CrossOrigin
 @RequestMapping("/job-detail")
 @RequiredArgsConstructor
 public class JobDetailController {

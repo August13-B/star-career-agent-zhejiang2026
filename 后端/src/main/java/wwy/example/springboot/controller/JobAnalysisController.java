@@ -6,7 +6,7 @@ import wwy.example.springboot.common.Result;
 import wwy.example.springboot.service.JobAIAnalysisService;
 
 @RestController
-@CrossOrigin(origins = "*")
+@CrossOrigin
 @RequestMapping("/analysis")
 @RequiredArgsConstructor
 public class JobAnalysisController {
