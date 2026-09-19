@@ -14,10 +14,18 @@ import java.util.Map;
  * ### 一、能力画像分析
  * ...
  * &lt;&lt;&lt;END:profile_analysis&gt;&gt;&gt;
+ * &lt;&lt;&lt;AGENT:career_exploration&gt;&gt;&gt;
+ * ...
  * </pre>
  *
  * <p>由于 delta 可能是单字符，解析器需保留尾部若干字符以识别跨 chunk 的标记。
  * 另外：**标记前的文本视为噪声**（实测平台会输出英文开场白），除非整段都没有标记（兜底）。
+ *
+ * <p>容错：
+ * <ul>
+ *   <li>缺少 {@code <<<END:x>>>} 时，下一个 {@code <<<AGENT:} 视为上一段结束</li>
+ *   <li>同一 delta 内包含「结束标记 + 下一段起始标记」时，剩余内容会转入下一段解析</li>
+ * </ul>
  */
 public class AgentMarkerParser {
 
@@ -31,9 +39,9 @@ public class AgentMarkerParser {
     /** 尾部保留长度（要够容纳最长标记：<<<END:report_composition>>>） */
     private static final int HOLD = 48;
 
-    /** 标记之前的文本（噪声，或整段无标记时的兜底内容） */
+    /** 待解析文本：片段之前的噪声，或两个片段之间的过渡文本（不会下发） */
     private final StringBuilder preText = new StringBuilder();
-    /** 当前智能体片段缓冲 */
+    /** 当前智能体片段缓冲（会按安全长度增量下发） */
     private final StringBuilder pending = new StringBuilder();
 
     private String currentAgent = null;
@@ -49,11 +57,11 @@ public class AgentMarkerParser {
         if (delta == null || delta.isEmpty()) {
             return List.of();
         }
-        if (currentAgent == null && !anyMarker) {
+        if (currentAgent == null) {
+            // 未处于某个片段内：一律进 preText，等待（下一个）起始标记。
+            // 注意：不能在出现首个标记后就丢弃——否则第 1 段之后的 <<<AGENT:>>> 永远扫不到，
+            //      表现就是「报告只有第一段」。
             preText.append(delta);
-            // 标记前文本不回吐：只有出现标记后才开始切分（避免噪声外泄）
-        } else if (currentAgent == null) {
-            // 已出现过标记：等待下一个标记，其间文本丢弃
         } else {
             pending.append(delta);
         }
@@ -64,11 +72,13 @@ public class AgentMarkerParser {
     public List<Chunk> finish() {
         List<Chunk> out = drain(true);
         if (currentAgent != null && pending.length() > 0) {
+            // 末尾段缺少 <<<END>>>：整段归入当前智能体
             out.add(commit(currentAgent, pending.toString()));
             pending.setLength(0);
             currentAgent = null;
         }
         if (!anyMarker && preText.length() > 0) {
+            // 全程无标记：整段兜底归入 report_composition
             out.add(commit(FALLBACK_AGENT, preText.toString()));
             preText.setLength(0);
         }
@@ -89,8 +99,9 @@ public class AgentMarkerParser {
                     int end = preText.indexOf(CLOSE, i);
                     if (end > 0) {
                         // 标记后的内容可能与本标记同处一个 delta → 转入片段缓冲
+                        String key = preText.substring(i + START.length(), end);
                         String after = preText.substring(end + CLOSE.length());
-                        currentAgent = textBetween(i, end);
+                        currentAgent = key;
                         anyMarker = true;
                         preText.setLength(0);
                         pending.setLength(0);
@@ -101,15 +112,34 @@ public class AgentMarkerParser {
                     } else if (finishing) {
                         break;
                     }
+                } else if (anyMarker && preText.length() > HOLD) {
+                    // 两段之间的噪声：只保留尾部（识别跨 delta 的标记），避免缓冲无限增长
+                    preText.delete(0, preText.length() - HOLD);
                 }
             } else {
                 String endMark = END + currentAgent + CLOSE;
-                int i = pending.indexOf(endMark);
-                if (i >= 0) {
-                    if (i > 0) {
-                        out.add(commit(currentAgent, pending.substring(0, i)));
+                int iEnd = pending.indexOf(endMark);
+                int iStart = pending.indexOf(START);
+                if (iEnd >= 0 && (iStart < 0 || iEnd <= iStart)) {
+                    // 正常结束：下发 END 标记之前的内容
+                    if (iEnd > 0) {
+                        out.add(commit(currentAgent, pending.substring(0, iEnd)));
                     }
-                    pending.delete(0, i + endMark.length());
+                    // END 之后可能紧跟下一段的起始标记，转入 preText 继续解析
+                    String rest = pending.substring(iEnd + endMark.length());
+                    pending.setLength(0);
+                    if (!rest.isEmpty()) {
+                        preText.append(rest);
+                    }
+                    currentAgent = null;
+                    progress = true;
+                } else if (iStart >= 0) {
+                    // 容错：缺少 END 标记时，下一个起始标记视为本段结束
+                    if (iStart > 0) {
+                        out.add(commit(currentAgent, pending.substring(0, iStart)));
+                    }
+                    preText.append(pending.substring(iStart));
+                    pending.setLength(0);
                     currentAgent = null;
                     progress = true;
                 } else {
@@ -126,10 +156,6 @@ public class AgentMarkerParser {
             }
         }
         return out;
-    }
-
-    private String textBetween(int startIdx, int endIdx) {
-        return preText.substring(startIdx + START.length(), endIdx);
     }
 
     private Chunk commit(String agent, String text) {
