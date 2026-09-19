@@ -1044,26 +1044,44 @@ public class AIConversationServiceImpl implements AIConversationService {
     private void addDecryptedField(StringBuilder sb, String fieldName, String encryptedValue) {
         if (encryptedValue != null && !encryptedValue.trim().isEmpty()) {
             String trimmedValue = encryptedValue.trim();
-            try {
-                // 首先检查是否是有效的Base64格式（密文通常是Base64编码）
-                if (isValidBase64(trimmedValue)) {
-                    System.err.println("尝试解密Base64格式字段: " + fieldName + ", 长度: " + trimmedValue.length());
-                    // 尝试解密
-                    String decrypted = rsa256.decryptFromDB(trimmedValue);
-                    System.err.println("解密成功 - 字段名: " + fieldName + ", 密文长度: " + trimmedValue.length() + ", 明文: " + decrypted);
-                    sb.append(fieldName).append(": ").append(decrypted).append("\n");
-                } else {
-                    // 不是有效的Base64，可能是明文或格式错误
-                    System.err.println("字段不是有效的Base64格式，直接使用: " + fieldName + ", 值: " + trimmedValue);
-                    sb.append(fieldName).append(": ").append(trimmedValue).append("\n");
-                }
-            } catch (Exception e) {
-                // 解密失败，可能已经是明文或格式错误，使用原始值
-                System.err.println("解密字段失败 - 字段名: " + fieldName + ", 异常: " + e.getMessage() + ", 值: " + trimmedValue);
-                e.printStackTrace();
+            String decrypted = decryptAny(trimmedValue);
+            if (decrypted != null) {
+                sb.append(fieldName).append(": ").append(decrypted).append("\n");
+            } else {
+                // 不是密文（或无法解密），按原文输出
                 sb.append(fieldName).append(": ").append(trimmedValue).append("\n");
             }
         }
+    }
+
+    /**
+     * 尝试解密画像字段。
+     * <p>画像写入用 {@code rsaEncrypt}（RSA），因此优先 {@code rsaDecrypt}；
+     * 兼顾早期用 AES({@code encryptForDB}) 写入的数据；均失败返回 null。
+     * （早期版本只调 AES 解 RSA 密文，导致 AI 上下文里出现 Base64 乱码）
+     */
+    private String decryptAny(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        String t = value.trim();
+        try {
+            String plain = rsa256.rsaDecrypt(t);
+            if (plain != null && !plain.isBlank()) {
+                return plain;
+            }
+        } catch (Exception ignore) {
+            // 非 RSA 密文，继续尝试 AES
+        }
+        try {
+            String plain = rsa256.decryptFromDB(t);
+            if (plain != null && !plain.isBlank()) {
+                return plain;
+            }
+        } catch (Exception ignore) {
+            // 非密文
+        }
+        return null;
     }
     
     /**

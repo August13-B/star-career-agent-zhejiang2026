@@ -157,6 +157,12 @@ SERVICES["backend"]["port"] = SERVICES_BACKEND_PORT
 DB_DIR = PROJECT_DIR / "数据库"
 STRUCTURE_SQL = DB_DIR / "数据库结构.sql"   # 建库建表（31 张）
 DATA_SQL = DB_DIR / "数据库数据.sql"        # 业务数据（岗位/画像等）
+MIGRATIONS_DIR = DB_DIR / "migrations"
+# 灌库后自动执行的「幂等」迁移（可重复执行，不会丢数据）
+#   005：画像表加宽加密列 + is_deleted 收敛（修复「Data too long」与「保存后查不到」）
+AUTO_MIGRATIONS = [
+    MIGRATIONS_DIR / "005_fix_profile_schema.sql",
+]
 EXPECTED_TABLES = 31
 
 
@@ -263,12 +269,28 @@ def db_seed(force: bool = False) -> bool:
             return False
         rows = _mysql_scalar(f"SELECT COUNT(*) FROM `{db}`.job_info") or 0
 
+    # 灌库后自动执行幂等迁移，避免「结构漂移」导致灌库后仍报
+    # Data too long / 保存成功却查不到（见 数据库/migrations/005）
+    _apply_migrations(AUTO_MIGRATIONS)
+
     print(f"✅ 数据库就绪：{db} | 表 {tables} 张 | job_info {rows} 条")
     return True
 
 
+def _apply_migrations(files: list) -> None:
+    """执行幂等迁移脚本（失败仅告警，不阻断启动）。"""
+    for path in files:
+        if not path.exists():
+            continue
+        if _mysql_file(path):
+            print(f"🔧 已应用迁移：{path.name}")
+        else:
+            print(f"⚠️  迁移执行失败（可手动执行）：{path.name}")
+
+
 def cmd_db(args):
-    if getattr(args, "db_action", "seed") == "status":
+    action = getattr(args, "db_action", "seed")
+    if action == "status":
         p = _db_params()
         tables = _mysql_scalar(
             f"SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='{p['db']}'")
@@ -278,6 +300,17 @@ def cmd_db(args):
         print(f"  表数量: {tables if tables is not None else '无法连接'}")
         print(f"  岗位数据: {rows if rows is not None else '—'} 条")
         print("═" * 46)
+    elif action == "migrate":
+        # 对「已有库」执行幂等迁移（加宽加密列 / 收敛 is_deleted）
+        if not _find_mysql():
+            print("⏭  未找到 mysql 客户端，无法执行迁移")
+            return
+        files = [MIGRATIONS_DIR / n for n in (
+            "003_widen_encrypted_columns.sql",
+            "004_fix_null_is_deleted.sql",
+            "005_fix_profile_schema.sql",
+        )]
+        _apply_migrations(files)
     else:
         db_seed(force=getattr(args, "force", False))
 
@@ -565,8 +598,9 @@ def main():
     p_fp = sub.add_parser("free-port", help="强制释放某服务端口（杀掉占用进程）")
     p_fp.add_argument("service", choices=["backend", "frontend", "nginx"])
 
-    p_db = sub.add_parser("db", help="数据库灌库 / 查看状态")
-    p_db.add_argument("db_action", nargs="?", default="seed", choices=["seed", "status"])
+    p_db = sub.add_parser("db", help="数据库灌库 / 查看状态 / 执行迁移")
+    p_db.add_argument("db_action", nargs="?", default="seed",
+                      choices=["seed", "status", "migrate"])
     p_db.add_argument("--force", action="store_true", help="强制重建表并重新导入数据")
 
     args = parser.parse_args()
