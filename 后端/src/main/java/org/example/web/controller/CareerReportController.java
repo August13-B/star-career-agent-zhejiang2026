@@ -91,7 +91,34 @@ public class CareerReportController {
 
         return tboxAgentService.reportStream(userId, conversationId, message, parser)
                 .doOnNext(json -> accumulateAgentChunk(json, acc))
-                .doOnComplete(() -> saveReport(userId, acc, parser));
+                // 结束帧到达时立即落库，并把 reportId/reportName 回填到结束帧，便于前端展示
+                .map(json -> enrichDoneChunk(json, userId, acc, parser));
+    }
+
+    /** 结束帧（{"done":true,...}）：落库并回填 reportId/reportName */
+    private String enrichDoneChunk(String json, Long userId, java.util.Map<String, String> acc,
+                                   org.example.web.service.impl.AgentMarkerParser parser) {
+        try {
+            com.fasterxml.jackson.databind.JsonNode n = objectMapper.readTree(json);
+            if (!n.path("done").asBoolean(false)) {
+                return json;
+            }
+            java.util.Map<String, Object> info = saveReport(userId, acc, parser);
+            java.util.Map<String, Object> done = new java.util.LinkedHashMap<>();
+            n.fields().forEachRemaining(e ->
+                    done.put(e.getKey(), objectMapper.convertValue(e.getValue(), Object.class)));
+            if (info != null) {
+                done.put("reportId", info.get("reportId"));
+                done.put("reportName", info.get("reportName"));
+                done.put("saved", true);
+            } else {
+                done.put("saved", false);
+            }
+            return objectMapper.writeValueAsString(done);
+        } catch (Exception e) {
+            System.err.println("回填报告结束信息失败: " + e.getMessage());
+            return json;
+        }
     }
 
     /** 读取 6 智能体协议提示词（resources/prompts/report-multi-agent.txt） */
@@ -159,12 +186,12 @@ public class CareerReportController {
         }
     }
 
-    /** 汇总落库：career_report（最新） + career_report_history（版本快照） */
-    private void saveReport(Long userId, java.util.Map<String, String> acc,
+    /** 汇总落库：career_report（最新） + career_report_history（版本快照）；返回 {reportId, reportName}，失败返回 null */
+    private java.util.Map<String, Object> saveReport(Long userId, java.util.Map<String, String> acc,
                             org.example.web.service.impl.AgentMarkerParser parser) {
         if (acc.isEmpty()) {
             System.err.println("报告内容为空，跳过落库");
-            return;
+            return null;
         }
         try {
             java.util.List<java.util.Map<String, Object>> agents = new java.util.ArrayList<>();
@@ -204,8 +231,13 @@ public class CareerReportController {
             history.setCreateTime(java.time.LocalDateTime.now());
             careerReportHistoryMapper.insert(history);
             System.out.println("职业报告已落库, id=" + report.getId() + ", 智能体数=" + agents.size());
+            java.util.Map<String, Object> info = new java.util.LinkedHashMap<>();
+            info.put("reportId", report.getId());
+            info.put("reportName", report.getReportName());
+            return info;
         } catch (Exception e) {
             System.err.println("报告落库失败: " + e.getMessage());
+            return null;
         }
     }
 

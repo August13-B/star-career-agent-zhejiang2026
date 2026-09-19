@@ -167,11 +167,11 @@ const generate = async () => {
         try { msg = JSON.parse(raw) } catch { continue }
 
         if (msg.done) {
-          // 兼容两种后端契约：{done,agents,hasMarkers} 与 {done,agents,reportName,reportId}
+          // 后端结束帧：{done, agents, hasMarkers, saved, reportId, reportName}
           hasMarkers.value = msg.hasMarkers !== false
           reportName.value = msg.reportName || ''
           reportId.value = msg.reportId ? String(msg.reportId) : ''
-          savedHint.value = '并已保存'
+          savedHint.value = msg.saved === false ? '（但落库失败，详见后端日志）' : '并已保存'
           continue
         }
         const idx = agents.value.findIndex(a => a.key === msg.agent)
