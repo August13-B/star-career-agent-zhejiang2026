@@ -319,7 +319,10 @@ const handleLogin = async () => {
     const res = await axios.post('/api/user/login', loginPayload)
 
     if (res.data.code === 200 || res.data.code === 0 || res.data.success || res.data.data?.token) {
-      const { token, userAccount } = res.data.data
+      // 后端 genToken 返回的 token 已带 "Bearer " 前缀；统一去掉后再存，
+      // 避免各处再拼一次变成 "Bearer Bearer xxx" → 后端解析失败返回 401
+      const token = String(res.data.data.token || '').replace(/^Bearer\s+/i, '')
+      const { userAccount } = res.data.data
       // 先清掉上一次的身份残留，避免 getUserInfo 失败时沿用旧 userId（会导致后续保存外键失败）
       localStorage.removeItem('userId')
       localStorage.removeItem('userRole')
