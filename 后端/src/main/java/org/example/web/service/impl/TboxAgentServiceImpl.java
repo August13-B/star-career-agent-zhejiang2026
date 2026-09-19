@@ -332,9 +332,19 @@ public class TboxAgentServiceImpl implements TboxAgentService {
                     log.info("平台报告响应: status={}, contentType={}",
                             resp.statusCode(), resp.headers().contentType().orElse(null));
                     if (resp.statusCode().isError()) {
+                        int code = resp.statusCode().value();
                         return resp.bodyToMono(String.class).defaultIfEmpty("")
-                                .flatMapMany(b -> Flux.just(errorChunk(
-                                        "AI 服务返回 " + resp.statusCode().value() + "：" + abbreviate(b, 200))));
+                                .flatMapMany(b -> {
+                                    String friendly;
+                                    if (code == 502 || code == 504) {
+                                        friendly = "平台报告服务网关超时（上游未响应）：" + abbreviate(b, 160)
+                                                + "。请确认平台侧 /api/report/stream 已就绪、模型网关已开通，且使用的是正确的应用基址"
+                                                + "（预览/coding 域可能未部署该服务，需用已发布域名）。";
+                                    } else {
+                                        friendly = "AI 服务返回 " + code + "：" + abbreviate(b, 200);
+                                    }
+                                    return Flux.just(errorChunk(friendly));
+                                });
                     }
                     return resp.bodyToFlux(new ParameterizedTypeReference<ServerSentEvent<String>>() {
                             })
