@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="org.example.web.mapper.CareerReportHistoryMapper">
+
+    <sql id="cols">
+        id, report_id, version, report_content, change_reason, create_time
+    </sql>
+
+    <insert id="insert" parameterType="org.example.web.entity.CareerReportHistory">
+        INSERT INTO career_report_history
+            (id, report_id, version, report_content, change_reason, create_time)
+        VALUES
+            (#{id}, #{reportId}, #{version}, #{reportContent}, #{changeReason},
+             COALESCE(#{createTime}, NOW()))
+    </insert>
+
+    <update id="update" parameterType="org.example.web.entity.CareerReportHistory">
+        UPDATE career_report_history
+        <set>
+            <if test="version != null">version = #{version},</if>
+            <if test="reportContent != null">report_content = #{reportContent},</if>
+            <if test="changeReason != null">change_reason = #{changeReason},</if>
+        </set>
+        WHERE id = #{id}
+    </update>
+
+    <delete id="deleteById">
+        DELETE FROM career_report_history WHERE id = #{id}
+    </delete>
+
+    <delete id="deleteByReportId">
+        DELETE FROM career_report_history WHERE report_id = #{reportId}
+    </delete>
+
+    <select id="selectById" resultType="org.example.web.entity.CareerReportHistory">
+        SELECT <include refid="cols"/> FROM career_report_history WHERE id = #{id}
+    </select>
+
+    <select id="selectByReportId" resultType="org.example.web.entity.CareerReportHistory">
+        SELECT <include refid="cols"/> FROM career_report_history
+        WHERE report_id = #{reportId} ORDER BY version DESC
+    </select>
+
+    <select id="selectByReportIdAndVersion" resultType="org.example.web.entity.CareerReportHistory">
+        SELECT <include refid="cols"/> FROM career_report_history
+        WHERE report_id = #{reportId} AND version = #{version} LIMIT 1
+    </select>
+
+    <!-- 历史表无逻辑删除字段，按物理删除处理以保证接口兼容 -->
+    <delete id="logicDeleteById">
+        DELETE FROM career_report_history WHERE id = #{id}
+    </delete>
+
+</mapper>

@@ -20,6 +20,7 @@ import reactor.core.scheduler.Schedulers;
 
 import java.net.URI;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -122,7 +123,8 @@ public class TboxAgentServiceImpl implements TboxAgentService {
     }
 
     private Session resolveSession(Long userId, Long localConversationId) {
-        AiConversation conv = conversationMapper.selectConversationById(localConversationId);
+        AiConversation conv = localConversationId == null ? null
+                : conversationMapper.selectConversationById(localConversationId);
         if (conv != null && notBlank(conv.getTboxSessionId()) && notBlank(conv.getTboxConversationId())) {
             log.info("复用百宝箱会话 localConversation={} session={} tboxConversation={}",
                     localConversationId, conv.getTboxSessionId(), conv.getTboxConversationId());
@@ -153,8 +155,14 @@ public class TboxAgentServiceImpl implements TboxAgentService {
             throw new IllegalStateException("创建百宝箱会话失败：" + sessionResp + " / " + convResp);
         }
 
-        // 3) 落库（下次直接复用 → 续会话）
-        conversationMapper.updateTboxIds(localConversationId, sessionId, tboxConversationId);
+        // 3) 落库（下次直接复用 → 续会话）；无本地对话时跳过
+        if (localConversationId != null) {
+            try {
+                conversationMapper.updateTboxIds(localConversationId, sessionId, tboxConversationId);
+            } catch (Exception e) {
+                log.warn("百宝箱会话映射落库失败（不影响本次对话）: {}", e.getMessage());
+            }
+        }
         log.info("已建立百宝箱会话映射 localConversation={} session={} tboxConversation={}",
                 localConversationId, sessionId, tboxConversationId);
         return new Session(sessionId, tboxConversationId);
@@ -247,6 +255,128 @@ public class TboxAgentServiceImpl implements TboxAgentService {
         } catch (Exception e) {
             log.warn("解析百宝箱事件失败: {}", raw, e);
         }
+    }
+
+    // ====================== 职业报告多智能体流式（段标记切分） ======================
+
+    @Override
+    public Flux<String> reportStream(Long userId, Long localConversationId, String message, AgentMarkerParser parser) {
+        if (!props.isConfigured()) {
+            return Flux.just("{\"agent\":\"report_composition\",\"data\":\"AI 服务暂不可用：未配置 TBOX_API_URL\",\"error\":true}",
+                    "{\"done\":true,\"agents\":[],\"hasMarkers\":false}");
+        }
+        return Mono.fromCallable(() -> resolveSession(userId, localConversationId))
+                .subscribeOn(Schedulers.boundedElastic())
+                .flatMapMany(session -> streamReportFromPlatform(session, localConversationId, message, parser))
+                .timeout(Duration.ofSeconds(Math.max(30, props.getReportTimeoutSeconds())))
+                .onErrorResume(e -> {
+                    log.error("百宝箱报告流失败: {}", e.toString());
+                    java.util.Map<String, Object> errChunk = new LinkedHashMap<>();
+                    errChunk.put("agent", "report_composition");
+                    errChunk.put("data", translateError(e));
+                    errChunk.put("error", true);
+                    return Flux.just(toJson(errChunk), doneChunk(parser));
+                });
+    }
+
+    private Flux<String> streamReportFromPlatform(Session session, Long localConversationId,
+                                                  String message, AgentMarkerParser parser) {
+        Sinks.Many<String> sink = Sinks.many().unicast().onBackpressureBuffer();
+        AtomicBoolean done = new AtomicBoolean(false);
+        String wsUrl = props.webSocketUrl();
+
+        String hello = toJson(Map.of("type", "HELLO", "sessionId", session.sessionId()));
+        Map<String, Object> sendBody = new LinkedHashMap<>();
+        sendBody.put("type", "SEND_MESSAGE");
+        sendBody.put("content", message);
+        sendBody.put("sessionId", session.sessionId());
+        sendBody.put("conversationId", session.conversationId());
+        String send = toJson(sendBody);
+
+        Mono<Void> sessionMono = wsClient.execute(URI.create(wsUrl), ws ->
+                ws.send(Flux.concat(
+                                Mono.just(ws.textMessage(hello)),
+                                Mono.just(ws.textMessage(send))
+                                        .delayElement(Duration.ofMillis(Math.max(0, props.getHelloDelayMillis())))))
+                        .thenMany(ws.receive()
+                                .map(WebSocketMessage::getPayloadAsText)
+                                .doOnNext(raw -> handleReportEvent(raw, sink, done, localConversationId, parser))
+                                .takeUntil(m -> done.get()))
+                        .then());
+
+        sessionMono.subscribe(
+                null,
+                err -> {
+                    log.error("百宝箱报告 WS 异常", err);
+                    java.util.Map<String, Object> errChunk2 = new LinkedHashMap<>();
+                    errChunk2.put("agent", "report_composition");
+                    errChunk2.put("data", translateError(err));
+                    errChunk2.put("error", true);
+                    sink.tryEmitNext(toJson(errChunk2));
+                    sink.tryEmitNext(doneChunk(parser));
+                    sink.tryEmitComplete();
+                },
+                () -> {
+                    // 流结束：冲刷解析器剩余内容 + 结束标记
+                    for (AgentMarkerParser.Chunk c : parser.finish()) {
+                        sink.tryEmitNext(toJson(Map.of("agent", c.agent(), "data", c.text())));
+                    }
+                    if (!parser.hasMarkers()) {
+                        log.warn("报告流未检测到任何 <<<AGENT:>>> 标记，已按兜底归入 {}", AgentMarkerParser.FALLBACK_AGENT);
+                    }
+                    sink.tryEmitNext(doneChunk(parser));
+                    sink.tryEmitComplete();
+                });
+
+        return sink.asFlux();
+    }
+
+    private void handleReportEvent(String raw, Sinks.Many<String> sink, AtomicBoolean done,
+                                   Long localConversationId, AgentMarkerParser parser) {
+        try {
+            JsonNode n = objectMapper.readTree(raw);
+            String type = n.path("type").asText("");
+            switch (type) {
+                case "TEXT_MESSAGE_CONTENT" -> {
+                    String delta = firstNonBlank(n, "delta", "content", "text");
+                    if (delta != null && !delta.isEmpty()) {
+                        for (AgentMarkerParser.Chunk c : parser.feed(delta)) {
+                            sink.tryEmitNext(toJson(Map.of("agent", c.agent(), "data", c.text())));
+                        }
+                    }
+                }
+                case "RUN_FINISHED" -> {
+                    String requestId = n.path("rawEvent").path("requestId").asText(null);
+                    rememberRunIds(localConversationId, null, requestId);
+                    done.set(true);   // 关键：结束接收循环，触发解析器冲刷
+                }
+                case "RUN_ERROR" -> {
+                    String msg = n.path("message").asText("");
+                    log.warn("百宝箱报告返回错误: {} (raw={})", msg, raw);
+                    for (AgentMarkerParser.Chunk c : parser.finish()) {
+                        sink.tryEmitNext(toJson(Map.of("agent", c.agent(), "data", c.text())));
+                    }
+                    java.util.Map<String, Object> pe = new LinkedHashMap<>();
+                    pe.put("agent", AgentMarkerParser.FALLBACK_AGENT);
+                    pe.put("data", "\n\n" + translatePlatformMessage(msg));
+                    pe.put("error", true);
+                    sink.tryEmitNext(toJson(pe));
+                    done.set(true);
+                }
+                default -> {
+                }
+            }
+        } catch (Exception e) {
+            log.warn("解析报告事件失败: {}", raw, e);
+        }
+    }
+
+    private String doneChunk(AgentMarkerParser parser) {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("done", true);
+        m.put("agents", new ArrayList<>(parser.sections().keySet()));
+        m.put("hasMarkers", parser.hasMarkers());
+        return toJson(m);
     }
 
     // ====================== 结构化卡片 → Markdown（前端零改动） ======================
@@ -402,7 +532,7 @@ public class TboxAgentServiceImpl implements TboxAgentService {
     /** 异常 → 可读提示 */
     private String translateError(Throwable e) {
         if (e instanceof TimeoutException) {
-            return "AI 响应超时（" + props.getTimeoutSeconds() + " 秒），请稍后重试。";
+            return "AI 响应超时，请稍后重试。";
         }
         String s = e.toString();
         if (s.contains("Not Open")) {
