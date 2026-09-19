@@ -527,11 +527,21 @@ const saveBasicInfo = async () => {
   const payload = { ...basicForm.value, userId: Number(currentUserId.value) }
   try {
     let res
-    if (myProfile.value.id) res = await studentApi.put('/api/student/update', payload)
-    else res = await studentApi.post('/api/student/insert', payload)
-    if (res.data.code === 200) { basicVis.value = false; fetchMyProfile() } 
-    else alert('保存失败: ' + res.data.message)
-  } catch (err) { console.error(err) } finally { isSavingBasic.value = false }
+    if (myProfile.value.id) {
+      res = await studentApi.put('/api/student/update', { ...payload, id: myProfile.value.id })
+    } else {
+      res = await studentApi.post('/api/student/insert', payload)
+      // 该用户已存在档案（user_id 唯一）→ 重新拉取后改用 update
+      if (res.data && res.data.code !== 200) {
+        await fetchMyProfile()
+        if (myProfile.value.id) {
+          res = await studentApi.put('/api/student/update', { ...payload, id: myProfile.value.id })
+        }
+      }
+    }
+    if (res.data.code === 200) { basicVis.value = false; fetchMyProfile() }
+    else alert('保存失败: ' + (res.data.message || '未知错误'))
+  } catch (err) { console.error(err); alert('保存出错，请检查登录状态') } finally { isSavingBasic.value = false }
 }
 
 // ===== 职业意向编辑 =====
@@ -547,11 +557,20 @@ const saveJobIntent = async () => {
   const payload = { ...intentForm.value, userId: Number(currentUserId.value) }
   try {
     let res
-    if (myProfile.value.id) res = await studentApi.put('/api/student/update', payload)
-    else res = await studentApi.post('/api/student/insert', payload)
-    if (res.data.code === 200) { isEdit.value = false; fetchMyProfile() } 
-    else alert('保存失败: ' + res.data.message)
-  } catch (err) { console.error(err) } finally { isSavingIntent.value = false }
+    if (myProfile.value.id) {
+      res = await studentApi.put('/api/student/update', { ...payload, id: myProfile.value.id })
+    } else {
+      res = await studentApi.post('/api/student/insert', payload)
+      if (res.data && res.data.code !== 200) {
+        await fetchMyProfile()
+        if (myProfile.value.id) {
+          res = await studentApi.put('/api/student/update', { ...payload, id: myProfile.value.id })
+        }
+      }
+    }
+    if (res.data.code === 200) { isEdit.value = false; fetchMyProfile() }
+    else alert('保存失败: ' + (res.data.message || '未知错误'))
+  } catch (err) { console.error(err); alert('保存出错，请检查登录状态') } finally { isSavingIntent.value = false }
 }
 
 // ===== 🚀 能力模型编辑 (新增) =====
@@ -577,9 +596,16 @@ const saveAbility = async () => {
     let res
     // 文档：put /api/ability/update | post /api/ability/insert
     if (myAbility.value.id) {
-      res = await abilityApi.put('/api/ability/update', payload)
+      res = await abilityApi.put('/api/ability/update', { ...payload, id: myAbility.value.id })
     } else {
       res = await abilityApi.post('/api/ability/insert', payload)
+      // 该用户已存在能力记录（user_id 唯一）→ 重新拉取后改用 update
+      if (res.data && res.data.code !== 200) {
+        await fetchMyAbility()
+        if (myAbility.value.id) {
+          res = await abilityApi.put('/api/ability/update', { ...payload, id: myAbility.value.id })
+        }
+      }
     }
     
     if (res.data.code === 200) {
