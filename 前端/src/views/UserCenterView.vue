@@ -476,6 +476,11 @@ onMounted(async () => {
       userInfo.value = res.data.data || {}
       displayNickname.value = userInfo.value.nickname || `新星用户_${String(userInfo.value.userAccount || '8888').slice(-4)}`
       localStorage.setItem('userName', displayNickname.value)
+      // 关键：用最新用户信息刷新 userId，避免 localStorage 残留旧 id 导致保存时外键失败
+      if (userInfo.value.id) {
+        currentUserId.value = String(userInfo.value.id)
+        localStorage.setItem('userId', currentUserId.value)
+      }
     }
   } catch (error) { displayNickname.value = '探索者' }
 
@@ -624,7 +629,7 @@ const saveAbility = async () => {
       abilityVis.value = false
       fetchMyAbility() // 重新拉取展示
     } else {
-      alert('保存失败: ' + res.data.message)
+      handleSaveError(res.data.message)
     }
   } catch (err) { 
     console.error('保存能力模型失败', err)
@@ -632,6 +637,19 @@ const saveAbility = async () => {
   } finally { 
     isSavingAbility.value = false 
   }
+}
+
+// 统一的保存失败处理：识别「用户不存在/外键」类错误，清掉旧身份并引导重新登录
+const handleSaveError = (msg) => {
+  const m = String(msg || '')
+  if (m.includes('foreign key') || m.includes('user_id') || m.includes('网络错误') || m.includes('用户不存在')) {
+    localStorage.removeItem('userId')
+    localStorage.removeItem('userRole')
+    alert('登录状态已过期（账号信息与服务器不一致），已清除本地登录信息。\n请重新登录后再保存。')
+    router.push('/login')
+    return
+  }
+  alert('保存失败: ' + (m || '未知错误'))
 }
 
 const goToChat = () => { router.push('/') }
