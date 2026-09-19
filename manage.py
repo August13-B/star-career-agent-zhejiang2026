@@ -81,6 +81,15 @@ SERVICES = {
 # ── .env 加载 ─────────────────────────────────────────────────────────
 
 
+def _port_listening(port: str, host: str = "127.0.0.1") -> bool:
+    """检测端口是否有进程监听（用于启动前端前确认后端已就绪）。"""
+    import socket
+    try:
+        with socket.create_connection((host, int(port)), timeout=2):
+            return True
+    except Exception:
+        return False
+
 def load_env(path: Path) -> dict:
     """解析 .env（KEY=VALUE，忽略注释与空行，值允许含 =）。"""
     env = {}
@@ -319,6 +328,12 @@ def start_service(name: str) -> bool:
                 log_f.close()
                 return False
             print("✅ 前端依赖安装完成")
+
+    # 启动前端前确认后端已就绪（否则 Vite 代理会 ECONNREFUSED，页面报错却查不到原因）
+    if name == "frontend" and not _port_listening(SERVICES["backend"]["port"]):
+        print(f"⚠️  后端（端口 {SERVICES['backend']['port']}）尚未就绪！"
+              f"\n    前端虽然能启动，但所有 /api 请求都会失败（ECONNREFUSED）。"
+              f"\n    建议先启动后端：python manage.py start backend")
 
     print(f"🚀 启动 {svc['name']} ...")
     env = {**os.environ, "PYTHONUTF8": "1"}
