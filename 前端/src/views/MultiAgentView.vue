@@ -30,7 +30,7 @@
         ></textarea>
       </section>
 
-      <p v-if="running" class="progress-hint">平台正在生成… 已输出 {{ progressChars }} 字（共 6 个智能体，预计 3~4 分钟）</p>
+      <p v-if="running" class="progress-hint">平台正在生成… 服务端 {{ progressChars }} 字 · 已接收 {{ receivedTotal }} 字（共 6 个智能体，预计 3~5 分钟）</p>
 
       <section class="agents">
         <article
@@ -86,7 +86,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, nextTick } from 'vue'
+import { ref, onMounted, nextTick, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import axios from 'axios'
 import AppIcon from '../components/AppIcon.vue'
@@ -112,6 +112,8 @@ const running = ref(false)
 const finished = ref(false)
 const savedHint = ref('')
 const progressChars = ref(0)
+// 本地已接收字数（与服务端 progressChars 对比，可快速判断是轮询还是渲染卡住）
+const receivedTotal = computed(() => agents.value.reduce((n, c) => n + ((c.received || '').length), 0))
 const reportName = ref('')
 const reportId = ref('')
 const errorMsg = ref('')
@@ -171,7 +173,6 @@ let pollFailures = 0
 let pollToken = 0
 let typeTimer = null
 let currentJobId = null       // 当前报告任务ID（供「停止生成」）
-let offsets = {}            // 各智能体已读字符数（每次轮询回传给平台做切片，保证不重不漏）
 let doneReceived = false
 const POLL_MS = 1500
 const POLL_TIMEOUT_MS = 12000
@@ -190,7 +191,10 @@ const startTypewriter = () => {
     agents.value.forEach((card, i) => {
       const recv = card.received || ''
       const shown = card.content || ''
-      if (shown.length < recv.length) {
+      if (shown.length > recv.length) {
+        // 服务端内容被整体替换/回退 → 直接对齐，避免错位
+        card.content = recv
+      } else if (shown.length < recv.length) {
         const backlog = recv.length - shown.length
         const step = Math.max(2, Math.ceil(backlog / 30))
         card.content = recv.slice(0, shown.length + step)
@@ -215,7 +219,6 @@ const startTypewriter = () => {
 const reset = () => {
   stopPolling()
   stopTypewriter()
-  offsets = {}
   doneReceived = false
   agents.value = AGENT_DEFS.map(a => ({ ...a, status: 'waiting', content: '', received: '', expanded: false }))
   finished.value = false
@@ -268,7 +271,7 @@ const generate = async () => {
   }
 }
 
-// 轮询平台任务：带 offsets 拿正文增量 → 本地打字机实时呈现
+// 轮询平台任务：每次全量拉取各 agent 正文（幂等替换） → 本地打字机实时呈现
 // 健壮性：请求超时 + 失败重试（不中断、不清 jobId） + 页面可见时立即补拉
 const startPolling = (jobId) => {
   stopPolling()
@@ -281,7 +284,9 @@ const startPolling = (jobId) => {
     try {
       const token = localStorage.getItem('token') || ''
       const res = await axios.get(`/api/career-report/jobs/${jobId}`, {
-        params: { offsets: JSON.stringify(offsets) },
+        // 全量模式：每次传 offsets={} → 平台返回各 agent 从 0 开始的完整片段。
+        // （之前按递增 offsets 追加会因位置漂移导致服务端持续返回空 delta → 表现为“几秒后卡死，刷新又好”）
+        params: { offsets: '{}' },
         timeout: POLL_TIMEOUT_MS,
         headers: token ? { Authorization: token.startsWith('Bearer ') ? token : `Bearer ${token}` } : {}
       })
@@ -320,14 +325,15 @@ const startPolling = (jobId) => {
       }
       progressChars.value = d.progressChars || progressChars.value
 
-      // 1) 追加增量正文（按 agent），并推进本地已读位置（下次 offsets 回传）
+      // 全量替换（幂等）：deltas 里是该 agent 从 0 开始的完整正文
       if (Array.isArray(d.deltas)) {
         d.deltas.forEach(dl => {
           const j = agents.value.findIndex(a => a.key === dl.agent)
           if (j < 0) return
+          const text = String(dl.data || '')
+          if (!text) return
           const card = agents.value[j]
-          card.received = (card.received || '') + (dl.data || '')
-          offsets[dl.agent] = (card.received || '').length
+          card.received = text          // 替换，而非追加 —— 不会重复、不会漂移
           if (card.status === 'waiting') card.status = 'running'
         })
       }
@@ -362,7 +368,7 @@ const startPolling = (jobId) => {
         return
       }
       // 诊断日志（浏览器 Console 可看到每一拍）
-      console.debug('[report] poll', d.status, d.currentAgent || '-',
+      console.debug('[report] poll(full)', d.status, d.currentAgent || '-',
         'deltas=', (d.deltas || []).map(x => `${x.agent}:${(x.data || '').length}`).join(','),
         'chars=', d.progressChars)
     } catch (e) {
