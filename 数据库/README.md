@@ -4,8 +4,9 @@
 
 | 路径 | 内容 | 大小 |
 |---|---|---|
-| `数据库结构.sql` | **31 张表结构**（含 `CREATE DATABASE` + `USE`，一键建库） | 72 KB |
-| `数据库数据.sql` | **业务数据**（岗位 9958 条 + 岗位画像/学生画像/能力/用户/对话等） | 24 MB |
+| `数据库结构.sql` | **31 张表结构**（含 `CREATE DATABASE` + `USE`，一键建库） | 69 KB |
+| `数据库数据.sql` | **仅职业相关数据**（岗位 9958 条 + 岗位画像 181 条 + 岗位要求/图谱 + 邀请码）<br>**不含**用户账号、学生画像/能力、对话、匹配、报告等用户数据 | 22 MB |
+| `数据库数据-全量备份.sql` | 完整版导出（含用户/画像/对话等用户数据）<br>⚠️ **不入 Git、不参与灌库**，仅本地保留 | 24 MB |
 | `向量数据/` | **岗位知识库向量**（10139 条 × 1024 维，gzip 约 60MB） | 60 MB |
 | `../后端/sql/` | 邀请码相关脚本 | — |
 
@@ -25,9 +26,14 @@
 ```bash
 python manage.py start backend     # 启动时自动灌库
 python manage.py db                # 手动灌库（同样幂等）
-python manage.py db --force        # 强制重建表并重新导入
+python manage.py db --force        # 强制重建表并重新导入（会清空现有数据）
+python manage.py db migrate        # 对已有库执行幂等迁移
 python manage.py db status         # 查看库/表/岗位数据量
 ```
+
+> 🔒 **灌库内容**：只导入**职业相关数据**（`job_info` / `job_requirement_profile` / `job_*` / `invitation_code`）。
+> `user` / `student_profile` / `student_ability(_score)` / `ai_*` / `match_*` / `career_report*` 等用户数据**不会**被导入，
+> 灌库后用户表为空，需重新注册。完整数据备份见 `数据库数据-全量备份.sql`（不参与灌库）。
 
 > 灌库逻辑读取 `后端/.env` 的 `DB_URL` / `DB_USERNAME` / `DB_PASSWORD`，自动定位 mysql 客户端（PATH 或常见安装目录）。
 
@@ -75,8 +81,9 @@ python manage.py db migrate    # 依次执行 003 / 004 / 005
 mysql -u root -p --default-character-set=utf8mb4 < 数据库/migrations/005_fix_profile_schema.sql
 ```
 
-> ℹ️ **结构漂移提醒**：`数据库结构.sql` 已同步 003/005 的列宽与 `is_deleted` 默认值；
-> 旧的 `数据库数据.sql` 生成于清理之前，含 3 条「旧密钥」画像行，首次灌库后可按需执行 002 清理。
+> ℹ️ **结构漂移提醒**：`数据库结构.sql` 已同步 003/005 的列宽与 `is_deleted` 默认值。
+> 自 2026-09-19 起，`数据库数据.sql` 已剔除全部用户数据（含早期「旧密钥」画像行），
+> 新环境灌库后不会再有 `bad key` / `保存后查不到` 等遗留数据问题；`002_clean_user_data.sql` 仅在对旧库时才需要。
 
 > ⚠️ 执行 002 前请先备份：`mysqldump -u root -p --single-transaction youthpath > backup.sql`
 
@@ -87,8 +94,9 @@ USE youthpath;
 SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='youthpath';  -- 31
 SELECT COUNT(*) FROM youthpath.job_info;                  -- 9958
 SELECT COUNT(*) FROM youthpath.job_requirement_profile;   -- 181
-SELECT COUNT(*) FROM youthpath.user;                      -- 4
-SELECT COUNT(*) FROM youthpath.student_profile;           -- 3
+SELECT COUNT(*) FROM youthpath.user;                      -- 0（不再随灌库导入，需注册）
+SELECT COUNT(*) FROM youthpath.student_profile;           -- 0（不再随灌库导入）
+SELECT COUNT(*) FROM youthpath.invitation_code;           -- 3（管理员/企业端/导师）
 ```
 
 ## 邀请码

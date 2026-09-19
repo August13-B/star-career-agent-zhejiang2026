@@ -38,6 +38,8 @@ application-local.yml
 resumes/
 uploads/
 *.sql.bak
+# 含用户数据的完整库备份（不参与灌库，仅本地保留）
+数据库/数据库数据-全量备份.sql
 
 # ===== 环境变量（含密钥，勿提交）=====
 .env

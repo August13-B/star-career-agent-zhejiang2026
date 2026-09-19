@@ -20,10 +20,16 @@
 
 ```bash
 python manage.py start all     # 后端(8080)+前端(5173)+nginx
-python manage.py db            # 幂等灌库（缺表建表/无数据导入，之后自动跑幂等迁移）
+python manage.py db            # 幂等灌库（仅职业数据；缺表建表/无数据导入，之后自动跑幂等迁移）
+python manage.py db --force    # 重建表并重新导入（会清空现有数据）
 python manage.py db migrate    # 对已有库执行幂等迁移（加宽加密列 / 修 is_deleted）
+python manage.py db status     # 查看客户端/连接/表数/岗位数
 python manage.py free-port backend
 ```
+
+> 🔒 **灌库只导入职业数据**：`job_info` / `job_requirement_profile` / `job_*` / `invitation_code`；
+> **不导入** `user` 账号、`student_profile` 画像、`student_ability(_score)`、`ai_*` 对话、`match_*`、`career_report*` 等用户数据。
+> 含用户数据的完整备份见 `数据库/数据库数据-全量备份.sql`（已 gitignore，不参与灌库）。
 
 ## 4. 关键约定 / 已知坑（务必先看）
 
