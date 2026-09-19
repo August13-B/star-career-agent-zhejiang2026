@@ -112,9 +112,21 @@ public class AIAnalysisServiceImpl implements AIAnalysisService {
             // 5. 拼接百宝箱提示词（核心 Prompt + 学生画像 + 能力维度 + 用户补充）
             Map<String, Object> userBackground = JSONUtil.parse(studentProfile).toBean(Map.class);
             String userData = JSONUtil.toJsonStr(studentAbility);
+            // 注册后「初步问卷测评」分数（若有）：作为 AI 细化评分的参考基准
+            String preliminary = "";
+            try {
+                List<StudentAbilityScore> preScores = studentAbilityScoreService.selectByUserId(userId);
+                if (preScores != null && !preScores.isEmpty()) {
+                    preliminary = JSONUtil.toJsonStr(preScores.get(0));
+                }
+            } catch (Exception ignore) {
+                // 初步分缺失不影响本次测评
+            }
             String prompt = finalUserPrompt
                     + "\n\n【学生画像】\n" + JSONUtil.toJsonStr(userBackground)
-                    + "\n\n【能力维度】\n" + userData;
+                    + "\n\n【能力维度】\n" + userData
+                    + (preliminary.isEmpty() ? ""
+                        : "\n\n【初步问卷测评分数（供参考，请在此基础上细化，不要简单照搬）】\n" + preliminary);
             logger.info("【AI能力分析】构建的提示词长度: {}", prompt.length());
 
             // 6. 调用百宝箱（同步收集 WS 输出）

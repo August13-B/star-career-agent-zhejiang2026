@@ -332,69 +332,9 @@
       </div>
     </transition>
 
-    <transition name="modal-fade">
-      <div class="modal-overlay" v-if="abilityVis" @click.self="abilityVis = false">
-        <div class="modal-content" style="max-width: 700px; max-height: 90vh; overflow-y: auto;">
-          <div class="modal-header">
-            <h3>💪 完善核心能力模型</h3>
-            <button class="close-modal-btn" @click="abilityVis = false">✕</button>
-          </div>
-          <div class="modal-body">
-            <div class="edit-form-container">
-              <div class="form-group" style="grid-column: span 2;">
-                <label>💻 专业技能 (如: Java开发, 熟练, 2年经验)</label>
-                <input type="text" v-model="abilityForm.professionalSkill" placeholder="描述你的核心技能栈..." />
-              </div>
-              <div class="form-group" style="grid-column: span 2;">
-                <label>💼 实习经历与能力</label>
-                <input type="text" v-model="abilityForm.internshipAbility" placeholder="描述实习项目经验..." />
-              </div>
-              <div class="form-group">
-                <label>🎓 教育背景</label>
-                <input type="text" v-model="abilityForm.educationRequirement" placeholder="如: 全日制本科..." />
-              </div>
-              <div class="form-group">
-                <label>📜 证书获取</label>
-                <input type="text" v-model="abilityForm.certificateRequirement" placeholder="如: CET6, 软件设计师..." />
-              </div>
+    <!-- 核心能力模型：两步测评（基本情况 → 六维情境题 → 自动评分） -->
+    <AbilityQuizModal v-model:visible="quizVis" :user-id="currentUserId" @saved="onQuizSaved" />
 
-              <div style="grid-column: span 2; border-top: 1px dashed #E2E8F0; margin: 10px 0;"></div>
-
-              <div class="form-group">
-                <label>🗣️ 沟通能力</label>
-                <input type="text" v-model="abilityForm.communicationAbility" placeholder="如: 具备良好的跨部门沟通能力..." />
-              </div>
-              <div class="form-group">
-                <label>🤝 团队协作能力</label>
-                <input type="text" v-model="abilityForm.teamworkAbility" placeholder="如: 团队协作意识良好..." />
-              </div>
-              <div class="form-group">
-                <label>🔧 问题解决能力</label>
-                <input type="text" v-model="abilityForm.problemSolving" placeholder="如: 独立排查故障能力强..." />
-              </div>
-              <div class="form-group">
-                <label>💡 创新能力</label>
-                <input type="text" v-model="abilityForm.innovationAbility" placeholder="如: 具备独立创新思维..." />
-              </div>
-              <div class="form-group">
-                <label>📚 学习能力</label>
-                <input type="text" v-model="abilityForm.learningAbility" placeholder="如: 新技术学习能力强..." />
-              </div>
-              <div class="form-group">
-                <label>🏋️ 抗压能力</label>
-                <input type="text" v-model="abilityForm.pressureResistance" placeholder="如: 可接受高强度节奏..." />
-              </div>
-            </div>
-          </div>
-          <div class="modal-footer">
-            <button class="btn-cancel" @click="abilityVis = false">取消</button>
-            <button class="btn-confirm" @click="saveAbility" :disabled="isSavingAbility">
-              {{ isSavingAbility ? '保存中...' : '确认保存' }}
-            </button>
-          </div>
-        </div>
-      </div>
-    </transition>
 
     <transition name="modal-fade">
       <div class="modal-overlay" v-if="upVis" @click.self="closeUploadModal">
@@ -465,12 +405,14 @@
 
 <script setup>
 import { ref, onMounted, computed } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
+import AbilityQuizModal from '../components/AbilityQuizModal.vue'
 import axios from 'axios'
 import API_CONFIG from '../config/api'
 import { generateAesKeyAndIv, rsaEncrypt, aesEncrypt } from '../utils/crypto'
 
 const router = useRouter()
+const route = useRoute()
 
 // ==========================================
 // 🚀 核心：三口并行，彻底理清后端模块！
@@ -565,6 +507,10 @@ onMounted(async () => {
   fetchMyProfile()
   fetchMyAbility()
   fetchReports()
+  // 注册后跳转过来：自动弹出六维能力初步测评（初步分，后续 AI 测评会覆盖）
+  if (route.query.quiz === '1') {
+    quizVis.value = true
+  }
 })
 
 // 登录态失效统一处理：清本地身份 + 回登录页
@@ -680,58 +626,10 @@ const saveJobIntent = async () => {
   } catch (err) { console.error(err); handleSaveError(err?.response?.data?.message || err.message) } finally { isSavingIntent.value = false }
 }
 
-// ===== 🚀 能力模型编辑 (新增) =====
-const abilityVis = ref(false)
-const abilityForm = ref({})
-const isSavingAbility = ref(false)
-
-const openAbilityModal = () => { 
-  abilityForm.value = { ...myAbility.value }
-  abilityVis.value = true 
-}
-
-const saveAbility = async () => {
-  isSavingAbility.value = true
-  if (!isValidId(currentUserId.value)) {
-    isSavingAbility.value = false
-    return alert('登录状态已失效，请重新登录后再保存')
-  }
-  // 组装参数，必须带上 userId。如果有 profileId 也可以顺带关联。
-  const payload = { 
-    ...abilityForm.value, 
-    userId: String(currentUserId.value),
-    profileId: myProfile.value.id || null
-  }
-  
-  try {
-    let res
-    // 文档：put /api/ability/update | post /api/ability/insert
-    if (myAbility.value.id) {
-      res = await abilityApi.put('/api/ability/update', { ...payload, id: myAbility.value.id })
-    } else {
-      res = await abilityApi.post('/api/ability/insert', payload)
-      // 该用户已存在能力记录（user_id 唯一）→ 重新拉取后改用 update
-      if (res.data && res.data.code !== 200) {
-        await fetchMyAbility()
-        if (myAbility.value.id) {
-          res = await abilityApi.put('/api/ability/update', { ...payload, id: myAbility.value.id })
-        }
-      }
-    }
-    
-    if (res.data.code === 200) {
-      abilityVis.value = false
-      fetchMyAbility() // 重新拉取展示
-    } else {
-      handleSaveError(res.data.message)
-    }
-  } catch (err) { 
-    console.error('保存能力模型失败', err)
-    alert('保存出错，请检查网络')
-  } finally { 
-    isSavingAbility.value = false 
-  }
-}
+// ===== 🚀 核心能力模型：六维问卷测评（注册后初步评价；AI 测评会参考并覆盖） =====
+const quizVis = ref(false)
+const openAbilityModal = () => { quizVis.value = true }
+const onQuizSaved = async () => { await fetchMyAbility() }
 
 // 统一的保存失败处理：识别「用户不存在/外键」类错误，清掉旧身份并引导重新登录
 const handleSaveError = (msg) => {

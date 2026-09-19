@@ -348,7 +348,10 @@ const handleLogin = async () => {
       }
       
       showToast('登录成功！欢迎回来！', 'success')
-      setTimeout(() => router.push('/'), 1000)
+      // 注册后首次登录：直接进入个人中心并自动弹出「六维能力初步测评」
+      const pendingQuiz = localStorage.getItem('pendingAbilityQuiz')
+      if (pendingQuiz) localStorage.removeItem('pendingAbilityQuiz')
+      setTimeout(() => router.push(pendingQuiz ? '/profile?quiz=1' : '/'), 1000)
     } else {
       throw new Error(res.data.msg || res.data.message || '登录失败')
     }
@@ -462,6 +465,8 @@ const handleRegister = async () => {
 
     if (res.data.code === 200 || res.data.code === 0 || res.data.data?.message === '注册成功') {
       showToast('🎉 注册成功！已为您自动填入账号', 'success')
+      // 标记「待做能力初步测评」：登录成功后跳转个人中心并自动弹出问卷
+      localStorage.setItem('pendingAbilityQuiz', '1')
       loginForm.account = res.data.data?.userAccount || regForm.account
       loginForm.password = ''
       
