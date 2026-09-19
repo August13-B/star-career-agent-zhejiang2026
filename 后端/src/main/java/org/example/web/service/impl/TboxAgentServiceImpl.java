@@ -288,23 +288,12 @@ public class TboxAgentServiceImpl implements TboxAgentService {
         }
     }
 
-    // ====================== 职业报告（平台异步任务 + 轮询） ======================
+    // ====================== 职业报告（平台异步任务） ======================
 
-    /**
-     * 职业报告生成：平台异步任务 + 轮询。
-     *
-     * <p>平台网关（Spanner）对长响应做完整缓冲，SSE 从公网物理不可用；因此改用：
-     * <ol>
-     *   <li>{@code POST /api/report} → {@code 202 {jobId, status:"running"}}</li>
-     *   <li>轮询 {@code GET /api/report/jobs/{jobId}}（running 期间返回 currentAgent/progressChars）</li>
-     *   <li>done：{@code {status:"done", agents:[...], reportId, reportName, content:{agents:[{key,name,content}]}}}</li>
-     * </ol>
-     * 下发给 Controller 的帧：进度帧 {@code {"progress":true,...}} / done 原样 / {@code {"error":"..."}}。
-     */
     @Override
-    public Flux<String> reportStream(Long userId, String message) {
+    public String startReportJob(Long userId, String message) {
         if (!props.isConfigured()) {
-            return Flux.just(errorChunk("AI 服务暂不可用：后端未配置百宝箱地址（TBOX_API_URL）。"));
+            throw new IllegalStateException("AI 服务暂不可用：后端未配置百宝箱地址（TBOX_API_URL）。");
         }
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("message", message == null ? "" : message);
@@ -312,21 +301,8 @@ public class TboxAgentServiceImpl implements TboxAgentService {
             // 64 位雪花 ID：必须字符串传输（JS Number 会丢精度）
             body.put("userId", String.valueOf(userId));
         }
-        final int intervalSeconds = Math.max(2, props.getReportPollSeconds());
         log.info("创建百宝箱报告任务 /api/report (userId={}, messageLen={})",
                 userId, message == null ? 0 : message.length());
-        return Mono.fromCallable(() -> startReportJob(body))
-                .subscribeOn(Schedulers.boundedElastic())
-                .flatMapMany(jobId -> pollReportJob(jobId, intervalSeconds))
-                .timeout(Duration.ofSeconds(Math.max(120, props.getReportTimeoutSeconds())))
-                .onErrorResume(e -> {
-                    log.error("百宝箱报告任务失败: {}", e.toString());
-                    return Flux.just(errorChunk(translateError(e)));
-                });
-    }
-
-    /** POST /api/report → jobId（202） */
-    private String startReportJob(Map<String, Object> body) {
         String resp = http.post()
                 .uri("/api/report")
                 .contentType(MediaType.APPLICATION_JSON)
@@ -344,64 +320,14 @@ public class TboxAgentServiceImpl implements TboxAgentService {
         return jobId;
     }
 
-    /** 轮询任务，直到 done / error */
-    private Flux<String> pollReportJob(String jobId, int intervalSeconds) {
-        return Flux.interval(Duration.ZERO, Duration.ofSeconds(intervalSeconds))
-                .concatMap(tick -> Mono.fromCallable(() -> fetchReportJob(jobId))
-                        .subscribeOn(Schedulers.boundedElastic()))
-                .map(this::normalizeReportFrame)
-                .takeUntil(this::isTerminalFrame);
-    }
-
-    /** 是否为终止帧（done / error） */
-    private boolean isTerminalFrame(String frame) {
-        try {
-            JsonNode n = objectMapper.readTree(frame);
-            if (n.has("error")) {
-                return true;
-            }
-            String status = n.path("status").asText("");
-            return "done".equalsIgnoreCase(status) || "error".equalsIgnoreCase(status);
-        } catch (Exception e) {
-            return false;
-        }
-    }
-
-    private String fetchReportJob(String jobId) {
+    @Override
+    public String fetchReportJob(String jobId) {
         return http.get()
                 .uri("/api/report/jobs/" + jobId)
                 .headers(this::applyAuth)
                 .retrieve()
                 .bodyToMono(String.class)
                 .block(Duration.ofSeconds(30));
-    }
-
-    /** 平台任务 JSON → 前端帧：running → 进度帧；done → 原样；error → 错误帧 */
-    private String normalizeReportFrame(String json) {
-        try {
-            JsonNode n = readTree(json);
-            String status = n.path("status").asText("");
-            if ("done".equalsIgnoreCase(status)) {
-                log.info("平台报告任务完成: reportId={}, progressChars={}",
-                        n.path("reportId").asText(""), n.path("progressChars").asInt(0));
-                return json;
-            }
-            if ("error".equalsIgnoreCase(status) || n.has("error")) {
-                String msg = n.path("error").asText(n.path("message").asText("报告任务失败"));
-                return errorChunk(translatePlatformMessage(msg));
-            }
-            Map<String, Object> out = new LinkedHashMap<>();
-            out.put("progress", true);
-            out.put("status", status);
-            out.put("currentAgent", n.path("currentAgent").asText(""));
-            out.put("agentsDone", objectMapper.convertValue(n.path("agentsDone"), java.util.List.class));
-            out.put("progressChars", n.path("progressChars").asInt(0));
-            log.debug("报告任务进度: {}", out);
-            return toJson(out);
-        } catch (Exception e) {
-            log.warn("解析报告任务响应失败: {}", abbreviate(json, 200), e);
-            return json;
-        }
     }
 
     /** 统一的鉴权头（.env 配了 TBOX_API_KEY 就带） */

@@ -193,18 +193,23 @@ const revealSegments = (list) => {
   typeNext()
 }
 
+// 轮询句柄（刷新后可用 localStorage 里的 jobId 续跑）
+let pollTimer = null
+const stopPolling = () => { if (pollTimer) { clearTimeout(pollTimer); pollTimer = null } }
+
 const generate = async () => {
+  if (running.value) return
+  stopPolling()
   reset()
   running.value = true
   progressChars.value = 0
-  let doneReceived = false
   const token = localStorage.getItem('token') || ''
   const headers = {
     'Content-Type': 'application/json',
     ...(token ? { Authorization: token.startsWith('Bearer ') ? token : `Bearer ${token}` } : {})
   }
   try {
-    const resp = await fetch('/api/career-report/generate-stream', {
+    const resp = await fetch('/api/career-report/start', {
       method: 'POST',
       headers,
       body: JSON.stringify({
@@ -213,81 +218,71 @@ const generate = async () => {
           '请为我生成一份完整的职业规划报告。若缺少我的画像信息，请基于岗位知识库与通用情况给出，并说明假设。'
       })
     })
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
-
-    const reader = resp.body.getReader()
-    const decoder = new TextDecoder('utf-8')
-    let buffer = ''
-
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
-      buffer += decoder.decode(value, { stream: true })
-      const lines = buffer.split('\n')
-      buffer = lines.pop()
-
-      for (const line of lines) {
-        const raw = line.replace(/^data:\s*/, '').trim()
-        if (!raw) continue
-        let msg
-        try { msg = JSON.parse(raw) } catch { continue }
-
-        if (msg.error) {
-          // 平台失败帧：{error:"文案"}
-          errorMsg.value = String(msg.error)
-          const runningAgent = agents.value.find(a => a.status === 'running')
-          if (runningAgent) runningAgent.status = 'error'
-          continue
-        }
-        if (msg.done) {
-          // 结束帧：{done, agents, reportName, reportId(我们的), platformReportId, content:{agents}}
-          doneReceived = true
-          reportName.value = msg.reportName || ''
-          reportId.value = msg.reportId ? String(msg.reportId) : ''
-          savedHint.value = msg.saved === false ? '（但落库失败，详见后端日志）' : '并已保存'
-          const list = msg.content && Array.isArray(msg.content.agents) ? msg.content.agents : []
-          revealSegments(list)
-          continue
-        }
-        // 平台异步任务进度帧：{progress:true, currentAgent, agentsDone, progressChars}
-        if (msg.progress || msg.status === 'running') {
-          const ca = msg.currentAgent
-          const idx = agents.value.findIndex(a => a.key === ca)
-          if (idx >= 0) {
-            markPreviousDone(idx)
-            if (agents.value[idx].status === 'waiting') agents.value[idx].status = 'running'
-          }
-          if (Array.isArray(msg.agentsDone)) {
-            msg.agentsDone.forEach(k => {
-              const j = agents.value.findIndex(a => a.key === k)
-              if (j >= 0) agents.value[j].status = 'done'
-            })
-          }
-          progressChars.value = msg.progressChars || 0
-          continue
-        }
-        // 兼容旧的 {agent,data} 增量帧
-        const idx = agents.value.findIndex(a => a.key === msg.agent)
-        if (idx < 0) continue
-        markPreviousDone(idx)
-        const agent = agents.value[idx]
-        if (agent.status === 'waiting') agent.status = 'running'
-        agent.content += msg.data || ''
-      }
+    const data = await resp.json()
+    if (data.code !== 10001 && data.code !== 200 && data.code !== 0) {
+      throw new Error(data.message || '创建报告任务失败')
     }
-    if (!doneReceived) {
-      // 未收到 done（断流/失败）：把进行中的卡片收尾
-      agents.value.forEach(a => { if (a.status === 'running') a.status = 'done' })
-      finished.value = true
-    }
+    const jobId = data.data && data.data.jobId
+    if (!jobId) throw new Error('未获取到 jobId')
+    // 持久化 jobId：任务在平台侧独立运行，刷新页面后仍可续跑
+    localStorage.setItem('reportJobId', jobId)
+    startPolling(jobId)
   } catch (e) {
     errorMsg.value = `生成失败：${e.message}（请确认后端已启动、平台报告服务已就绪）`
-    const runningAgent = agents.value.find(a => a.status === 'running')
-    if (runningAgent) runningAgent.status = 'error'
-  } finally {
-    // 收到 done 时由 revealSegments 负责收尾（打字机期间保持按钮禁用）
-    if (!doneReceived) running.value = false
+    running.value = false
   }
+}
+
+// 轮询平台任务：running 期间推进卡片；done 后按段打字机渲染
+const startPolling = (jobId) => {
+  stopPolling()
+  const poll = async () => {
+    try {
+      const token = localStorage.getItem('token') || ''
+      const res = await axios.get(`/api/career-report/jobs/${jobId}`, {
+        headers: token ? { Authorization: token.startsWith('Bearer ') ? token : `Bearer ${token}` } : {}
+      })
+      const d = (res.data && res.data.data) ? res.data.data : {}
+      if (d.error) {
+        errorMsg.value = String(d.error)
+        const ra = agents.value.find(a => a.status === 'running')
+        if (ra) ra.status = 'error'
+        localStorage.removeItem('reportJobId')
+        running.value = false
+        stopPolling()
+        return
+      }
+      progressChars.value = d.progressChars || progressChars.value
+      const idx = agents.value.findIndex(a => a.key === d.currentAgent)
+      if (idx >= 0) {
+        markPreviousDone(idx)
+        if (agents.value[idx].status === 'waiting') agents.value[idx].status = 'running'
+      }
+      if (Array.isArray(d.agentsDone)) {
+        d.agentsDone.forEach(k => {
+          const j = agents.value.findIndex(a => a.key === k)
+          if (j >= 0) agents.value[j].status = 'done'
+        })
+      }
+      if (d.status === 'done') {
+        reportName.value = d.reportName || ''
+        reportId.value = d.reportId ? String(d.reportId) : ''
+        savedHint.value = d.saved === false ? '（但落库失败，详见后端日志）' : '并已保存'
+        localStorage.removeItem('reportJobId')
+        stopPolling()
+        const list = d.content && Array.isArray(d.content.agents) ? d.content.agents : []
+        revealSegments(list)   // 内部会把 running 置 false
+        return
+      }
+      pollTimer = setTimeout(poll, 4000)
+    } catch (e) {
+      errorMsg.value = `轮询失败：${e.message}`
+      localStorage.removeItem('reportJobId')
+      running.value = false
+      stopPolling()
+    }
+  }
+  poll()
 }
 
 const escapeHtml = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -306,7 +301,15 @@ const renderMarkdown = (text) => {
   return `<p>${html}</p>`
 }
 
-onMounted(getUserInfo)
+onMounted(async () => {
+  await getUserInfo()
+  // 刷新续跑：任务在平台侧独立运行，用持久化的 jobId 继续轮询
+  const jobId = localStorage.getItem('reportJobId')
+  if (jobId && userId.value) {
+    running.value = true
+    startPolling(jobId)
+  }
+})
 </script>
 
 <style scoped>

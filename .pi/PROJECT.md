@@ -44,11 +44,13 @@ python manage.py free-port backend
 8. **端口/IPv4**：Vite 代理与后端检查一律用 `127.0.0.1`，避免 localhost 解析到 IPv6 `::1`。
 9. **`数据库结构.sql` 与 `migrations/` 必须同步**：历史上出现「结构漂移」——建表脚本仍是旧列宽，只有迁移修过。
 10. **Mapper 必须「有实现」**：`@Mapper` 接口若无 XML、无注解，运行期报 `Invalid bound statement`（曾漏 `MatchDetailMapper`、`CareerReportMapper`）。
-11. **职业报告走平台异步任务 + 轮询**（网关缓冲长响应，SSE 公网不可用）：
-    `POST /api/report` → `202 {jobId}`；轮询 `GET /api/report/jobs/{jobId}`（running → currentAgent/progressChars）；
-    done → `{status:"done", content:{agents:[{key,name,content}]}}`。总耗时约 160~232s；`report-poll-seconds` 默认 4。
-    - 平台落它的库（给 AI 看，自动注入"上一份报告"）；我们 done 时按 `content.agents` 另存 MySQL（给用户看）；前端详情/PDF 用我们的 `reportId`。
-    - 前端：进度帧推进卡片状态；done 后按段打字机渲染 `content.agents[].content`。
+11. **职业报告 = 平台异步任务 + 前端轮询**（网关缓冲长响应，SSE 公网不可用）：
+    - 后端 `POST /api/career-report/start` → 平台 `POST /api/report` → `202 {jobId}`
+    - 后端 `GET /api/career-report/jobs/{jobId}` → 平台 `GET /api/report/jobs/{jobId}`；running → currentAgent/progressChars；done → `content.agents[]`
+    - 总耗时约 160~232s；平台运行期只有进度、**无正文增量** → “打字机”只能 done 后前端按段模拟
+    - `jobId` 存 localStorage，刷新/切页可续（任务在平台侧独立运行，与浏览器连接无关）
+    - 后端首次 done 时按 `content.agents` 幂等落库 MySQL；前端详情/PDF 用我们的 `reportId`
+    - 注意：平台 done 帧顶层 `agents` 为 `null`，6 段在 **`content.agents[]`**（key/name/content）
 12. **纯文本对话默认走平台 SSE**：`POST {TBOX_API_URL}/api/chat/stream`（`TBOX_CHAT_CHANNEL=http`，待平台提供）；
     平台未就绪时设 `TBOX_CHAT_CHANNEL=ws` 回退 WS。带图片对话始终走 `WS /ws`。
     - 对话上下文：后端用 `StudentProfileContextService.build()` 注入账号画像 + 本轮问题；多轮历史由平台按 `conversationId` 注入。

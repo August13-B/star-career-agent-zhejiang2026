@@ -59,66 +59,99 @@ public class CareerReportController {
             "report_composition", "报告整合");
 
     /**
-     * 职业报告生成（平台异步任务 + 轮询）
+     * ① 启动职业报告异步任务（秒回）。
      *
-     * <p>后端：拼「画像上下文 + 用户本次诉求」→ 平台 {@code POST /api/report} 起任务 →
-     * 轮询 {@code /api/report/jobs/{jobId}} 并把进度帧透传给前端；
-     * done 时落库我们自己的 {@code career_report}（+ 历史快照）并回填我们的 reportId。
+     * <p>后端：拼「画像上下文 + 用户本次诉求」→ 平台 {@code POST /api/report} → 返回 jobId。
+     * 任务在平台侧独立运行，前端拿 jobId 自行轮询；刷新页面也不会丢。
      */
-    @org.springframework.web.bind.annotation.PostMapping(
-            value = "/generate-stream", produces = org.springframework.http.MediaType.TEXT_EVENT_STREAM_VALUE)
+    @org.springframework.web.bind.annotation.PostMapping("/start")
     @org.springframework.web.bind.annotation.CrossOrigin
-    public reactor.core.publisher.Flux<String> generateReportStream(@RequestBody java.util.Map<String, Object> request) {
+    public Result<?> startReport(@RequestBody java.util.Map<String, Object> request) {
         Object uidRaw = request.get("user_id");
         if (uidRaw == null) {
-            return reactor.core.publisher.Flux.just(
-                    "{\"error\":\"缺少 user_id 参数\"}");
+            return Result.error("缺少 user_id 参数");
         }
-        final Long userId = Long.parseLong(String.valueOf(uidRaw));
+        Long userId;
+        try {
+            userId = Long.parseLong(String.valueOf(uidRaw));
+        } catch (NumberFormatException e) {
+            return Result.error("user_id 格式错误");
+        }
         String userInput = request.get("content") == null ? "" : String.valueOf(request.get("content"));
-        // 前端可覆盖的目标岗位与补充说明
         String targetJob = request.get("target_job") == null ? null : String.valueOf(request.get("target_job"));
-        // 平台已接管 6 智能体编排与「上一份报告」注入；这里只送「账号画像上下文（内含用户本次诉求）」
         String message = studentProfileContextService.build(userId, targetJob, userInput);
-
-        return tboxAgentService.reportStream(userId, message)
-                // 进度帧原样透传；done 帧落库并回填我们的 reportId
-                .map(json -> enrichDoneChunk(json, userId));
+        try {
+            String jobId = tboxAgentService.startReportJob(userId, message);
+            java.util.Map<String, Object> data = new java.util.LinkedHashMap<>();
+            data.put("jobId", jobId);
+            data.put("userId", String.valueOf(userId));
+            return Result.success("报告任务已创建", data);
+        } catch (Exception e) {
+            System.err.println("创建报告任务失败: " + e.getMessage());
+            return Result.error("创建报告任务失败：" + e.getMessage());
+        }
     }
 
-    /** done 帧（{status:"done", content:{agents:[...]}}）：落库并回填我们的 reportId/reportName */
-    private String enrichDoneChunk(String json, Long userId) {
+    /** ② 查询报告任务进度/结果（前端每 4s 轮询一次；done 时落库我们 MySQL，幂等） */
+    @org.springframework.web.bind.annotation.GetMapping("/jobs/{jobId}")
+    @org.springframework.web.bind.annotation.CrossOrigin
+    public Result<?> reportJobStatus(@org.springframework.web.bind.annotation.PathVariable String jobId) {
         try {
+            String json = tboxAgentService.fetchReportJob(jobId);
             com.fasterxml.jackson.databind.JsonNode n = objectMapper.readTree(json);
-            if (!"done".equalsIgnoreCase(n.path("status").asText(""))) {
-                return json;   // 进度帧原样透传
+            String status = n.path("status").asText("");
+            java.util.Map<String, Object> out = new java.util.LinkedHashMap<>();
+            out.put("status", status);
+            out.put("progressChars", n.path("progressChars").asInt(0));
+            out.put("currentAgent", n.path("currentAgent").asText(""));
+            out.put("agentsDone", objectMapper.convertValue(n.path("agentsDone"), java.util.List.class));
+
+            if ("done".equalsIgnoreCase(status)) {
+                Long reportId = saveReportOnce(jobId, n);
+                out.put("platformReportId", n.path("reportId").asText(null));
+                out.put("reportName", n.path("reportName").asText(null));
+                out.put("content", objectMapper.convertValue(n.path("content"), java.util.Map.class));
+                if (reportId != null) {
+                    out.put("reportId", reportId);
+                    out.put("saved", true);
+                } else {
+                    out.put("saved", false);
+                }
+            } else if ("error".equalsIgnoreCase(status) || n.has("error")) {
+                out.put("error", n.path("error").asText(n.path("message").asText("报告任务失败")));
             }
-            java.util.Map<String, Object> info = saveReport(userId,
-                    n.path("content").path("agents"), n.path("reportName").asText(null));
-            java.util.Map<String, Object> done = new java.util.LinkedHashMap<>();
-            done.put("done", true);
-            done.put("status", "done");
-            done.put("agents", objectMapper.convertValue(n.path("agents"), java.util.List.class));
-            done.put("progressChars", n.path("progressChars").asInt(0));
-            // 平台 reportId（Appwrite $id，可能为 null）保留为外部引用
-            done.put("platformReportId", n.path("reportId").asText(null));
-            // 完整内容一并下发，前端按段渲染
-            done.put("content", objectMapper.convertValue(n.path("content"), java.util.Map.class));
-            String platformName = n.path("reportName").asText(null);
-            if (info != null) {
-                // 前端详情/PDF 使用我们的 MySQL reportId
-                done.put("reportId", info.get("reportId"));
-                done.put("reportName", platformName != null ? platformName : info.get("reportName"));
-                done.put("saved", true);
-            } else {
-                done.put("reportName", platformName);
-                done.put("saved", false);
-            }
-            return objectMapper.writeValueAsString(done);
+            return Result.success(out);
         } catch (Exception e) {
-            System.err.println("回填报告结束信息失败: " + e.getMessage());
-            return json;
+            System.err.println("查询报告任务失败: " + e.getMessage());
+            return Result.error("查询报告任务失败：" + e.getMessage());
         }
+    }
+
+    /** jobId → 我们 MySQL reportId 缓存（保证同一次任务只落库一次） */
+    private final java.util.concurrent.ConcurrentHashMap<String, Long> savedReportByJob =
+            new java.util.concurrent.ConcurrentHashMap<>();
+
+    /** 幂等落库：同一个 jobId 只写一次 */
+    private Long saveReportOnce(String jobId, com.fasterxml.jackson.databind.JsonNode n) {
+        Long cached = savedReportByJob.get(jobId);
+        if (cached != null) {
+            return cached;
+        }
+        Long userId;
+        try {
+            userId = Long.parseLong(n.path("userId").asText(""));
+        } catch (Exception e) {
+            System.err.println("报告任务缺少 userId，跳过落库: jobId=" + jobId);
+            return null;
+        }
+        java.util.Map<String, Object> info = saveReport(userId,
+                n.path("content").path("agents"), n.path("reportName").asText(null));
+        if (info != null && info.get("reportId") != null) {
+            Long id = Long.parseLong(String.valueOf(info.get("reportId")));
+            savedReportByJob.put(jobId, id);
+            return id;
+        }
+        return null;
     }
 
     /**

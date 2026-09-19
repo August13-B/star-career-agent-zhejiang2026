@@ -55,20 +55,20 @@ public interface TboxAgentService {
     String chatSync(Long userId, Long localConversationId, String message);
 
     /**
-     * 职业报告生成：平台异步任务 + 轮询（平台网关缓冲长响应，SSE 从公网不可用）。
+     * 启动职业报告异步任务（平台异步模式，规避网关缓冲）。
      *
-     * <p>实现：{@code POST /api/report} 起任务 → 轮询 {@code GET /api/report/jobs/{jobId}}，
-     * 返回元素为下发给 Controller 的帧（JSON 字符串）：
-     * <ul>
-     *   <li>进度帧：{@code {"progress":true,"currentAgent":"profile_analysis","agentsDone":[...],"progressChars":N}}</li>
-     *   <li>完成帧：{@code {"status":"done","agents":[...],"reportId":"...","reportName":"...","content":{"agents":[{key,name,content}]}}}</li>
-     *   <li>失败帧：{@code {"error":"文案"}}</li>
-     * </ul>
+     * <p>平台：{@code POST /api/report} → {@code 202 {jobId, status:"running"}}；
+     * 随后前端轮询 {@link #fetchReportJob(String)}。任务在平台侧独立运行，与浏览器连接无关，
+     * 所以前端刷新后仍可用同一个 jobId 继续轮询。
      *
-     * @param userId  本地用户ID（字符串形式传给平台，用于平台侧落库与"上一份报告"注入）
-     * @param message 已拼好的提示词（账号画像上下文 + 用户本次诉求）
+     * @return 平台 jobId
      */
-    Flux<String> reportStream(Long userId, String message);
+    String startReportJob(Long userId, String message);
+
+    /**
+     * 查询报告任务状态（平台原始 JSON，状态字段 {@code status} = running / done / error）。
+     */
+    String fetchReportJob(String jobId);
 
     /** 记录本次运行的平台 ID（供保存消息时回填） */
     void rememberRunIds(Long localConversationId, String tboxMessageId, String tboxRequestId);
