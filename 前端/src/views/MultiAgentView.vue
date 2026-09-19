@@ -37,7 +37,7 @@
           v-for="(agent, i) in agents"
           :key="agent.key"
           class="agent-card"
-          :class="agent.status"
+          :class="[agent.status, { 'is-expanded': agent.expanded }]"
         >
           <div class="agent-head">
             <div class="agent-index">{{ i + 1 }}</div>
@@ -53,17 +53,15 @@
               <span v-else-if="agent.status === 'done'" class="tag done">完成</span>
               <span v-else-if="agent.status === 'error'" class="tag error">失败</span>
             </div>
+            <button class="expand-btn" @click="toggleExpand(i)">{{ agent.expanded ? '收起' : '展开' }}</button>
           </div>
           <div class="agent-body" v-if="agent.content">
             <div
               class="markdown"
-              :class="{ 'is-collapsed': !agent.expanded }"
               :ref="el => setBodyRef(i, el)"
-              v-html="renderMarkdown(agent.expanded ? agent.content : tailLines(agent.content, 3))"
+              @scroll="onBodyScroll(i, $event)"
+              v-html="renderMarkdown(agent.content)"
             ></div>
-            <button class="expand-btn" @click="toggleExpand(i)">
-              {{ agent.expanded ? '收起' : '展开全文' }}
-            </button>
           </div>
           <div class="agent-placeholder" v-else>
             {{ agent.status === 'running' ? '正在检索知识库并生成…' : '等待前序智能体完成' }}
@@ -117,26 +115,37 @@ const receivedTotal = computed(() => agents.value.reduce((n, c) => n + ((c.recei
 const reportName = ref('')
 const reportId = ref('')
 const errorMsg = ref('')
-const agents = ref(AGENT_DEFS.map(a => ({ ...a, status: 'waiting', content: '', received: '', expanded: false })))
+const agents = ref(AGENT_DEFS.map(a => ({ ...a, status: 'waiting', content: '', received: '', expanded: false, autoScroll: true, userToggled: false })))
 
-// 卡片正文 DOM（展开态自动滚到底部）
+// 卡片正文 DOM（收起态/展开态都滚到底；用户上滑后暂停自动滚动）
 const bodyRefs = []
 const setBodyRef = (i, el) => { if (el) bodyRefs[i] = el }
 const toggleExpand = (i) => {
   const card = agents.value[i]
   if (!card) return
   card.expanded = !card.expanded
+  card.userToggled = true          // 用户手动操作过 → 不再自动展开
   if (card.expanded) {
+    card.autoScroll = true
     nextTick(() => {
       const el = bodyRefs[i]
       if (el) el.scrollTop = el.scrollHeight
     })
   }
 }
-// 收起态：只展示最新的 n 行
-const tailLines = (text, n = 3) => {
-  const lines = String(text || '').split('\n').map(l => l.replace(/\s+$/, '')).filter(l => l.trim() !== '')
-  return lines.slice(-n).join('\n')
+// 用户上滑 → 暂停自动滚动；回到最底 → 恢复
+const onBodyScroll = (i, e) => {
+  const el = e.target
+  const card = agents.value[i]
+  if (!card) return
+  card.autoScroll = el.scrollTop + el.clientHeight >= el.scrollHeight - 8
+}
+// 开始生成时自动展开（除非用户手动收起/接管过）
+const markRunning = (i) => {
+  const card = agents.value[i]
+  if (!card) return
+  if (card.status === 'waiting') card.status = 'running'
+  if (!card.userToggled && !card.expanded) card.expanded = true
 }
 
 const getUserInfo = async () => {
@@ -199,8 +208,8 @@ const startTypewriter = () => {
         const step = Math.max(2, Math.ceil(backlog / 30))
         card.content = recv.slice(0, shown.length + step)
         catchingUp = true
-        // 展开态：自动滚到底，保证总看到最新输出
-        if (card.expanded && bodyRefs[i]) {
+        // 收起/展开态都滚到底（用户上滑后 autoScroll=false 则不打扰）
+        if (card.autoScroll && bodyRefs[i]) {
           const el = bodyRefs[i]
           el.scrollTop = el.scrollHeight
         }
@@ -220,7 +229,7 @@ const reset = () => {
   stopPolling()
   stopTypewriter()
   doneReceived = false
-  agents.value = AGENT_DEFS.map(a => ({ ...a, status: 'waiting', content: '', received: '', expanded: false }))
+  agents.value = AGENT_DEFS.map(a => ({ ...a, status: 'waiting', content: '', received: '', expanded: false, autoScroll: true, userToggled: false }))
   finished.value = false
   errorMsg.value = ''
   savedHint.value = ''
@@ -334,14 +343,14 @@ const startPolling = (jobId) => {
           if (!text) return
           const card = agents.value[j]
           card.received = text          // 替换，而非追加 —— 不会重复、不会漂移
-          if (card.status === 'waiting') card.status = 'running'
+          markRunning(j)
         })
       }
       // 2) 推进卡片状态（currentAgent 高亮 / agentsDone 标完成）
       const idx = agents.value.findIndex(a => a.key === d.currentAgent)
       if (idx >= 0) {
         markPreviousDone(idx)
-        if (agents.value[idx].status === 'waiting') agents.value[idx].status = 'running'
+        markRunning(idx)
       }
       if (Array.isArray(d.agentsDone)) {
         d.agentsDone.forEach(k => {
@@ -543,19 +552,19 @@ onMounted(async () => {
 .input-area:focus { border-color: #4A90E2; box-shadow: 0 0 0 3px rgba(74,144,226,0.10); }
 
 .agents { display: flex; flex-direction: column; gap: 10px; }
-.agent-card { background: #FFFFFF; border: 1px solid #E4EAF2; border-radius: 12px; padding: 14px 16px; transition: border-color 0.16s ease; }
-/* 等待态压扁：保证首屏（页头+输入区+6 张卡片）尽量装得下，不提前出现滚动条；
-   一旦 AI 内容到达卡片撑开，超出视口后再自然出现滚动条 */
-.agent-card.waiting { padding: 9px 15px; }
-.agent-card.waiting .agent-placeholder { display: none; }
+/* 卡片固定尺寸（纵向单列，宽度随容器）：收起 120px / 展开 400px；流式输出时布局不跳动 */
+.agent-card { background: #FFFFFF; border: 1px solid #E4EAF2; border-radius: 12px; padding: 0 15px;
+              height: 120px; box-sizing: border-box; display: flex; flex-direction: column; overflow: hidden;
+              transition: border-color 0.16s ease, height 0.18s ease; }
+.agent-card.is-expanded { height: 400px; }
 .agent-card.running { border-color: #4A90E2; box-shadow: 0 0 0 3px rgba(74,144,226,0.08); }
 .agent-card.done { border-color: #CDE7D6; }
 .agent-card.error { border-color: #FECACA; }
 
-.agent-head { display: flex; align-items: center; gap: 12px; }
+.agent-head { display: flex; align-items: center; gap: 12px; padding: 11px 0; flex: 0 0 auto; }
 .agent-index { width: 26px; height: 26px; border-radius: 7px; background: #EEF4FB; color: #2563EB;
                display: flex; align-items: center; justify-content: center; font-size: 0.8rem; font-weight: 700; }
-.agent-meta { flex: 1; }
+.agent-meta { flex: 1; min-width: 0; }
 .agent-meta h3 { margin: 0; font-size: 0.95rem; font-weight: 650; color: #1E293B; }
 .agent-desc { font-size: 0.76rem; color: #94A3B8; }
 
@@ -567,14 +576,14 @@ onMounted(async () => {
 .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; animation: pulse 1.2s infinite; }
 @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.25; } }
 
-.agent-body { margin-top: 12px; border-top: 1px solid #F1F5F9; padding-top: 10px; display: flex; flex-direction: column; }
-/* 收起态：只显示最新 3 行（内容由 tailLines 截取） */
-.agent-body .markdown.is-collapsed { max-height: none; overflow: hidden; }
-/* 展开态：可滚动，JS 每次输出自动滚到底，保证总看到最新 */
-.agent-body .markdown:not(.is-collapsed) { max-height: 60vh; overflow-y: auto; padding-right: 6px; }
-.expand-btn { align-self: flex-start; margin-top: 8px; background: none; border: none; color: #2563EB; font-size: 0.78rem; font-weight: 600; cursor: pointer; padding: 2px 0; }
+.agent-body { flex: 1 1 auto; min-height: 0; border-top: 1px solid #F1F5F9; display: flex; flex-direction: column; }
+/* 收起态：固定 3 行高，隐藏滚动条，JS 滚到最新（最新三行） */
+.agent-body .markdown { flex: 1 1 auto; min-height: 0; overflow-y: hidden; padding: 8px 0; }
+/* 展开态：固定高可滚动，JS 自动跟到最新；用户上滑后暂停 */
+.agent-card.is-expanded .agent-body .markdown { overflow-y: auto; padding-right: 6px; }
+.expand-btn { flex: 0 0 auto; background: none; border: none; color: #2563EB; font-size: 0.78rem; font-weight: 600; cursor: pointer; padding: 2px 4px; }
 .expand-btn:hover { text-decoration: underline; }
-.agent-placeholder { margin-top: 10px; font-size: 0.82rem; color: #B6C2D2; }
+.agent-placeholder { flex: 1 1 auto; display: flex; align-items: center; font-size: 0.82rem; color: #B6C2D2; border-top: 1px solid #F1F5F9; }
 
 .markdown :deep(h2), .markdown :deep(h3), .markdown :deep(h4) { color: #1E293B; margin: 12px 0 8px; font-weight: 650; }
 .markdown :deep(h3) { font-size: 1.02rem; }
