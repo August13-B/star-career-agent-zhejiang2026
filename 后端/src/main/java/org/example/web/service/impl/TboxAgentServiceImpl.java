@@ -61,7 +61,12 @@ public class TboxAgentServiceImpl implements TboxAgentService {
         if (base != null && base.endsWith("/")) {
             base = base.substring(0, base.length() - 1);
         }
-        this.http = WebClient.builder().baseUrl(base == null ? "" : base).build();
+        this.http = WebClient.builder()
+                .baseUrl(base == null ? "" : base)
+                // 平台报告任务 done 响应会带上各段全文，可能远超默认 256KB →
+                // 不放开会报 DataBufferLimitException: Exceeded limit on max bytes to buffer : 262144
+                .codecs(c -> c.defaultCodecs().maxInMemorySize(32 * 1024 * 1024))
+                .build();
     }
 
     // ====================== 对外主入口 ======================

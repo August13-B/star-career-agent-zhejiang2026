@@ -183,6 +183,26 @@ let pollToken = 0
 let typeTimer = null
 let currentJobId = null       // 当前报告任务ID（供「停止生成」）
 let doneReceived = false
+
+/**
+ * 容错（前端兜底）：后端/平台持续异常时，用已收到的各段内容直接收尾展示，
+ * 给出中性提示（不报红）。注意：本次不会落库，提示用户可稍后重试。
+ */
+const finalizePartialLocally = () => {
+  doneReceived = true
+  stopPolling()
+  pollToken++
+  currentJobId = null
+  localStorage.removeItem('reportJobId')
+  agents.value.forEach(a => {
+    a.status = 'done'
+    a.content = a.received || a.content || ''
+  })
+  partialMsg.value = '报告整合环节未完成（平台超时或异常），已为你整理并展示已完成的分析部分；本次未能落库，可稍后重新生成。'
+  savedHint.value = ''
+  running.value = false
+  startTypewriter()
+}
 const POLL_MS = 1500
 const POLL_TIMEOUT_MS = 12000
 
@@ -394,6 +414,11 @@ const startPolling = (jobId) => {
       pollFailures++
       console.warn('[report] 轮询失败', pollFailures, e && e.message)
       if (pollFailures >= 6) {
+        // 容错：后端/平台持续拿不到有效响应，但已收到部分内容 → 本地整理展示（中性提示），不报红
+        if (agents.value.some(a => (a.received || '').trim())) {
+          finalizePartialLocally()
+          return
+        }
         errorMsg.value = `轮询失败（已重试 ${pollFailures} 次）：${e && e.message}`
         localStorage.removeItem('reportJobId')
         running.value = false
