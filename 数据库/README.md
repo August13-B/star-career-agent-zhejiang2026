@@ -58,6 +58,21 @@ Windows（MySQL 装在 D 盘时）：
    仅在首次建库或确认可清空时执行；生产/演示库请先备份。
 2. 自动灌库是**幂等**的：检测到 `job_info` 已有数据就跳过，故日常启动不会重复导入。
 
+## 迁移脚本
+
+| 脚本 | 说明 |
+|---|---|
+| `migrations/001_add_tbox_ids.sql` | 百宝箱对接：`ai_conversation` / `ai_message` 增加 tbox 映射字段 |
+| `migrations/002_clean_user_data.sql` | **清理旧密钥用户数据**（保留 `job_info` / `job_requirement_profile` / `invitation_code` / `user` 账号）<br>背景：早期画像由另一套密钥加密，无法解密；清理后重新录入即为当前密钥 |
+
+执行：
+```bash
+mysql -u root -p --default-character-set=utf8mb4 < 数据库/migrations/001_add_tbox_ids.sql
+mysql -u root -p --default-character-set=utf8mb4 < 数据库/migrations/002_clean_user_data.sql
+```
+
+> ⚠️ 执行 002 前请先备份：`mysqldump -u root -p --single-transaction youthpath > backup.sql`
+
 ## 灌库后自检
 
 ```sql
