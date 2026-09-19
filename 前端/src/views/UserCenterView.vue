@@ -85,7 +85,13 @@
               </div>
               <div class="report-actions">
                 <button class="outline-btn" @click="openReport(r)">查看报告</button>
-                <button class="text-btn" @click="exportReportPdf(r)">导出 PDF</button>
+                <div class="export-wrap">
+                  <button class="text-btn" @click.stop="toggleExport(r.id)">导出 PDF ▾</button>
+                  <div v-if="String(exportOpenId) === String(r.id)" class="export-menu">
+                    <button class="export-item" @click="exportReportPdf(r, 'report')">报告导出（简介）</button>
+                    <button class="export-item" @click="exportReportPdf(r, 'full')">全量导出（含过程）</button>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -777,17 +783,24 @@ const renderReportHtml = (text) => {
   return `<p>${html}</p>`
 }
 
-const exportReportPdf = async (r) => {
+const exportOpenId = ref(null)
+const toggleExport = (id) => {
+  exportOpenId.value = (String(exportOpenId.value) === String(id)) ? null : id
+}
+
+const exportReportPdf = async (r, mode = 'report') => {
+  exportOpenId.value = null
   if (!r || !r.id) return
   try {
     const res = await studentApi.get(`/api/career-report/${r.id}/export/pdf`, {
+      params: { mode },
       responseType: 'blob',
       timeout: 60000
     })
     const url = URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }))
     const a = document.createElement('a')
     a.href = url
-    a.download = `${r.reportName || '职业规划报告'}.pdf`
+    a.download = `${r.reportName || '职业规划报告'}${mode === 'full' ? '-全量过程' : ''}.pdf`
     document.body.appendChild(a)
     a.click()
     a.remove()
@@ -1001,6 +1014,14 @@ const changePassword = async () => {
 .report-meta { display: flex; align-items: center; gap: 10px; font-size: 0.8rem; color: #94A3B8; }
 .report-status { color: #10B981; font-weight: 600; }
 .report-actions { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+
+/* 导出下拉：报告（简介）/ 全量（含过程） */
+.export-wrap { position: relative; }
+.export-menu { position: absolute; right: 0; top: calc(100% + 6px); z-index: 30; min-width: 168px; background: #FFFFFF;
+  border: 1px solid #E4EAF2; border-radius: 10px; box-shadow: 0 10px 28px rgba(15, 23, 42, 0.12); padding: 6px; display: flex; flex-direction: column; }
+.export-item { text-align: left; background: none; border: none; padding: 9px 12px; border-radius: 8px; font-size: 0.85rem;
+  color: #334155; cursor: pointer; font-family: inherit; white-space: nowrap; }
+.export-item:hover { background: #EFF6FF; color: #1D4ED8; }
 .report-header-actions { display: flex; align-items: center; gap: 10px; }
 .report-manage-bar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; padding: 8px 12px; background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 10px; }
 .report-select-all { display: inline-flex; align-items: center; gap: 6px; font-size: 0.85rem; color: #475569; cursor: pointer; }

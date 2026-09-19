@@ -78,6 +78,7 @@
         <router-link class="btn ghost" to="/profile">前往个人中心查看</router-link>
       </footer>
 
+      <div v-if="partialMsg" class="notice partial">{{ partialMsg }}</div>
       <div v-if="errorMsg" class="notice error">{{ errorMsg }}</div>
     </div>
   </div>
@@ -115,6 +116,8 @@ const receivedTotal = computed(() => agents.value.reduce((n, c) => n + ((c.recei
 const reportName = ref('')
 const reportId = ref('')
 const errorMsg = ref('')
+// 容错提示：报告整合未完成但已整理已完成部分（中性提示，不报红）
+const partialMsg = ref('')
 const agents = ref(AGENT_DEFS.map(a => ({ ...a, status: 'waiting', content: '', received: '', expanded: false, autoScroll: true })))
 
 // 卡片正文 DOM（收起态/展开态都滚到底；用户上滑后暂停自动滚动）
@@ -233,6 +236,7 @@ const reset = () => {
   agents.value = AGENT_DEFS.map(a => ({ ...a, status: 'waiting', content: '', received: '', expanded: false, autoScroll: true }))
   finished.value = false
   errorMsg.value = ''
+  partialMsg.value = ''
   savedHint.value = ''
   reportName.value = ''
   reportId.value = ''
@@ -367,6 +371,10 @@ const startPolling = (jobId) => {
         reportName.value = d.reportName || ''
         reportId.value = d.reportId ? String(d.reportId) : ''
         savedHint.value = d.saved === false ? '（但落库失败，详见后端日志）' : '并已保存'
+        // 容错：后端用已有内容整理了“部分完成”报告 → 中性提示，不报红
+        partialMsg.value = d.partial
+          ? '报告整合环节未完成（平台超时或异常），已为你整理并保存已完成的分析部分，可在个人中心查看/导出。'
+          : ''
         localStorage.removeItem('reportJobId')
         stopPolling()
         const list = d.content && Array.isArray(d.content.agents) ? d.content.agents : []
@@ -614,4 +622,6 @@ onMounted(async () => {
 .notice { border-radius: 8px; padding: 10px 14px; font-size: 0.86rem; margin-bottom: 14px; }
 .notice.warn { background: #FFFBEB; color: #B45309; border: 1px solid #FDE68A; }
 .notice.error { background: #FEF2F2; color: #B91C1C; border: 1px solid #FECACA; margin-top: 12px; }
+/* 容错提示：中性（白底/灰边），不报红，也不似警告 */
+.notice.partial { background: #FFFFFF; color: #475569; border: 1px solid #E2E8F0; margin-top: 12px; }
 </style>

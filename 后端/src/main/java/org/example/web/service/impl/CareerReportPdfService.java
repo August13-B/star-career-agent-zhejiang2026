@@ -121,6 +121,9 @@ public class CareerReportPdfService {
             cs = new PDPageContentStream(doc, page);
             cs.beginText();
             y = PDRectangle.A4.getHeight() - MARGIN;
+            // 关键：beginText() 后文本矩阵在页面左下角 (0,0)，必须把起点移到页边距内，
+            // 否则后续 newLineAtOffset(0,-LEADING) 会把文字一路写到页面外（表现为 PDF 空白）
+            cs.newLineAtOffset(MARGIN, y);
         }
 
         private void ensure(float need) throws Exception {
