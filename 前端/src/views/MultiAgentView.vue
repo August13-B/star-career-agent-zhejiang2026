@@ -228,7 +228,7 @@ onMounted(getUserInfo)
 </script>
 
 <style scoped>
-.report-page { min-height: 100vh; background: #F6F8FC; padding: 24px; box-sizing: border-box; }
+.report-page { width: 100%; height: 100%; overflow-y: auto; background: #F6F8FC; padding: 24px; box-sizing: border-box; }
 .workspace { max-width: 980px; margin: 0 auto; }
 
 .page-header { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; margin-bottom: 18px; }
