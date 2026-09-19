@@ -71,9 +71,11 @@ public class CareerReportController {
         final Long userId = Long.parseLong(String.valueOf(uidRaw));
         Long conversationId = request.get("conversation_id") == null ? null
                 : Long.parseLong(String.valueOf(request.get("conversation_id")));
-        String message = request.get("content") == null
-                ? "请为我生成一份完整的职业规划报告。若缺少我的画像信息，请基于岗位知识库与通用情况给出，并说明假设。"
+        String userInput = request.get("content") == null
+                ? "我是用户，请基于我的画像信息生成完整报告；如缺少信息请基于岗位知识库与通用情况给出并说明假设。"
                 : String.valueOf(request.get("content"));
+        // 在请求中注入「6 智能体协议」提示词（不依赖平台系统提示词配置）
+        String message = loadReportProtocol() + userInput;
 
         final org.example.web.service.impl.AgentMarkerParser parser =
                 new org.example.web.service.impl.AgentMarkerParser();
@@ -82,6 +84,19 @@ public class CareerReportController {
         return tboxAgentService.reportStream(userId, conversationId, message, parser)
                 .doOnNext(json -> accumulateAgentChunk(json, acc))
                 .doOnComplete(() -> saveReport(userId, acc, parser));
+    }
+
+    /** 读取 6 智能体协议提示词（resources/prompts/report-multi-agent.txt） */
+    private String loadReportProtocol() {
+        try (java.io.InputStream in = new org.springframework.core.io.ClassPathResource(
+                "prompts/report-multi-agent.txt").getInputStream()) {
+            return new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8) + "\n\n";
+        } catch (Exception e) {
+            System.err.println("读取报告协议提示词失败，使用内联简版: " + e.getMessage());
+            return "【任务】生成职业规划报告。必须按顺序输出 6 个片段，每段用 <<<AGENT:片段名>>> 与 <<<END:片段名>>> 包裹，"
+                    + "顺序为 profile_analysis → career_exploration → goal_setting → path_planning → action_planning → report_composition，"
+                    + "标记之外禁止任何内容（不要英文开场白）。\n\n";
+        }
     }
 
     /** 累加各智能体内容（元素形如 {"agent":"x","data":"..."}） */
