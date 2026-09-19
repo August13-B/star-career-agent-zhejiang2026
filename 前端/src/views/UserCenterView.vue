@@ -160,10 +160,10 @@
             <button class="text-btn" @click="openAbilityModal">编辑能力数据</button>
           </div>
           
-          <div v-if="!myAbility.id" class="empty-ability">
+          <div v-if="!myAbility.id && !hasScore" class="empty-ability">
             <span class="empty-icon">📊</span>
             <p>暂未录入能力数据，完善后可大幅提升匹配精度</p>
-            <button class="outline-btn" @click="openAbilityModal">立即录入</button>
+            <button class="outline-btn" @click="openAbilityModal">立即测评</button>
           </div>
           
           <div v-else class="ability-grid">
@@ -188,30 +188,29 @@
             </div>
             
             <div class="ability-section">
-              <h5 class="sub-title">🤝 综合软素质</h5>
-              <div class="ability-item">
-                <span class="a-label">沟通能力</span>
-                <span class="a-value">{{ myAbility.communicationAbility || '暂无' }}</span>
-              </div>
-              <div class="ability-item">
-                <span class="a-label">团队协作</span>
-                <span class="a-value">{{ myAbility.teamworkAbility || '暂无' }}</span>
-              </div>
-              <div class="ability-item">
-                <span class="a-label">问题解决</span>
-                <span class="a-value">{{ myAbility.problemSolving || '暂无' }}</span>
-              </div>
-              <div class="ability-item">
-                <span class="a-label">创新能力</span>
-                <span class="a-value">{{ myAbility.innovationAbility || '暂无' }}</span>
-              </div>
-              <div class="ability-item">
-                <span class="a-label">学习能力</span>
-                <span class="a-value">{{ myAbility.learningAbility || '暂无' }}</span>
-              </div>
-              <div class="ability-item">
-                <span class="a-label">抗压能力</span>
-                <span class="a-value">{{ myAbility.pressureResistance || '暂无' }}</span>
+              <h5 class="sub-title">🤝 综合软素质（六维测评）</h5>
+              <template v-if="hasScore">
+                <div class="ability-item" v-for="d in softDims" :key="d.key">
+                  <span class="a-label">
+                    {{ d.name }}
+                    <i v-if="d.key === topKey" class="dim-tag top">优势</i>
+                    <i v-else-if="d.key === lowKey" class="dim-tag low">待提升</i>
+                  </span>
+                  <span class="a-value score-value">
+                    <b>{{ d.score }}</b>
+                    <i class="lv">{{ levelText(d.score) }}</i>
+                    <span class="score-track"><i :style="{ width: d.score + '%' }"></i></span>
+                  </span>
+                </div>
+                <div class="ability-item total-row">
+                  <span class="a-label">综合得分</span>
+                  <span class="a-value score-value">
+                    <b>{{ myScore.totalScore }}</b><i class="lv">{{ levelText(myScore.totalScore) }}</i>
+                  </span>
+                </div>
+              </template>
+              <div v-else class="empty-inline">
+                还没有六维测评结果，点右上角「编辑能力数据」开始测评（约 10 题）
               </div>
             </div>
           </div>
@@ -507,6 +506,7 @@ onMounted(async () => {
   fetchMyProfile()
   fetchMyAbility()
   fetchReports()
+  fetchMyScore()
   // 注册后跳转过来：自动弹出六维能力初步测评（初步分，后续 AI 测评会覆盖）
   if (route.query.quiz === '1') {
     quizVis.value = true
@@ -629,7 +629,47 @@ const saveJobIntent = async () => {
 // ===== 🚀 核心能力模型：六维问卷测评（注册后初步评价；AI 测评会参考并覆盖） =====
 const quizVis = ref(false)
 const openAbilityModal = () => { quizVis.value = true }
-const onQuizSaved = async () => { await fetchMyAbility() }
+const onQuizSaved = async () => { await Promise.all([fetchMyAbility(), fetchMyScore()]) }
+
+// 六维评分（来自 student_ability_score）
+const myScore = ref(null)
+const hasScore = computed(() => !!myScore.value)
+const SOFT_DEFS = [
+  { key: 'communicationScore', name: '沟通能力' },
+  { key: 'teamworkScore', name: '团队协作' },
+  { key: 'problemSolvingScore', name: '问题解决' },
+  { key: 'innovationScore', name: '创新能力' },
+  { key: 'learningScore', name: '学习能力' },
+  { key: 'pressureScore', name: '抗压能力' }
+]
+const softDims = computed(() => {
+  const s = myScore.value
+  if (!s) return []
+  return SOFT_DEFS.map(d => ({ key: d.key, name: d.name, score: Number(s[d.key] ?? 0) }))
+})
+const topKey = computed(() => softDims.value.length
+  ? [...softDims.value].sort((a, b) => b.score - a.score)[0].key : '')
+const lowKey = computed(() => softDims.value.length
+  ? [...softDims.value].sort((a, b) => a.score - b.score)[0].key : '')
+const levelText = (v) => {
+  const n = Number(v || 0)
+  if (n >= 90) return '优秀'
+  if (n >= 80) return '良好'
+  if (n >= 70) return '中等'
+  if (n >= 60) return '及格'
+  return '待提升'
+}
+
+const fetchMyScore = async () => {
+  if (!currentUserId.value) return
+  try {
+    const res = await studentApi.get(`/api/ability/score/user/${currentUserId.value}`)
+    if (res.data.code === 10001 || res.data.code === 200 || res.data.code === 0) {
+      const list = Array.isArray(res.data.data) ? res.data.data : []
+      myScore.value = list.length > 0 ? list[0] : null
+    }
+  } catch (e) { /* 无评分时忽略 */ }
+}
 
 // 统一的保存失败处理：识别「用户不存在/外键」类错误，清掉旧身份并引导重新登录
 const handleSaveError = (msg) => {
@@ -912,6 +952,18 @@ const changePassword = async () => {
 .ability-item:last-child { margin-bottom: 0; }
 .a-label { font-size: 0.85rem; color: #94A3B8; font-weight: 600; }
 .a-value { font-size: 0.95rem; color: #334155; font-weight: 500; line-height: 1.5; }
+
+/* 六维评分展示（差异性：数字 + 等级 + 进度条 + 优势/待提升） */
+.score-value { display: inline-flex; align-items: center; gap: 8px; }
+.score-value b { color: #1D4ED8; font-size: 1.02rem; font-weight: 800; min-width: 26px; }
+.score-value .lv { font-style: normal; font-size: 0.72rem; color: #64748B; background: #F1F5F9; padding: 1px 7px; border-radius: 999px; }
+.score-track { display: inline-block; width: 72px; height: 6px; background: #EEF2F7; border-radius: 999px; overflow: hidden; }
+.score-track i { display: block; height: 100%; background: linear-gradient(90deg, #60A5FA, #4A90E2); transition: width 0.3s ease; }
+.dim-tag { font-style: normal; font-size: 0.66rem; font-weight: 700; padding: 1px 6px; border-radius: 4px; margin-left: 6px; }
+.dim-tag.top { color: #059669; background: #ECFDF5; }
+.dim-tag.low { color: #D97706; background: #FFFBEB; }
+.total-row { border-top: 1px dashed #E2E8F0; padding-top: 10px; }
+.empty-inline { font-size: 0.82rem; color: #94A3B8; padding: 6px 0; }
 
 /* 职业意向 */
 .tags-container { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
