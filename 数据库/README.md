@@ -64,12 +64,19 @@ Windows（MySQL 装在 D 盘时）：
 |---|---|
 | `migrations/001_add_tbox_ids.sql` | 百宝箱对接：`ai_conversation` / `ai_message` 增加 tbox 映射字段 |
 | `migrations/002_clean_user_data.sql` | **清理旧密钥用户数据**（保留 `job_info` / `job_requirement_profile` / `invitation_code` / `user` 账号）<br>背景：早期画像由另一套密钥加密，无法解密；清理后重新录入即为当前密钥 |
+| `migrations/003_widen_encrypted_columns.sql` | 加密列加宽（`expected_salary` 等 → `varchar(1000)`） |
+| `migrations/004_fix_null_is_deleted.sql` | 修复 `is_deleted` 为 NULL 的旧行（**只更新确实有该列的表**，早期版本误写会整脚本中断） |
+| `migrations/005_fix_profile_schema.sql` | **幂等**：加宽加密列 + `is_deleted` 收敛为 `NOT NULL DEFAULT 0`；`manage.py` 灌库后自动执行 |
 
-执行：
+执行（已有库，不会丢数据）：
 ```bash
-mysql -u root -p --default-character-set=utf8mb4 < 数据库/migrations/001_add_tbox_ids.sql
-mysql -u root -p --default-character-set=utf8mb4 < 数据库/migrations/002_clean_user_data.sql
+python manage.py db migrate    # 依次执行 003 / 004 / 005
+# 或手动：
+mysql -u root -p --default-character-set=utf8mb4 < 数据库/migrations/005_fix_profile_schema.sql
 ```
+
+> ℹ️ **结构漂移提醒**：`数据库结构.sql` 已同步 003/005 的列宽与 `is_deleted` 默认值；
+> 旧的 `数据库数据.sql` 生成于清理之前，含 3 条「旧密钥」画像行，首次灌库后可按需执行 002 清理。
 
 > ⚠️ 执行 002 前请先备份：`mysqldump -u root -p --single-transaction youthpath > backup.sql`
 
