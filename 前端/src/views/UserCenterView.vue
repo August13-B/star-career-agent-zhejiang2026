@@ -808,14 +808,8 @@ const deleteSelectedReports = async () => {
       return
     }
     const d = body.data || {}
-    let msg = `已删除 ${d.deleted || 0} 份报告`
-    if (Array.isArray(d.platformFailed) && d.platformFailed.length) {
-      msg += `\n⚠ 平台侧 ${d.platformFailed.length} 份未删除`
-    }
-    if (d.platformSkipped) {
-      msg += `\n（${d.platformSkipped} 份历史报告无平台ID，仅本地删除）`
-    }
-    alert(msg)
+    // 仅提示本地删除结果；平台侧删除情况不弹窗（后台静默处理，失败不影响本地）
+    alert(`已删除 ${d.deleted || 0} 份报告`)
     manageMode.value = false
     selectedReportIds.value = []
     fetchReports()
