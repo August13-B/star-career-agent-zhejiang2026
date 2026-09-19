@@ -61,9 +61,9 @@ public class CareerReportController {
     /**
      * 职业报告多智能体流式生成（SSE）
      *
-     * <p>下发格式：data:{"agent":"profile_analysis","data":"增量文本"}
-     * 结束时：data:{"done":true,"agents":[...],"hasMarkers":true}
-     * 完成后自动落库 career_report（+ 历史版本）
+     * <p>后端角色：拼「画像上下文 + 用户本次诉求」→ 调平台 {@code POST /api/report/stream} →
+     * 原样透传平台的 {@code agent/data}、{@code done}、{@code error} 帧；
+     * 在 {@code done} 帧到达时落库我们自己的 {@code career_report}（+ 历史快照）。
      */
     @org.springframework.web.bind.annotation.PostMapping(
             value = "/generate-stream", produces = org.springframework.http.MediaType.TEXT_EVENT_STREAM_VALUE)
@@ -72,42 +72,38 @@ public class CareerReportController {
         Object uidRaw = request.get("user_id");
         if (uidRaw == null) {
             return reactor.core.publisher.Flux.just(
-                    "{\"agent\":\"report_composition\",\"data\":\"缺少 user_id 参数\"}");
+                    "{\"error\":\"缺少 user_id 参数\"}");
         }
         final Long userId = Long.parseLong(String.valueOf(uidRaw));
-        Long conversationId = request.get("conversation_id") == null ? null
-                : Long.parseLong(String.valueOf(request.get("conversation_id")));
         String userInput = request.get("content") == null ? "" : String.valueOf(request.get("content"));
         // 前端可覆盖的目标岗位与补充说明
         String targetJob = request.get("target_job") == null ? null : String.valueOf(request.get("target_job"));
-        // 账号下的画像（基本信息 + 10 维评分 + 能力文本 + 最近匹配 + 覆盖项）
-        String profileContext = studentProfileContextService.build(userId, targetJob, userInput);
-        // 请求 = 6 智能体协议 + 画像上下文（含用户输入）
-        String message = loadReportProtocol() + profileContext;
+        // 平台已接管 6 智能体编排与「上一份报告」注入；这里只送「账号画像上下文（内含用户本次诉求）」
+        String message = studentProfileContextService.build(userId, targetJob, userInput);
 
-        final org.example.web.service.impl.AgentMarkerParser parser =
-                new org.example.web.service.impl.AgentMarkerParser();
         final java.util.Map<String, String> acc = new java.util.LinkedHashMap<>();
 
-        return tboxAgentService.reportStream(userId, conversationId, message, parser)
+        return tboxAgentService.reportStream(userId, message)
                 .doOnNext(json -> accumulateAgentChunk(json, acc))
-                // 结束帧到达时立即落库，并把 reportId/reportName 回填到结束帧，便于前端展示
-                .map(json -> enrichDoneChunk(json, userId, acc, parser));
+                // 结束帧到达时立即落库，并把我们的 reportId/reportName 回填到结束帧，便于前端展示
+                .map(json -> enrichDoneChunk(json, userId, acc));
     }
 
-    /** 结束帧（{"done":true,...}）：落库并回填 reportId/reportName */
-    private String enrichDoneChunk(String json, Long userId, java.util.Map<String, String> acc,
-                                   org.example.web.service.impl.AgentMarkerParser parser) {
+    /** 结束帧（{"done":true,...}）：落库并回填我们的 reportId/reportName（平台 reportId 另存为 platformReportId） */
+    private String enrichDoneChunk(String json, Long userId, java.util.Map<String, String> acc) {
         try {
             com.fasterxml.jackson.databind.JsonNode n = objectMapper.readTree(json);
             if (!n.path("done").asBoolean(false)) {
                 return json;
             }
-            java.util.Map<String, Object> info = saveReport(userId, acc, parser);
+            java.util.Map<String, Object> info = saveReport(userId, acc);
             java.util.Map<String, Object> done = new java.util.LinkedHashMap<>();
             n.fields().forEachRemaining(e ->
                     done.put(e.getKey(), objectMapper.convertValue(e.getValue(), Object.class)));
+            // 平台 reportId（Appwrite $id，可能为 null）保留为外部引用
+            done.put("platformReportId", done.get("reportId"));
             if (info != null) {
+                // 前端详情/PDF 使用我们的 MySQL reportId
                 done.put("reportId", info.get("reportId"));
                 done.put("reportName", info.get("reportName"));
                 done.put("saved", true);
@@ -118,19 +114,6 @@ public class CareerReportController {
         } catch (Exception e) {
             System.err.println("回填报告结束信息失败: " + e.getMessage());
             return json;
-        }
-    }
-
-    /** 读取 6 智能体协议提示词（resources/prompts/report-multi-agent.txt） */
-    private String loadReportProtocol() {
-        try (java.io.InputStream in = new org.springframework.core.io.ClassPathResource(
-                "prompts/report-multi-agent.txt").getInputStream()) {
-            return new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8) + "\n\n";
-        } catch (Exception e) {
-            System.err.println("读取报告协议提示词失败，使用内联简版: " + e.getMessage());
-            return "【任务】生成职业规划报告。必须按顺序输出 6 个片段，每段用 <<<AGENT:片段名>>> 与 <<<END:片段名>>> 包裹，"
-                    + "顺序为 profile_analysis → career_exploration → goal_setting → path_planning → action_planning → report_composition，"
-                    + "标记之外禁止任何内容（不要英文开场白）。\n\n";
         }
     }
 
@@ -173,7 +156,7 @@ public class CareerReportController {
             if (n.has("done")) {
                 return;
             }
-            if (n.path("error").asBoolean(false)) {
+            if (n.has("error")) {
                 return;   // 错误提示仅下发前端，不落库
             }
             String agent = n.path("agent").asText("");
@@ -187,8 +170,7 @@ public class CareerReportController {
     }
 
     /** 汇总落库：career_report（最新） + career_report_history（版本快照）；返回 {reportId, reportName}，失败返回 null */
-    private java.util.Map<String, Object> saveReport(Long userId, java.util.Map<String, String> acc,
-                            org.example.web.service.impl.AgentMarkerParser parser) {
+    private java.util.Map<String, Object> saveReport(Long userId, java.util.Map<String, String> acc) {
         if (acc.isEmpty()) {
             System.err.println("报告内容为空，跳过落库");
             return null;
@@ -196,7 +178,7 @@ public class CareerReportController {
         try {
             java.util.List<java.util.Map<String, Object>> agents = new java.util.ArrayList<>();
             StringBuilder fullText = new StringBuilder();
-            for (java.util.Map.Entry<String, String> e : parser.sections().entrySet()) {
+            for (java.util.Map.Entry<String, String> e : acc.entrySet()) {
                 java.util.Map<String, Object> item = new java.util.LinkedHashMap<>();
                 item.put("key", e.getKey());
                 item.put("name", AGENT_NAMES.getOrDefault(e.getKey(), e.getKey()));
@@ -207,7 +189,6 @@ public class CareerReportController {
             java.util.Map<String, Object> content = new java.util.LinkedHashMap<>();
             content.put("agents", agents);
             content.put("fullText", fullText.toString());
-            content.put("hasMarkers", parser.hasMarkers());
 
             CareerReport report = new CareerReport();
             report.setId(Long.valueOf(org.example.web.tool.SnowIdCreater.generateId(23)));

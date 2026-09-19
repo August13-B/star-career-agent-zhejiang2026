@@ -37,12 +37,20 @@ public interface TboxAgentService {
     String chatSync(Long userId, Long localConversationId, String message);
 
     /**
-     * 职业报告多智能体流式（按段标记切分）
+     * 职业报告多智能体流式（平台专用 HTTP SSE 接口 {@code POST /api/report/stream}）
      *
-     * <p>返回元素为结构化 JSON：{"agent":"<智能体key>","data":"<增量文本>"}；
-     * 结束时额外返回一条 {"done":true,"agents":[...],"hasMarkers":true|false}
+     * <p>平台侧已按固定顺序串行编排 6 个智能体并逐段打 {@code agent} 标签，
+     * 因此返回元素即平台原始帧（JSON 字符串）：
+     * <ul>
+     *   <li>{@code {"agent":"<key>","data":"<增量文本>"}}（按 key 分组拼接 = 完整章节）</li>
+     *   <li>{@code {"done":true,"agents":[...],"reportName":"...","reportId":"..."}}</li>
+     *   <li>{@code {"error":"文案"}}</li>
+     * </ul>
+     *
+     * @param userId  本地用户ID（字符串形式传给平台，用于平台侧落库与"上一份报告"注入）
+     * @param message 已拼好的提示词（账号画像上下文 + 用户本次诉求）
      */
-    Flux<String> reportStream(Long userId, Long localConversationId, String message, org.example.web.service.impl.AgentMarkerParser parser);
+    Flux<String> reportStream(Long userId, String message);
 
     /** 记录本次运行的平台 ID（供保存消息时回填） */
     void rememberRunIds(Long localConversationId, String tboxMessageId, String tboxRequestId);

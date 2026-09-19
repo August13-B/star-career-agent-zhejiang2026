@@ -44,6 +44,10 @@ python manage.py free-port backend
 8. **端口/IPv4**：Vite 代理与后端检查一律用 `127.0.0.1`，避免 localhost 解析到 IPv6 `::1`。
 9. **`数据库结构.sql` 与 `migrations/` 必须同步**：历史上出现「结构漂移」——建表脚本仍是旧列宽，只有迁移修过。
 10. **Mapper 必须「有实现」**：`@Mapper` 接口若无 XML、无注解，运行期报 `Invalid bound statement`（曾漏 `MatchDetailMapper`、`CareerReportMapper`）。
+11. **职业报告走平台专用 SSE 接口**：`POST {TBOX_API_URL}/api/report/stream`（不再用 WS 报告通道 + 段标记协议）。
+   - 总耗时 160~185s，某段内 20~30s 无帧属正常（`searchJobs`）；`report-timeout-seconds` 默认 360s。
+   - `spring.mvc.async.request-timeout=600000` 必须保留，否则长 SSE 被容器提前掉断。
+   - 平台落它的库（给 AI 看，自动注入"上一份报告"），我们 `done` 帧时另存 MySQL（给用户看）；前端详情/PDF 用我们的 `reportId`。
 
 ## 5. 当前阻塞（平台侧）
 
@@ -55,3 +59,11 @@ python manage.py free-port backend
 - `README.md`、`问题汇总与修复记录.md`、`国赛A13至省赛A02差异分析与待办清单.md`
 - `百宝箱/接口清单与接入说明.md`、`百宝箱/提示词-*.md`
 - `数据库/README.md`、`多智能体报告-完整流程指引.md`
+
+## 7. 协作约定（本仓库）
+
+- **「自动化推送」= 管理员 + 合并后删除分支**（用户已设为默认，无需再问身份与删除意向）。
+  流程：`git pull origin develop` → `git push -u origin <分支>` → `gh pr create --base develop`
+  → `gh pr checks`（无 CI 则跳过）→ `gh pr merge --merge --delete-branch`。
+- 其它改动遵循「小步提交」；后端 Java 改动需用户重启后端，前端改动 Vite 热更新。
+- Agent 不启动/构建项目（`npm run build`、`mvnw spring-boot:run` 等由用户在 Windows 侧执行）。
