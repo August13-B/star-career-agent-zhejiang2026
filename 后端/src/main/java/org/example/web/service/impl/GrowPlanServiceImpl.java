@@ -3,15 +3,19 @@ package org.example.web.service.impl;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
 import org.example.web.entity.GrowPlan;
 import org.example.web.entity.GrowTask;
+import org.example.web.entity.GrowTaskRecord;
 import org.example.web.mapper.GrowPlanMapper;
 import org.example.web.mapper.GrowTaskMapper;
+import org.example.web.mapper.GrowTaskRecordMapper;
 import org.example.web.service.GrowPlanService;
 import org.example.web.tool.SnowIdCreater;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -38,6 +42,9 @@ public class GrowPlanServiceImpl implements GrowPlanService {
 
     @Autowired
     private GrowTaskMapper growTaskMapper;
+
+    @Autowired
+    private GrowTaskRecordMapper growTaskRecordMapper;
 
     @Autowired
     private ObjectMapper objectMapper;
@@ -130,19 +137,109 @@ public class GrowPlanServiceImpl implements GrowPlanService {
         }
         List<GrowTask> tasks = growTaskMapper.selectList(
                 new QueryWrapper<GrowTask>().in("plan_id", planIds).orderByAsc("id"));
+        // 完成情况记录（时间线）：按 task_id 分组，时间升序
+        Map<Long, List<GrowTaskRecord>> recMap = new HashMap<>();
+        List<Long> taskIds = new ArrayList<>();
+        for (GrowTask t : tasks) {
+            taskIds.add(t.getId());
+        }
+        if (!taskIds.isEmpty()) {
+            List<GrowTaskRecord> recs = growTaskRecordMapper.selectList(new QueryWrapper<GrowTaskRecord>()
+                    .in("task_id", taskIds).orderByAsc("record_time").orderByAsc("id"));
+            for (GrowTaskRecord r : recs) {
+                recMap.computeIfAbsent(r.getTaskId(), k -> new ArrayList<>()).add(r);
+            }
+        }
         for (GrowPlan p : plans) {
             Map<String, Object> m = new LinkedHashMap<>();
             m.put("plan", p);
-            List<GrowTask> own = new ArrayList<>();
+            List<Map<String, Object>> own = new ArrayList<>();
             for (GrowTask t : tasks) {
-                if (p.getId().equals(t.getPlanId())) {
-                    own.add(t);
+                if (!p.getId().equals(t.getPlanId())) {
+                    continue;
                 }
+                Map<String, Object> tm = new LinkedHashMap<>();
+                tm.put("task", t);
+                tm.put("records", recMap.getOrDefault(t.getId(), new ArrayList<>()));
+                own.add(tm);
             }
             m.put("tasks", own);
             result.add(m);
         }
         return result;
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public Map<String, Object> addTask(Long userId, Map<String, Object> body) {
+        if (userId == null) {
+            throw new IllegalArgumentException("缺少用户ID");
+        }
+        Long planId = parseLong(body == null ? null : body.get("planId"));
+        String taskName = str(body == null ? null : body.get("taskName"));
+        if (planId == null || taskName.isBlank()) {
+            throw new IllegalArgumentException("planId 与 taskName 不能为空");
+        }
+        GrowPlan plan = growPlanMapper.selectById(planId);
+        if (plan == null || !userId.equals(plan.getUserId())) {
+            throw new IllegalArgumentException("计划不存在或无权限");
+        }
+        LocalDateTime now = LocalDateTime.now();
+        GrowTask t = new GrowTask();
+        t.setId(SnowIdCreater.generateId(31));
+        t.setPlanId(planId);
+        t.setTaskName(defaultStr(body.get("taskName"), "待办任务"));
+        t.setTaskType(parseInt(body.get("taskType"), 1));
+        t.setTaskDesc(str(body.get("taskDesc")));
+        t.setExpectedOutcome(str(body.get("expectedOutcome")));
+        t.setTargetAbility(str(body.get("targetAbility")));
+        t.setStartDate(now);
+        t.setEndDate(parseDateOrNull(body.get("endDate"), plan.getEndDate()));
+        t.setProgress(BigDecimal.ZERO);
+        t.setStatus(0);
+        t.setCreateTime(now);
+        t.setUpdateTime(now);
+        t.setIsDeleted(0);
+        growTaskMapper.insert(t);
+        recomputePlan(planId);
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("taskId", t.getId());
+        return out;
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public Map<String, Object> addTaskRecord(Long userId, Long taskId, String content) {
+        if (userId == null || taskId == null) {
+            throw new IllegalArgumentException("参数不完整");
+        }
+        String c = content == null ? "" : content.trim();
+        if (c.isEmpty()) {
+            throw new IllegalArgumentException("记录内容不能为空");
+        }
+        GrowTask task = growTaskMapper.selectById(taskId);
+        if (task == null) {
+            throw new IllegalArgumentException("任务不存在");
+        }
+        GrowPlan plan = growPlanMapper.selectById(task.getPlanId());
+        if (plan == null || !userId.equals(plan.getUserId())) {
+            throw new IllegalArgumentException("无权限");
+        }
+        GrowTaskRecord r = new GrowTaskRecord();
+        r.setId(SnowIdCreater.generateId(31));
+        r.setTaskId(taskId);
+        r.setUserId(userId);
+        r.setContent(c);
+        r.setRecordTime(LocalDateTime.now());
+        r.setIsDeleted(0);
+        growTaskRecordMapper.insert(r);
+        // 最后一次记录同步到 completion_detail（便于其它展示/导出）
+        task.setCompletionDetail(c);
+        task.setUpdateTime(LocalDateTime.now());
+        growTaskMapper.updateById(task);
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("recordId", r.getId());
+        return out;
     }
 
     @Override
@@ -232,6 +329,35 @@ public class GrowPlanServiceImpl implements GrowPlanService {
 
     private String str(Object o) {
         return o == null ? "" : String.valueOf(o).trim();
+    }
+
+    private Long parseLong(Object o) {
+        try {
+            return o == null ? null : Long.parseLong(String.valueOf(o).trim());
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private int parseInt(Object o, int def) {
+        try {
+            return o == null ? def : Integer.parseInt(String.valueOf(o).trim());
+        } catch (Exception e) {
+            return def;
+        }
+    }
+
+    /** 解析 yyyy-MM-dd 日期；为空或非法时用默认值 */
+    private LocalDateTime parseDateOrNull(Object o, LocalDateTime def) {
+        String s = str(o);
+        if (s.isEmpty()) {
+            return def;
+        }
+        try {
+            return java.time.LocalDate.parse(s, DateTimeFormatter.ofPattern("yyyy-MM-dd")).atStartOfDay();
+        } catch (Exception e) {
+            return def;
+        }
     }
 
     private String defaultStr(Object o, String def) {

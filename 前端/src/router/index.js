@@ -44,6 +44,11 @@ const router = createRouter({
       name: 'MultiAgent',
       component: () => import('../views/MultiAgentView.vue')
     },
+    {
+      path: '/growth',
+      name: 'Growth',
+      component: () => import('../views/GrowthView.vue')
+    },
     { 
       path: '/tutor-dashboard', 
       name: 'TutorDashboard', 

@@ -21,8 +21,14 @@ public interface GrowPlanService {
      */
     void saveGoalsFromReport(Long userId, Long reportId, String targetJob, List<Map<String, Object>> goals);
 
-    /** 查询用户的成长计划（含任务），供计划跟踪/动态调整使用 */
+    /** 查询用户的成长计划（含任务与完成情况记录） */
     List<Map<String, Object>> getPlansWithTasks(Long userId);
+
+    /** 新增自定义代办任务（归属某个 1/3/5 年计划） */
+    Map<String, Object> addTask(Long userId, Map<String, Object> body);
+
+    /** 为任务追加一条完成情况记录（时间线，可多条） */
+    Map<String, Object> addTaskRecord(Long userId, Long taskId, String content);
 
     /**
      * 更新任务完成情况，并自动重算所属计划的 progress / total_status。

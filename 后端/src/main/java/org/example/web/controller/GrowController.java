@@ -4,12 +4,15 @@ import java.util.Map;
 
 import org.example.web.entity.Result;
 import org.example.web.service.GrowPlanService;
+import org.example.web.tool.JwtUtil;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -45,5 +48,47 @@ public class GrowController {
     public Result<?> updateTask(@PathVariable Long id, @RequestBody Map<String, Object> patch) {
         boolean ok = growPlanService.updateTaskStatus(id, patch);
         return ok ? Result.success("任务状态更新成功") : Result.error("任务不存在或更新失败");
+    }
+
+    /** 新增自定义代办任务（归属某个 1/3/5 年计划） */
+    @PostMapping("/tasks")
+    @CrossOrigin
+    public Result<?> addTask(@RequestBody Map<String, Object> body,
+                             @RequestHeader(value = "Authorization", required = false) String token) {
+        Long userId = currentUserId(token);
+        if (userId == null) {
+            return Result.error("登录状态无效");
+        }
+        try {
+            return Result.success("任务已创建", growPlanService.addTask(userId, body));
+        } catch (IllegalArgumentException e) {
+            return Result.error(e.getMessage());
+        }
+    }
+
+    /** 为任务追加一条完成情况记录（时间线，可多条） */
+    @PostMapping("/tasks/{id}/records")
+    @CrossOrigin
+    public Result<?> addTaskRecord(@PathVariable Long id, @RequestBody Map<String, Object> body,
+                                   @RequestHeader(value = "Authorization", required = false) String token) {
+        Long userId = currentUserId(token);
+        if (userId == null) {
+            return Result.error("登录状态无效");
+        }
+        try {
+            String content = body == null ? "" : String.valueOf(body.getOrDefault("content", ""));
+            return Result.success("记录已添加", growPlanService.addTaskRecord(userId, id, content));
+        } catch (IllegalArgumentException e) {
+            return Result.error(e.getMessage());
+        }
+    }
+
+    private Long currentUserId(String token) {
+        try {
+            Map<String, Object> claims = JwtUtil.parseToken(token);
+            return Long.parseLong(String.valueOf(claims.get("id")));
+        } catch (Exception e) {
+            return null;
+        }
     }
 }
