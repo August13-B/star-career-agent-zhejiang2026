@@ -9,7 +9,6 @@ import org.example.web.entity.StudentAbility;
 import org.example.web.entity.StudentAbilityScore;
 import org.example.web.entity.StudentProfile;
 import org.example.web.service.AIAnalysisService;
-import org.example.web.service.AIService;
 import org.example.web.service.StudentAbilityScoreService;
 import org.example.web.service.StudentAbilityService;
 import org.example.web.service.StudentProfileService;
@@ -31,11 +30,9 @@ public class AIAnalysisServiceImpl implements AIAnalysisService {
     // 注入项目现有服务
     private final StudentProfileService studentProfileService;
     private final StudentAbilityService studentAbilityService;
-    private final AIService aiService;
+    /** A02：AI 能力统一走蚂蚁百宝箱（自研 AI 服务已退役） */
+    private final org.example.web.service.TboxAgentService tboxAgentService;
     private final StudentAbilityScoreService studentAbilityScoreService;
-
-    // AI服务请求路径
-    private static final String AI_REQUEST_URI = "/only_chat";
 
     // 固定核心Prompt，用户的message会补充到这里
     private static final String AI_ANALYSIS_CORE_PROMPT = "请你根据提供的学生画像和能力维度信息，对学生的各项能力进行专业评分，严格按照以下要求输出：\n" +
@@ -112,47 +109,32 @@ public class AIAnalysisServiceImpl implements AIAnalysisService {
             // 4. 拼接完整用户需求（核心Prompt + 用户补充message）
             String finalUserPrompt = AI_ANALYSIS_CORE_PROMPT + (userMessage == null ? "无" : userMessage);
 
-            // 5. 严格使用InPutGiveAI工具类构建AI请求
+            // 5. 拼接百宝箱提示词（核心 Prompt + 学生画像 + 能力维度 + 用户补充）
             Map<String, Object> userBackground = JSONUtil.parse(studentProfile).toBean(Map.class);
             String userData = JSONUtil.toJsonStr(studentAbility);
-            Map<String, Object> aiRequest = InPutGiveAI.ai_input_with_background(
-                    String.valueOf(userId),
-                    finalUserPrompt,
-                    userBackground,
-                    new HashMap<>(),
-                    userData,
-                    temperature
-            );
-            logger.info("【AI能力分析】构建的AI请求完整内容: {}", JSONUtil.toJsonStr(aiRequest));
-            // 6. 调用AI服务
-            Result<?> aiResult = aiService.sendPostRequest(aiRequest, AI_REQUEST_URI);
-            if (aiResult == null || aiResult.getCode() != 10001) {
-                logger.error("【AI能力分析】AI服务请求失败，响应：{}", aiResult);
-                return Result.error("AI服务请求失败：" + (aiResult == null ? "无响应" : aiResult.getMessage()), null);
+            String prompt = finalUserPrompt
+                    + "\n\n【学生画像】\n" + JSONUtil.toJsonStr(userBackground)
+                    + "\n\n【能力维度】\n" + userData;
+            logger.info("【AI能力分析】构建的提示词长度: {}", prompt.length());
+
+            // 6. 调用百宝箱（同步收集 WS 输出）
+            String aiText = tboxAgentService.chatSync(userId, null, prompt);
+            if (aiText == null || aiText.isBlank()) {
+                logger.error("【AI能力分析】AI服务无响应");
+                return Result.error("AI服务请求失败：无响应（请确认百宝箱已配置且模型网关已开通）", null);
             }
 
-            // 7. 解析AI返回结果 - 直接使用返回的data作为评分数据
-            Object aiData = aiResult.getData();
-            if (aiData == null) {
-                logger.error("【AI能力分析】AI返回数据为空");
-                return Result.error("AI返回数据为空", null);
+            // 7. 从文本中提取 JSON 并解析为评分实体
+            String jsonText = extractJsonObject(aiText);
+            if (jsonText == null) {
+                logger.error("【AI能力分析】AI返回中未找到 JSON，原文：{}", aiText);
+                return Result.error("AI返回结果解析失败", null);
             }
-
-            // 解析为评分实体
             StudentAbilityScore abilityScore;
             try {
-                if (aiData instanceof Map) {
-                    // 直接从Map转换
-                    abilityScore = JSONUtil.toBean(JSONUtil.toJsonStr(aiData), StudentAbilityScore.class);
-                } else if (aiData instanceof String) {
-                    // 从字符串解析
-                    abilityScore = JSONUtil.toBean((String) aiData, StudentAbilityScore.class);
-                } else {
-                    logger.error("【AI能力分析】AI返回数据类型异常，类型：{}", aiData.getClass().getName());
-                    return Result.error("AI返回数据类型异常", null);
-                }
+                abilityScore = JSONUtil.toBean(jsonText, StudentAbilityScore.class);
             } catch (Exception e) {
-                logger.error("【AI能力分析】AI评分解析失败，数据：{}", aiData, e);
+                logger.error("【AI能力分析】AI评分解析失败，数据：{}", jsonText, e);
                 return Result.error("AI返回结果解析失败", null);
             }
 
@@ -228,5 +210,21 @@ public class AIAnalysisServiceImpl implements AIAnalysisService {
             logger.error("【AI能力分析】全流程失败，userId：{}", userId, e);
             return Result.error("AI能力分析评分失败：" + e.getMessage(), null);
         }
+    }
+
+    /**
+     * 从自由文本中提取第一个完整的 JSON 对象。
+     * <p>平台可能返回 Markdown 代码块或前后说明，需要截取 {...} 再解析。
+     */
+    private String extractJsonObject(String text) {
+        if (text == null) {
+            return null;
+        }
+        int start = text.indexOf('{');
+        int end = text.lastIndexOf('}');
+        if (start < 0 || end <= start) {
+            return null;
+        }
+        return text.substring(start, end + 1);
     }
 }

@@ -5,8 +5,8 @@ import cn.hutool.json.JSONObject;
 import cn.hutool.json.JSONUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.example.web.service.TboxAgentService;
 import org.springframework.stereotype.Service;
-import org.springframework.web.reactive.function.client.WebClient;
 import wwy.example.springboot.dto.JobCompareResult;
 import wwy.example.springboot.entity.JobInfo;
 import wwy.example.springboot.entity.JobPromotionGraph;
@@ -28,7 +28,8 @@ public class JobCompareServiceImpl implements JobCompareService {
     private final JobRequirementProfileService profileService;
     private final JobPromotionGraphService jobPromotionGraphService;
     private final JobTransferGraphService jobTransferGraphService;
-    private final WebClient aiWebClient;
+    /** A02：AI 能力统一走蚂蚁百宝箱（自研 AI 服务已退役） */
+    private final TboxAgentService tboxAgentService;
 
     @Override
     public JobCompareResult compareWithGraph(Long newJobId) {
@@ -53,18 +54,10 @@ public class JobCompareServiceImpl implements JobCompareService {
         // 4. 构建 AI 请求内容
         String prompt = buildComparePrompt(newJob, newProfile, allProfiles, promotionGraphs, transferGraphs);
 
-        // 5. 构建请求参数
-        Map<String, Object> aiRequest = new HashMap<>();
-        aiRequest.put("message", prompt);
-        aiRequest.put("temperature", 0.3f);
+        // 5. 调用百宝箱（同步收集 WS 输出；温度等由平台应用配置决定）
 
-        // 6. 调用 AI 服务器
-        String aiResponse = aiWebClient.post()
-                .uri("/api/chat/chat")
-                .bodyValue(aiRequest)
-                .retrieve()
-                .bodyToMono(String.class)
-                .block();
+        // 6. 调用百宝箱（同步收集 WS 输出）
+        String aiResponse = tboxAgentService.chatSync(null, null, prompt);
 
         log.info("=== AI 原始响应 ===");
         log.info(aiResponse);
@@ -72,45 +65,40 @@ public class JobCompareServiceImpl implements JobCompareService {
         // 7. 清理响应文本
         String cleanedResponse = cleanResponse(aiResponse);
         if (cleanedResponse == null || cleanedResponse.trim().isEmpty()) {
-            throw new RuntimeException("AI 返回内容为空");
+            throw new RuntimeException("AI 返回内容为空（请确认百宝箱已配置且模型网关已开通）");
         }
         log.info("=== 清理后的响应 ===");
         log.info(cleanedResponse);
 
-        // 8. 尝试解析外层 JSON
+        // 8. 从文本中提取 JSON 对象（平台可能返回 Markdown 代码块/前后说明）
+        String jsonText = extractJsonObject(cleanedResponse);
+        if (jsonText == null) {
+            throw new RuntimeException("AI 返回中未找到 JSON 对象：" + cleanedResponse);
+        }
+
+        // 9. 解析（兼容直接返回 {analysis, matchedJobs} 与旧的 {code, data} 两种结构）
         JSONObject outerJson;
         try {
-            outerJson = JSONUtil.parseObj(cleanedResponse);
+            outerJson = JSONUtil.parseObj(jsonText);
         } catch (Exception e) {
-            log.error("外层 JSON 解析失败，原始响应: {}", cleanedResponse, e);
-            throw new RuntimeException("AI 返回的外层 JSON 格式不正确: " + e.getMessage());
+            log.error("JSON 解析失败，原始响应: {}", cleanedResponse, e);
+            throw new RuntimeException("AI 返回的 JSON 格式不正确: " + e.getMessage());
         }
 
-        // 9. 检查 code
-        Integer code = outerJson.getInt("code");
-        if (code == null) {
-            throw new RuntimeException("AI 响应中缺少 code 字段");
-        }
-        if (code != 200 && code != 10001) {
-            throw new RuntimeException("AI 返回错误：" + outerJson.getStr("message"));
-        }
-
-        // 10. 提取 data 字段
+        JSONObject dataJson = outerJson;
         Object dataObj = outerJson.get("data");
-        if (dataObj == null) {
-            throw new RuntimeException("AI 返回的 data 字段为空");
-        }
-        JSONObject dataJson;
-        if (dataObj instanceof JSONObject) {
-            dataJson = (JSONObject) dataObj;
-        } else if (dataObj instanceof String) {
-            try {
-                dataJson = JSONUtil.parseObj((String) dataObj);
-            } catch (Exception e) {
-                throw new RuntimeException("data 字段是字符串但无法解析为 JSON: " + dataObj);
+        if (dataObj != null) {
+            if (dataObj instanceof JSONObject) {
+                dataJson = (JSONObject) dataObj;
+            } else if (dataObj instanceof String) {
+                try {
+                    dataJson = JSONUtil.parseObj((String) dataObj);
+                } catch (Exception e) {
+                    throw new RuntimeException("data 字段是字符串但无法解析为 JSON: " + dataObj);
+                }
+            } else {
+                throw new RuntimeException("data 字段类型不支持: " + dataObj.getClass());
             }
-        } else {
-            throw new RuntimeException("data 字段类型不支持: " + dataObj.getClass());
         }
         log.info("=== 提取的 data JSON ===");
         log.info(dataJson.toStringPretty());
@@ -185,6 +173,22 @@ public class JobCompareServiceImpl implements JobCompareService {
         // 移除零宽空格等不可见字符
         cleaned = cleaned.replaceAll("[\\u200B\\u200C\\u200D\\uFEFF]", "");
         return cleaned;
+    }
+
+    /**
+     * 从自由文本中提取第一个完整的 JSON 对象。
+     * <p>平台可能返回 Markdown 代码块或前后说明，需要截取 {...} 再解析。
+     */
+    private String extractJsonObject(String text) {
+        if (text == null) {
+            return null;
+        }
+        int start = text.indexOf('{');
+        int end = text.lastIndexOf('}');
+        if (start < 0 || end <= start) {
+            return null;
+        }
+        return text.substring(start, end + 1);
     }
 
     private String buildComparePrompt(JobInfo newJob, JobRequirementProfile newProfile,

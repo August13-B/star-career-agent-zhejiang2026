@@ -2,6 +2,7 @@ package org.example.web.mapper;
 
 import java.util.List;
 
+import org.apache.ibatis.annotations.Delete;
 import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
@@ -61,7 +62,7 @@ public interface AiConversationMapper {
     void restoreConversationById(@Param("conversationId") Long conversationId, @Param("title") String title);
 
     // 10. 根据对话ID物理删除所有消息
-    @Update("DELETE FROM ai_message WHERE conversation_id=#{conversationId}")
+    @Delete("DELETE FROM ai_message WHERE conversation_id=#{conversationId}")
     void deleteMessagesByConversationId(Long conversationId);
 
     // 11. 根据对话ID和用户ID更新标题

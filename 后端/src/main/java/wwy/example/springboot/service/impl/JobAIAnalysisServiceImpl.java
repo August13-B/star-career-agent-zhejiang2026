@@ -1,11 +1,10 @@
 package wwy.example.springboot.service.impl;
 
-import cn.hutool.http.HttpRequest;
-import cn.hutool.http.HttpResponse;
 import cn.hutool.json.JSONObject;
 import cn.hutool.json.JSONUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.example.web.service.TboxAgentService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import wwy.example.springboot.common.IdCategoryConstants;
@@ -29,9 +28,8 @@ public class JobAIAnalysisServiceImpl implements JobAIAnalysisService {
     private final JobSoftRequirementService softRequirementService;
     private final JobPromotionGraphService promotionGraphService;
     private final JobTransferGraphService transferGraphService;
-
-    // 使用新的 AI 接口地址
-    private static final String AI_API_URL = "http://57c42474b0ea.ofalias.net:50311/api/chat/chat";
+    /** A02：AI 能力统一走蚂蚁百宝箱（原硬编码的自研 AI 隧道已退役） */
+    private final TboxAgentService tboxAgentService;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -128,47 +126,17 @@ public class JobAIAnalysisServiceImpl implements JobAIAnalysisService {
     }
 
     /**
-     * 调用 AI 接口（适配 /api/chat/chat）
-     * 请求体：{"message": prompt, "temperature": 0.1}
-     * 响应格式：{"code":10001, "message":"操作成功", "data": "AI生成的JSON字符串" 或 {...}}
+     * 调用 AI 接口（百宝箱 WS 文本通道，同步收集输出）
+     *
+     * @return AI 返回的纯文本（应为 JSON 字符串）
      */
     private String callAiApi(String prompt) {
-        JSONObject body = new JSONObject();
-        body.set("message", prompt);
-        body.set("temperature", 0.1);
-        String jsonBody = body.toString();
-        log.debug("发送给 AI 的请求: {}", jsonBody);
-
-        try (HttpResponse response = HttpRequest.post(AI_API_URL)
-                .header("Content-Type", "application/json")
-                .body(jsonBody)
-                .execute()) {
-            if (response.isOk()) {
-                String responseBody = response.body();
-                log.debug("AI 响应原始内容: {}", responseBody);
-                // 解析外层 JSON
-                JSONObject outerJson = JSONUtil.parseObj(responseBody);
-                int code = outerJson.getInt("code");
-                if (code != 200 && code != 10001) {
-                    throw new RuntimeException("AI 返回错误：" + outerJson.getStr("message"));
-                }
-                Object dataObj = outerJson.get("data");
-                if (dataObj == null) {
-                    throw new RuntimeException("AI 返回的 data 字段为空");
-                }
-                // data 可能是字符串（包含 JSON），也可能是直接的对象
-                String dataStr;
-                if (dataObj instanceof String) {
-                    dataStr = (String) dataObj;
-                } else {
-                    dataStr = JSONUtil.toJsonStr(dataObj);
-                }
-                log.debug("提取的 data 内容: {}", dataStr);
-                return dataStr;
-            } else {
-                throw new RuntimeException("AI 服务调用失败，状态码：" + response.getStatus());
-            }
+        String text = tboxAgentService.chatSync(null, null, prompt);
+        if (text == null || text.isBlank()) {
+            throw new RuntimeException("AI 服务无响应（请确认百宝箱已配置且模型网关已开通）");
         }
+        log.debug("AI 返回的原始文本: {}", text);
+        return text;
     }
 
     private AiJobAnalysisResult parseAiResponse(String aiResponse) {

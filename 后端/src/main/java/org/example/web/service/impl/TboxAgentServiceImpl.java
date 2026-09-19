@@ -22,6 +22,7 @@ import java.net.URI;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeoutException;
@@ -90,6 +91,33 @@ public class TboxAgentServiceImpl implements TboxAgentService {
     }
 
     @Override
+    public String chatSync(Long userId, Long localConversationId, String message) {
+        try {
+            List<String> chunks = chatStream(userId, localConversationId, message)
+                    .collectList()
+                    .block(Duration.ofSeconds(Math.max(10, props.getTimeoutSeconds()) + 30));
+            if (chunks == null || chunks.isEmpty()) {
+                return "";
+            }
+            StringBuilder sb = new StringBuilder();
+            for (String c : chunks) {
+                try {
+                    JsonNode n = objectMapper.readTree(c);
+                    if (n.has("data")) {
+                        sb.append(n.get("data").asText(""));
+                    }
+                } catch (Exception ignore) {
+                    sb.append(c);
+                }
+            }
+            return sb.toString();
+        } catch (Exception e) {
+            log.error("百宝箱同步对话失败", e);
+            return "";
+        }
+    }
+
+    @Override
     public RunIds consumeRunIds(Long localConversationId) {
         return localConversationId == null ? null : runIdsCache.remove(localConversationId);
     }
@@ -131,7 +159,7 @@ public class TboxAgentServiceImpl implements TboxAgentService {
             return new Session(conv.getTboxSessionId(), conv.getTboxConversationId());
         }
 
-        String platformUserId = String.valueOf(userId);
+        String platformUserId = userId == null ? "xingzhi-guest" : String.valueOf(userId);
         // 1) 平台会话
         Map<String, Object> sessionResp = http.get()
                 .uri(uri -> uri.path("/api/tbox/session").queryParam("userId", platformUserId).build())
