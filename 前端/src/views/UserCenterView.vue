@@ -774,7 +774,10 @@ const parseReportContent = (r) => {
   currentReportAgents.value = []
   try {
     const content = typeof r.reportContent === 'string' ? JSON.parse(r.reportContent) : r.reportContent
-    if (content && Array.isArray(content.agents)) {
+    if (content && content.final) {
+      // 最终报告 = 第 6 段整合后的「简介」（不再叠加 6 段过程）
+      currentReportAgents.value = [{ name: r.reportName || '职业规划报告', content: content.final }]
+    } else if (content && Array.isArray(content.agents)) {
       currentReportAgents.value = content.agents
     } else if (content && content.fullText) {
       currentReportAgents.value = [{ name: '报告正文', content: content.fullText }]

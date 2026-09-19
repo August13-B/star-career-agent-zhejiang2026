@@ -63,6 +63,14 @@ python manage.py free-port backend
     - 我们侧**逻辑删除**（`is_deleted=1`）；平台侧**物理删除** `POST /api/report/delete`（带 `userId` 校验归属）
     - 平台失败**不阻塞**，返回 `failed/skipped`；需 `career_report.platform_report_id`（迁移 **006**）。
 15. **报告类接口鉴权**：平台配置 `REPORT_API_TOKEN` 后需带 `X-Report-Token`；本仓库用 `.env` 的 `TBOX_REPORT_TOKEN`。
+16. **最终报告 = 第 6 段（report_composition）简介；结构化 1/3/5 年目标落库**：
+    - 平台第 6 段末尾会附 `<<<GOALS_JSON>>>{targetJob,goals[1y/3y/5y]}<<<END_GOALS_JSON>>>`（**聊天 WS 通道不加**，仅报告通道）
+    - 我们侧剔除该块：`content.agents[report_composition].content` 与 `fullText` 均**存剔除后正文**；
+      另存 `content.final`（简介）与 `content.goals`（结构化，**不下发前端**）
+    - `done` 下发给前端的 `content` 由 `contentForFrontend()` 生成（剔除块、不含 goals）；个人中心详情/PDF 只渲染 `final`
+    - 结构化目标写入 `grow_plan`（每 horizon 一行，`plan_type` 1=1年/2=3年/3=5年）+ `grow_task`（每 keyAction 一条）
+    - 完成情况 API：`GET /api/grow/plans?userId=`、`PATCH /api/grow/tasks/{id}`（改状态并自动重算计划 progress/total_status）
+    - 表迁移 **007**：`grow_plan.match_id` 改可空、`plan_type` 重定义；提示词见 `百宝箱/提示词-报告整合与结构化目标.md`
 
 ## 5. 当前阻塞（平台侧）
 

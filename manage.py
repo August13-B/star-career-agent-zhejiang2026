@@ -160,9 +160,12 @@ DATA_SQL = DB_DIR / "数据库数据.sql"        # 业务数据（岗位/画像�
 MIGRATIONS_DIR = DB_DIR / "migrations"
 # 灌库后自动执行的「幂等」迁移（可重复执行，不会丢数据）
 #   005：画像表加宽加密列 + is_deleted 收敛（修复「Data too long」与「保存后查不到」）
+#   006：career_report 增加 platform_report_id
+#   007：启用 grow_plan/grow_task（报告结构化 1/3/5 目标落库）
 AUTO_MIGRATIONS = [
     MIGRATIONS_DIR / "005_fix_profile_schema.sql",
     MIGRATIONS_DIR / "006_add_platform_report_id.sql",
+    MIGRATIONS_DIR / "007_grow_plan_goals.sql",
 ]
 EXPECTED_TABLES = 31
 
@@ -371,6 +374,7 @@ def cmd_db(args):
             "004_fix_null_is_deleted.sql",
             "005_fix_profile_schema.sql",
             "006_add_platform_report_id.sql",
+            "007_grow_plan_goals.sql",
         )]
         _apply_migrations(files)
     else:
