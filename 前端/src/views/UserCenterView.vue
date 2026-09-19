@@ -524,6 +524,10 @@ const openBasicModal = () => { basicForm.value = { ...myProfile.value }; basicVi
 const saveBasicInfo = async () => {
   if (!basicForm.value.userName) return alert('姓名不能为空')
   isSavingBasic.value = true
+  if (!currentUserId.value || Number(currentUserId.value) <= 0) {
+    isSavingBasic.value = false
+    return alert('登录状态已失效，请重新登录后再保存')
+  }
   const payload = { ...basicForm.value, userId: Number(currentUserId.value) }
   try {
     let res
@@ -554,6 +558,10 @@ const cancelEdit = () => { isEdit.value = false }
 
 const saveJobIntent = async () => {
   isSavingIntent.value = true
+  if (!currentUserId.value || Number(currentUserId.value) <= 0) {
+    isSavingIntent.value = false
+    return alert('登录状态已失效，请重新登录后再保存')
+  }
   const payload = { ...intentForm.value, userId: Number(currentUserId.value) }
   try {
     let res
@@ -585,6 +593,10 @@ const openAbilityModal = () => {
 
 const saveAbility = async () => {
   isSavingAbility.value = true
+  if (!currentUserId.value || Number(currentUserId.value) <= 0) {
+    isSavingAbility.value = false
+    return alert('登录状态已失效，请重新登录后再保存')
+  }
   // 组装参数，必须带上 userId。如果有 profileId 也可以顺带关联。
   const payload = { 
     ...abilityForm.value, 

@@ -129,7 +129,9 @@ class ManageGUI:
                  font=("Microsoft YaHei", 11, "bold")).pack(side="left")
 
         self.log_var = tk.StringVar(value="backend")
-        self.log_sel = tk.OptionMenu(bar, self.log_var, *self.service_names)
+        # 切换服务时自动刷新日志（command 回调）
+        self.log_sel = tk.OptionMenu(bar, self.log_var, *self.service_names,
+                                     command=lambda _sel: self._refresh_log())
         self.log_sel.configure(bg=BG_CARD, fg=FG_PRIMARY, activebackground=BG_INPUT,
                                highlightthickness=0, font=("Consolas", 9))
         self.log_sel.pack(side="left", padx=8)
