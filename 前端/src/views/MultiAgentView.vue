@@ -429,9 +429,18 @@ const stopGenerating = async () => {
 
 const escapeHtml = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 
+// 第 6 段末尾的结构化目标块（仅后端用）；流式 deltas 也会带上，渲染前剔除，避免穿帮
+const stripGoalsBlock = (text) => {
+  if (!text) return ''
+  let t = String(text)
+  const i = t.indexOf('<<<GOALS_JSON')
+  if (i >= 0) t = t.slice(0, i)
+  return t.replace(/<<<END_GOALS_JSON>>>/g, '')
+}
+
 const renderMarkdown = (text) => {
   if (!text) return ''
-  let html = escapeHtml(text)
+  let html = escapeHtml(stripGoalsBlock(text))
   html = html.replace(/^#### (.*)$/gm, '<h4>$1</h4>')
   html = html.replace(/^### (.*)$/gm, '<h3>$1</h3>')
   html = html.replace(/^## (.*)$/gm, '<h2>$1</h2>')

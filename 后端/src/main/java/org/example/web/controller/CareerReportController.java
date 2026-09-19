@@ -115,7 +115,7 @@ public class CareerReportController {
                 Long reportId = saveReportOnce(jobId, n, currentUserId(token));
                 out.put("platformReportId", n.path("reportId").asText(null));
                 out.put("reportName", n.path("reportName").asText(null));
-                out.put("content", objectMapper.convertValue(n.path("content"), java.util.Map.class));
+                out.put("content", contentForFrontend(n.path("content")));
                 if (reportId != null) {
                     out.put("reportId", reportId);
                     out.put("saved", true);
@@ -312,23 +312,13 @@ public class CareerReportController {
                 String key = a.path("key").asText("");
                 String name = a.path("name").asText(AGENT_NAMES.getOrDefault(key, key));
                 String content = a.path("content").asText("");
-                java.util.Map<String, Object> item = new java.util.LinkedHashMap<>();
-                item.put("key", key);
-                item.put("name", name);
-                item.put("content", content);
-                agents.add(item);
-                fullText.append(content).append("\n\n");
-                // 最终报告 = 第 6 段（report_composition）；其中可能含结构化 1/3/5 目标块（前端不展示）
+                // 第 6 段可能含结构化 1/3/5 目标块（<<<GOALS_JSON>>>…<<<END_GOALS_JSON>>>）：
+                // 提取后从正文剔除——用户不可见（前端/PDF 只渲染剔除后的内容）
                 if ("report_composition".equals(key)) {
-                    final String M_START = "<<<GOALS_JSON>>>";
-                    final String M_END = "<<<END_GOALS_JSON>>>";
-                    int s = content.indexOf(M_START);
-                    int e = content.indexOf(M_END);
-                    if (s >= 0 && e > s) {
-                        String goalJson = content.substring(s + M_START.length(), e).trim();
-                        finalText = (content.substring(0, s) + content.substring(e + M_END.length())).trim();
+                    String[] split = splitGoalsBlock(content);
+                    if (split[0] != null) {
                         try {
-                            com.fasterxml.jackson.databind.JsonNode g = objectMapper.readTree(goalJson);
+                            com.fasterxml.jackson.databind.JsonNode g = objectMapper.readTree(split[0]);
                             targetJob = g.path("targetJob").asText(null);
                             for (com.fasterxml.jackson.databind.JsonNode gi : g.path("goals")) {
                                 goals.add(objectMapper.convertValue(gi, java.util.Map.class));
@@ -336,18 +326,24 @@ public class CareerReportController {
                         } catch (Exception ex) {
                             System.err.println("解析结构化目标失败（降级，不影响报告）: " + ex.getMessage());
                         }
-                    } else {
-                        finalText = content;
                     }
+                    content = split[1];
+                    finalText = content;
                 }
+                java.util.Map<String, Object> item = new java.util.LinkedHashMap<>();
+                item.put("key", key);
+                item.put("name", name);
+                item.put("content", content);
+                agents.add(item);
+                fullText.append(content).append("\n\n");
             }
             if (finalText == null || finalText.isBlank()) {
                 finalText = fullText.toString().trim();   // 降级：无第 6 段则用全文
             }
             java.util.Map<String, Object> content = new java.util.LinkedHashMap<>();
-            content.put("agents", agents);          // 6 段过程（multi-agent 页 / 过程留档）
+            content.put("agents", agents);          // 6 段过程（已剔除结构化块）
             content.put("final", finalText);         // 最终报告（简介，用户可见）
-            content.put("goals", goals);             // 结构化 1/3/5 目标（仅后端用）
+            content.put("goals", goals);             // 结构化 1/3/5 目标（仅后端用，不下发前端）
             content.put("fullText", finalText);
 
             String reportName = (platformName != null && !platformName.isBlank())
@@ -394,6 +390,57 @@ public class CareerReportController {
             e.printStackTrace();
             return null;
         }
+    }
+
+    /**
+     * 切分第 6 段的结构化目标块。
+     *
+     * @return {@code [goalsJson(可空), 剔除标记块后的正文]}
+     */
+    private String[] splitGoalsBlock(String content) {
+        final String M_START = "<<<GOALS_JSON>>>";
+        final String M_END = "<<<END_GOALS_JSON>>>";
+        if (content == null) {
+            return new String[]{null, ""};
+        }
+        int s = content.indexOf(M_START);
+        int e = content.indexOf(M_END);
+        if (s >= 0 && e > s) {
+            String json = content.substring(s + M_START.length(), e).trim();
+            String text = (content.substring(0, s) + content.substring(e + M_END.length())).trim();
+            return new String[]{json, text};
+        }
+        return new String[]{null, content.trim()};
+    }
+
+    /**
+     * 下发给前端的 {@code content}：
+     * 剔除第 6 段的结构化块、且**不含 goals**（结构化数据仅后端用，前端不展示）。
+     */
+    private java.util.Map<String, Object> contentForFrontend(com.fasterxml.jackson.databind.JsonNode contentNode) {
+        java.util.Map<String, Object> out = new java.util.LinkedHashMap<>();
+        java.util.List<java.util.Map<String, Object>> agents = new java.util.ArrayList<>();
+        String finalText = null;
+        for (com.fasterxml.jackson.databind.JsonNode a : contentNode.path("agents")) {
+            String key = a.path("key").asText("");
+            String name = a.path("name").asText(AGENT_NAMES.getOrDefault(key, key));
+            String content = a.path("content").asText("");
+            if ("report_composition".equals(key)) {
+                content = splitGoalsBlock(content)[1];
+                finalText = content;
+            }
+            java.util.Map<String, Object> item = new java.util.LinkedHashMap<>();
+            item.put("key", key);
+            item.put("name", name);
+            item.put("content", content);
+            agents.add(item);
+        }
+        if (finalText == null || finalText.isBlank()) {
+            finalText = contentNode.path("fullText").asText("");
+        }
+        out.put("agents", agents);
+        out.put("final", finalText);
+        return out;
     }
 
     /** 从登录 token 解析当前用户ID（失败返回 null） */
