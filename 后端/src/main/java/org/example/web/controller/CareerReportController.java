@@ -149,13 +149,101 @@ public class CareerReportController {
             return null;
         }
         java.util.Map<String, Object> info = saveReport(userId,
-                n.path("content").path("agents"), n.path("reportName").asText(null));
+                n.path("content").path("agents"), n.path("reportName").asText(null),
+                n.path("reportId").asText(null));
         if (info != null && info.get("reportId") != null) {
             Long id = Long.parseLong(String.valueOf(info.get("reportId")));
             savedReportByJob.put(jobId, id);
             return id;
         }
         return null;
+    }
+
+    /** ③ 取消报告任务（随时停止）：中止平台流水线，已生成内容丢弃、不落库 */
+    @org.springframework.web.bind.annotation.PostMapping("/jobs/{jobId}/cancel")
+    @org.springframework.web.bind.annotation.CrossOrigin
+    public Result<?> cancelReportJob(@org.springframework.web.bind.annotation.PathVariable String jobId) {
+        try {
+            String resp = tboxAgentService.cancelReportJob(jobId);
+            java.util.Map<String, Object> out = new java.util.LinkedHashMap<>();
+            try {
+                out.put("platform", objectMapper.convertValue(objectMapper.readTree(resp), java.util.Map.class));
+            } catch (Exception ignore) {
+                out.put("platform", resp);
+            }
+            return Result.success("已请求取消", out);
+        } catch (Exception e) {
+            System.err.println("取消报告任务失败: " + e.getMessage());
+            return Result.error("取消失败：" + e.getMessage());
+        }
+    }
+
+    /** ④ 批量删除报告：我们侧逻辑删除 + 平台侧物理删除（平台失败不阻塞） */
+    @org.springframework.web.bind.annotation.PostMapping("/batch-delete")
+    @org.springframework.web.bind.annotation.CrossOrigin
+    public Result<?> batchDelete(@RequestBody java.util.Map<String, Object> request,
+                                 @org.springframework.web.bind.annotation.RequestHeader(value = "Authorization", required = false) String token) {
+        Object idsRaw = request.get("ids");
+        if (!(idsRaw instanceof java.util.List) || ((java.util.List<?>) idsRaw).isEmpty()) {
+            return Result.error("ids 不能为空");
+        }
+        Long userId;
+        try {
+            java.util.Map<String, Object> claims = org.example.web.tool.JwtUtil.parseToken(token);
+            userId = Long.parseLong(String.valueOf(claims.get("id")));
+        } catch (Exception e) {
+            return Result.error("登录状态无效");
+        }
+        java.util.List<Long> ids = new java.util.ArrayList<>();
+        for (Object o : (java.util.List<?>) idsRaw) {
+            try {
+                ids.add(Long.parseLong(String.valueOf(o)));
+            } catch (Exception ignore) {
+            }
+        }
+        if (ids.isEmpty()) {
+            return Result.error("ids 格式错误");
+        }
+        // 只允许删除当前用户自己的报告
+        java.util.List<CareerReport> reports = careerReportMapper.selectByIds(ids);
+        java.util.List<Long> ownIds = new java.util.ArrayList<>();
+        java.util.List<String> platformIds = new java.util.ArrayList<>();
+        for (CareerReport r : reports) {
+            if (r.getUserId() != null && r.getUserId().equals(userId)) {
+                ownIds.add(r.getId());
+                if (r.getPlatformReportId() != null && !r.getPlatformReportId().isBlank()) {
+                    platformIds.add(r.getPlatformReportId());
+                }
+            }
+        }
+        if (ownIds.isEmpty()) {
+            return Result.error("没有可删除的报告");
+        }
+        int deleted = careerReportMapper.logicDeleteByIds(ownIds);
+
+        int platformDeleted = 0;
+        java.util.List<String> platformFailed = new java.util.ArrayList<>();
+        if (!platformIds.isEmpty()) {
+            try {
+                String resp = tboxAgentService.deleteReports(platformIds);
+                com.fasterxml.jackson.databind.JsonNode n = objectMapper.readTree(resp);
+                platformDeleted = n.path("deleted").size();
+                for (com.fasterxml.jackson.databind.JsonNode f : n.path("failed")) {
+                    platformFailed.add(f.path("reportId").asText(""));
+                }
+            } catch (Exception e) {
+                System.err.println("平台删除报告失败（不阻塞我们侧删除）: " + e.getMessage());
+                platformFailed.addAll(platformIds);
+            }
+        }
+        java.util.Map<String, Object> out = new java.util.LinkedHashMap<>();
+        out.put("deleted", deleted);
+        out.put("platformRequested", platformIds.size());
+        out.put("platformDeleted", platformDeleted);
+        out.put("platformFailed", platformFailed);
+        // 历史报告（无 platform_report_id）：仅在本地逻辑删除
+        out.put("platformSkipped", ownIds.size() - platformIds.size());
+        return Result.success("删除完成", out);
     }
 
     /**
@@ -193,7 +281,8 @@ public class CareerReportController {
     /** 汇总落库：career_report（最新） + career_report_history（版本快照）；返回 {reportId, reportName}，失败返回 null */
     private java.util.Map<String, Object> saveReport(Long userId,
                                                      com.fasterxml.jackson.databind.JsonNode agentsNode,
-                                                     String platformName) {
+                                                     String platformName,
+                                                     String platformReportId) {
         if (agentsNode == null || !agentsNode.isArray() || agentsNode.isEmpty()) {
             System.err.println("报告内容为空，跳过落库");
             return null;
@@ -229,6 +318,7 @@ public class CareerReportController {
             report.setVersion(1);
             report.setStatus(2);
             report.setReportContent(objectMapper.writeValueAsString(content));
+            report.setPlatformReportId(platformReportId);
             report.setCreateTime(java.time.LocalDateTime.now());
             report.setUpdateTime(java.time.LocalDateTime.now());
             careerReportMapper.insert(report);

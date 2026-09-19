@@ -336,6 +336,36 @@ public class TboxAgentServiceImpl implements TboxAgentService {
                 .block(Duration.ofSeconds(30));
     }
 
+    @Override
+    public String cancelReportJob(String jobId) {
+        log.info("取消平台报告任务 /api/report/jobs/{}/cancel", jobId);
+        return http.post()
+                .uri("/api/report/jobs/{jobId}/cancel", jobId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .headers(this::applyAuth)
+                .retrieve()
+                .bodyToMono(String.class)
+                .block(Duration.ofSeconds(20));
+    }
+
+    @Override
+    public String deleteReports(java.util.List<String> reportIds) {
+        if (reportIds == null || reportIds.isEmpty()) {
+            return "{\"deleted\":[],\"failed\":[]}";
+        }
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("reportIds", reportIds);
+        log.info("删除平台报告 /api/report/delete count={}", reportIds.size());
+        return http.post()
+                .uri("/api/report/delete")
+                .contentType(MediaType.APPLICATION_JSON)
+                .headers(this::applyAuth)
+                .bodyValue(body)
+                .retrieve()
+                .bodyToMono(String.class)
+                .block(Duration.ofSeconds(30));
+    }
+
     /** 统一的鉴权头（.env 配了 TBOX_API_KEY 就带） */
     private void applyAuth(HttpHeaders h) {
         String key = props.getApiKey();

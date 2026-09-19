@@ -5,18 +5,18 @@
 
     <sql id="cols">
         id, user_id, match_id, report_name, report_type, version, status,
-        report_content, template_id, feedback, feedback_score, feedback_time,
+        report_content, platform_report_id, template_id, feedback, feedback_score, feedback_time,
         create_time, update_time, is_deleted
     </sql>
 
     <insert id="insert" parameterType="org.example.web.entity.CareerReport">
         INSERT INTO career_report
             (id, user_id, match_id, report_name, report_type, version, status,
-             report_content, template_id, feedback, feedback_score, feedback_time,
+             report_content, platform_report_id, template_id, feedback, feedback_score, feedback_time,
              create_time, update_time, is_deleted)
         VALUES
             (#{id}, #{userId}, #{matchId}, #{reportName}, #{reportType}, #{version}, #{status},
-             #{reportContent}, #{templateId}, #{feedback}, #{feedbackScore}, #{feedbackTime},
+             #{reportContent}, #{platformReportId}, #{templateId}, #{feedback}, #{feedbackScore}, #{feedbackTime},
              COALESCE(#{createTime}, NOW()), COALESCE(#{updateTime}, NOW()), COALESCE(#{isDeleted}, 0))
     </insert>
 
@@ -83,6 +83,20 @@
 
     <update id="logicDeleteById">
         UPDATE career_report SET is_deleted = 1, update_time = NOW() WHERE id = #{id}
+    </update>
+
+    <!-- 批量查询（未删除） -->
+    <select id="selectByIds" resultType="org.example.web.entity.CareerReport">
+        SELECT <include refid="cols"/> FROM career_report
+        WHERE is_deleted = 0 AND id IN
+        <foreach collection="ids" item="id" open="(" separator="," close=")">#{id}</foreach>
+    </select>
+
+    <!-- 批量逻辑删除 -->
+    <update id="logicDeleteByIds">
+        UPDATE career_report SET is_deleted = 1, update_time = NOW()
+        WHERE id IN
+        <foreach collection="ids" item="id" open="(" separator="," close=")">#{id}</foreach>
     </update>
 
 </mapper>

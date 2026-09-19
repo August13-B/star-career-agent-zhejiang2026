@@ -73,6 +73,21 @@ public interface TboxAgentService {
      */
     String fetchReportJob(String jobId, String offsets);
 
+    /**
+     * 取消报告任务（平台 {@code POST /api/report/jobs/{jobId}/cancel}）：中止流水线、平台不落库、幂等。
+     *
+     * @return 平台原始响应 JSON
+     */
+    String cancelReportJob(String jobId);
+
+    /**
+     * 批量删除平台侧报告（平台 {@code POST /api/report/delete}）。
+     *
+     * @param reportIds 平台报告ID列表（Appwrite $id）
+     * @return 平台原始响应 JSON（{@code {"deleted":[...],"failed":[...]}}）
+     */
+    String deleteReports(java.util.List<String> reportIds);
+
     /** 记录本次运行的平台 ID（供保存消息时回填） */
     void rememberRunIds(Long localConversationId, String tboxMessageId, String tboxRequestId);
 
