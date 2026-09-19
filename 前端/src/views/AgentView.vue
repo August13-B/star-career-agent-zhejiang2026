@@ -60,6 +60,12 @@
           <h1 class="gradient-text">准备好规划你的职业未来了吗？</h1>
           <p class="subtitle">基于 <span class="highlight-number">10,000+</span> 真实企业招聘数据，AI 为你量身定制</p>
         </div>
+
+        <div v-if="profileIncomplete && profileBannerVisible" class="profile-hint">
+          <span class="profile-hint-text"><AppIcon name="user" :size="14" /> 完善个人画像可获得更精准的建议</span>
+          <router-link to="/profile" class="profile-hint-link">去个人中心 →</router-link>
+          <button class="profile-hint-close" @click="profileBannerVisible = false" title="关闭"><AppIcon name="close" :size="12" /></button>
+        </div>
         
         <div class="chat-container">
           <div class="message-container" ref="messageBox">
@@ -89,6 +95,10 @@
               </div>
             </div>
             
+            <div v-if="aiStatus" class="ai-status-hint">
+              <span class="status-spinner"></span>{{ aiStatus }}
+            </div>
+
             <div v-if="isWaitingResponse" class="message-wrapper is-ai">
               <div class="avatar">AI</div>
               <div class="message-bubble typing-indicator">
@@ -136,12 +146,11 @@
 </template>
 
 <script setup>
-import { ref, onMounted, nextTick, watch } from 'vue'
+import { ref, onMounted, nextTick } from 'vue'
 import axios from 'axios'
 import AppIcon from '../components/AppIcon.vue'
 import { generateAesKeyAndIv, rsaEncrypt } from '../utils/crypto'
-import { useRoute, useRouter } from 'vue-router'
-const route = useRoute()
+import { useRouter } from 'vue-router'
 const router = useRouter()
 
 axios.defaults.transformResponse = [
@@ -176,6 +185,11 @@ const titleInput = ref(null)
 const imageInputRef = ref(null)
 const selectedImageFile = ref(null)
 const previewImageUrl = ref('')
+// 工具/检索状态提示（来自平台 {"type":"tool"} 帧）
+const aiStatus = ref('')
+// 画像缺失提示条
+const profileIncomplete = ref(false)
+const profileBannerVisible = ref(true)
 
 // ==========================================
 // 核心格式化引擎：把杂乱数据变成极简 Markdown (修复版)
@@ -364,6 +378,7 @@ const sendMessage = async () => {
   
   isWaitingResponse.value = true;
   isTyping.value = true;
+  aiStatus.value = '';
   inputContent.value = ''; 
 
   let isNewConversation = false
@@ -432,6 +447,7 @@ const sendMessage = async () => {
         clearInterval(typeTimer);
         messages.value[newMsgIndex].isTypingEffect = false;
         isTyping.value = false; 
+        aiStatus.value = '';
         scrollToBottom();
         
         if (isNewConversation) {
@@ -458,13 +474,33 @@ const sendMessage = async () => {
          let rawStream = line.replace(/^data:\s*/gm, '').trim();
          if (!rawStream) continue;
          
+         let parsed = null;
+         try { parsed = JSON.parse(rawStream); } catch(e) {}
+
+         // 平台结束帧：仅携带会话/消息 ID，不进正文
+         if (parsed && parsed.done) {
+            continue;
+         }
+         // 平台工具/检索状态帧：暂不进入正文，只更新状态提示
+         if (parsed && parsed.type === 'tool') {
+            aiStatus.value = parsed.status === 'start'
+              ? (parsed.name === 'searchJobs' ? '正在检索岗位知识库…' : '正在调用工具…')
+              : '';
+            continue;
+         }
+         // 平台错误帧：作为提示文字交给打字机输出
+         if (parsed && parsed.error) {
+            aiStatus.value = '';
+            charQueue.push(...Array.from('⚠ ' + parsed.error));
+            continue;
+         }
+
          let chunkText = rawStream;
-         try {
-            let parsed = JSON.parse(rawStream);
+         if (parsed) {
             if (parsed.data) chunkText = parsed.data;
             else if (parsed.response) chunkText = parsed.response;
-         } catch(e) {}
-         
+         }
+
          // 核心修复点 1：使用 Array.from() 拆分，完美保留 Emoji 图标不乱码！
          charQueue.push(...Array.from(chunkText));
       }
@@ -510,22 +546,21 @@ const deleteChat = async (id) => {
 const scrollToBottom = () => { nextTick(() => { if (messageBox.value) messageBox.value.scrollTop = messageBox.value.scrollHeight }) }
 const prepareNewChat = () => { currentChatId.value = null; messages.value = [] }
 
-const handleAutoPrompt = (promptText) => {
-  setTimeout(() => {
-    prepareNewChat()
-    inputContent.value = promptText 
-    const cleanUrl = window.location.protocol + "//" + window.location.host + window.location.pathname;
-    window.history.replaceState({}, '', cleanUrl)
-  }, 100) 
+// 画像是否缺失（缺失时顶部显示引导提示条）
+const checkProfile = async () => {
+  if (!userId.value) return
+  try {
+    const res = await axios.post('/api/student/condition', { userId: userId.value })
+    const list = res.data && res.data.data
+    profileIncomplete.value = !(Array.isArray(list) && list.length > 0)
+  } catch (e) { /* 查询失败不打扰用户 */ }
 }
 
 onMounted(async () => {
   await getUserInfo()
   await fetchChatList()
-  if (route.query.autoPrompt) handleAutoPrompt(route.query.autoPrompt)
+  await checkProfile()
 })
-
-watch(() => route.query.autoPrompt, (newVal) => { if (newVal) handleAutoPrompt(newVal) })
 </script>
 
 <style scoped>
@@ -612,4 +647,17 @@ textarea::placeholder { color: #94A3B8; }
 .send-btn:disabled { opacity: 0.45; cursor: not-allowed; }
 @keyframes fadeInDown { from { opacity: 0; transform: translateY(-20px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes fadeInUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+
+/* 画像缺失引导条 */
+.profile-hint { display: flex; align-items: center; gap: 12px; margin: 0 0 12px; padding: 10px 14px; background: #EFF6FF; border: 1px solid #DBEAFE; border-radius: 10px; font-size: 0.86rem; color: #1D4ED8; }
+.profile-hint-text { display: inline-flex; align-items: center; gap: 6px; flex: 1; }
+.profile-hint-link { color: #1D4ED8; font-weight: 700; text-decoration: none; white-space: nowrap; }
+.profile-hint-link:hover { text-decoration: underline; }
+.profile-hint-close { background: transparent; border: none; color: #60A5FA; cursor: pointer; display: inline-flex; align-items: center; padding: 2px; border-radius: 4px; }
+.profile-hint-close:hover { background: #DBEAFE; color: #1D4ED8; }
+
+/* 工具/检索状态提示 */
+.ai-status-hint { display: inline-flex; align-items: center; gap: 8px; align-self: flex-start; margin: 4px 0 8px 46px; padding: 6px 12px; background: #F1F5F9; color: #475569; border-radius: 999px; font-size: 0.82rem; }
+.status-spinner { width: 10px; height: 10px; border: 2px solid #CBD5E1; border-top-color: #4A90E2; border-radius: 50%; animation: spin 0.8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
 </style>
