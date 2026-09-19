@@ -44,10 +44,11 @@ python manage.py free-port backend
 8. **端口/IPv4**：Vite 代理与后端检查一律用 `127.0.0.1`，避免 localhost 解析到 IPv6 `::1`。
 9. **`数据库结构.sql` 与 `migrations/` 必须同步**：历史上出现「结构漂移」——建表脚本仍是旧列宽，只有迁移修过。
 10. **Mapper 必须「有实现」**：`@Mapper` 接口若无 XML、无注解，运行期报 `Invalid bound statement`（曾漏 `MatchDetailMapper`、`CareerReportMapper`）。
-11. **职业报告 = 平台异步任务 + 前端轮询**（网关缓冲长响应，SSE 公网不可用）：
+11. **职业报告 = 平台异步任务 + 前端 offsets 增量轮询**（网关缓冲长响应，SSE 公网不可用）：
     - 后端 `POST /api/career-report/start` → 平台 `POST /api/report` → `202 {jobId}`
-    - 后端 `GET /api/career-report/jobs/{jobId}` → 平台 `GET /api/report/jobs/{jobId}`；running → currentAgent/progressChars；done → `content.agents[]`
-    - 总耗时约 160~232s；平台运行期只有进度、**无正文增量** → “打字机”只能 done 后前端按段模拟
+    - 后端 `GET /api/career-report/jobs/{jobId}?offsets={...}` → 平台同名接口（透传 offsets）；
+      running 返回 `deltas:[{agent,data}]`（按 offsets 切片，不重不漏）+ `currentAgent/agentsDone/segmentChars/progressChars`
+    - 前端每 1.5s 轮询：`deltas` 追加到卡片缓冲 → 本地 30ms 均匀打字机实时呈现；done 用 `content.agents[]` 校准
     - `jobId` 存 localStorage，刷新/切页可续（任务在平台侧独立运行，与浏览器连接无关）
     - 后端首次 done 时按 `content.agents` 幂等落库 MySQL；前端详情/PDF 用我们的 `reportId`
     - 注意：平台 done 帧顶层 `agents` 为 `null`，6 段在 **`content.agents[]`**（key/name/content）

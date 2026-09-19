@@ -92,12 +92,13 @@ public class CareerReportController {
         }
     }
 
-    /** ② 查询报告任务进度/结果（前端每 4s 轮询一次；done 时落库我们 MySQL，幂等） */
+    /** ② 查询报告任务进度/结果（前端每 1.5s 轮询；带 offsets 拿正文增量；done 时幂等落库） */
     @org.springframework.web.bind.annotation.GetMapping("/jobs/{jobId}")
     @org.springframework.web.bind.annotation.CrossOrigin
-    public Result<?> reportJobStatus(@org.springframework.web.bind.annotation.PathVariable String jobId) {
+    public Result<?> reportJobStatus(@org.springframework.web.bind.annotation.PathVariable String jobId,
+                                     @org.springframework.web.bind.annotation.RequestParam(value = "offsets", required = false) String offsets) {
         try {
-            String json = tboxAgentService.fetchReportJob(jobId);
+            String json = tboxAgentService.fetchReportJob(jobId, offsets);
             com.fasterxml.jackson.databind.JsonNode n = objectMapper.readTree(json);
             String status = n.path("status").asText("");
             java.util.Map<String, Object> out = new java.util.LinkedHashMap<>();
@@ -105,6 +106,9 @@ public class CareerReportController {
             out.put("progressChars", n.path("progressChars").asInt(0));
             out.put("currentAgent", n.path("currentAgent").asText(""));
             out.put("agentsDone", objectMapper.convertValue(n.path("agentsDone"), java.util.List.class));
+            // 增量正文：按 offsets 切片的 deltas（不重不漏） + 各段长度
+            out.put("deltas", objectMapper.convertValue(n.path("deltas"), java.util.List.class));
+            out.put("segmentChars", objectMapper.convertValue(n.path("segmentChars"), java.util.Map.class));
 
             if ("done".equalsIgnoreCase(status)) {
                 Long reportId = saveReportOnce(jobId, n);

@@ -321,9 +321,15 @@ public class TboxAgentServiceImpl implements TboxAgentService {
     }
 
     @Override
-    public String fetchReportJob(String jobId) {
+    public String fetchReportJob(String jobId, String offsets) {
         return http.get()
-                .uri("/api/report/jobs/" + jobId)
+                .uri(uriBuilder -> {
+                    uriBuilder.path("/api/report/jobs/{jobId}");
+                    if (offsets != null && !offsets.isBlank()) {
+                        uriBuilder.queryParam("offsets", offsets);
+                    }
+                    return uriBuilder.build(jobId);
+                })
                 .headers(this::applyAuth)
                 .retrieve()
                 .bodyToMono(String.class)

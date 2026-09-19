@@ -58,7 +58,7 @@ public interface TboxAgentService {
      * 启动职业报告异步任务（平台异步模式，规避网关缓冲）。
      *
      * <p>平台：{@code POST /api/report} → {@code 202 {jobId, status:"running"}}；
-     * 随后前端轮询 {@link #fetchReportJob(String)}。任务在平台侧独立运行，与浏览器连接无关，
+     * 随后前端轮询 {@link #fetchReportJob(String, String)}。任务在平台侧独立运行，与浏览器连接无关，
      * 所以前端刷新后仍可用同一个 jobId 继续轮询。
      *
      * @return 平台 jobId
@@ -67,8 +67,11 @@ public interface TboxAgentService {
 
     /**
      * 查询报告任务状态（平台原始 JSON，状态字段 {@code status} = running / done / error）。
+     *
+     * @param offsets 各智能体已读字符位置（JSON 字符串，如 {@code {"profile_analysis":1024}}），
+     *                平台据此切片返回 {@code deltas}（保证增量不重不漏）；可为 null
      */
-    String fetchReportJob(String jobId);
+    String fetchReportJob(String jobId, String offsets);
 
     /** 记录本次运行的平台 ID（供保存消息时回填） */
     void rememberRunIds(Long localConversationId, String tboxMessageId, String tboxRequestId);

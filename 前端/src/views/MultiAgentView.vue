@@ -134,8 +134,46 @@ const getUserInfo = async () => {
   }
 }
 
+// ===== 轮询 / 打字机状态（刷新后可用 localStorage 里的 jobId 续跑） =====
+let pollTimer = null
+let typeTimer = null
+let offsets = {}            // 各智能体已读字符数（每次轮询回传给平台做切片，保证不重不漏）
+let doneReceived = false
+
+const stopPolling = () => { if (pollTimer) { clearTimeout(pollTimer); pollTimer = null } }
+const stopTypewriter = () => { if (typeTimer) { clearInterval(typeTimer); typeTimer = null } }
+
+// 本地均匀打字机：把 card.received 平滑播放到 card.content（平台 delta 是 1~2s 一批）
+const startTypewriter = () => {
+  if (typeTimer) return
+  typeTimer = setInterval(() => {
+    let catchingUp = false
+    agents.value.forEach(card => {
+      const recv = card.received || ''
+      const shown = card.content || ''
+      if (shown.length < recv.length) {
+        const backlog = recv.length - shown.length
+        const step = Math.max(2, Math.ceil(backlog / 30))
+        card.content = recv.slice(0, shown.length + step)
+        catchingUp = true
+      }
+    })
+    // 全部播完 且 已收到 done → 收尾
+    if (!catchingUp && doneReceived) {
+      stopTypewriter()
+      agents.value.forEach(c => { if (c.status !== 'error') c.status = 'done' })
+      finished.value = true
+      running.value = false
+    }
+  }, 30)
+}
+
 const reset = () => {
-  agents.value = AGENT_DEFS.map(a => ({ ...a, status: 'waiting', content: '' }))
+  stopPolling()
+  stopTypewriter()
+  offsets = {}
+  doneReceived = false
+  agents.value = AGENT_DEFS.map(a => ({ ...a, status: 'waiting', content: '', received: '' }))
   finished.value = false
   errorMsg.value = ''
   savedHint.value = ''
@@ -148,54 +186,6 @@ const markPreviousDone = (idx) => {
     if (agents.value[i].status === 'running') agents.value[i].status = 'done'
   }
 }
-
-// 平台 done 帧携带完整分段内容 → 前端按段打字机渲染
-const revealSegments = (list) => {
-  if (!Array.isArray(list) || list.length === 0) {
-    agents.value.forEach(a => { if (a.status !== 'error') a.status = 'done' })
-    finished.value = true
-    running.value = false
-    return
-  }
-  let i = 0
-  const typeNext = () => {
-    if (i >= list.length) {
-      agents.value.forEach(a => { if (a.status !== 'error') a.status = 'done' })
-      finished.value = true
-      running.value = false
-      return
-    }
-    const seg = list[i]
-    const idx = agents.value.findIndex(a => a.key === (seg.key || seg.name))
-    if (idx < 0) { i++; typeNext(); return }
-    for (let j = 0; j < idx; j++) {
-      if (agents.value[j].status !== 'done') agents.value[j].status = 'done'
-    }
-    const card = agents.value[idx]
-    card.status = 'running'
-    card.content = ''
-    const text = String(seg.content || '')
-    let pos = 0
-    // 每段约 1.5s 左右打完（步长自适应）
-    const step = Math.max(12, Math.ceil(text.length / 90))
-    const timer = setInterval(() => {
-      pos += step
-      card.content = text.slice(0, pos)
-      if (pos >= text.length) {
-        clearInterval(timer)
-        card.content = text
-        card.status = 'done'
-        i++
-        typeNext()
-      }
-    }, 16)
-  }
-  typeNext()
-}
-
-// 轮询句柄（刷新后可用 localStorage 里的 jobId 续跑）
-let pollTimer = null
-const stopPolling = () => { if (pollTimer) { clearTimeout(pollTimer); pollTimer = null } }
 
 const generate = async () => {
   if (running.value) return
@@ -233,13 +223,14 @@ const generate = async () => {
   }
 }
 
-// 轮询平台任务：running 期间推进卡片；done 后按段打字机渲染
+// 轮询平台任务：带 offsets 拿正文增量 → 本地打字机实时呈现
 const startPolling = (jobId) => {
   stopPolling()
   const poll = async () => {
     try {
       const token = localStorage.getItem('token') || ''
       const res = await axios.get(`/api/career-report/jobs/${jobId}`, {
+        params: { offsets: JSON.stringify(offsets) },
         headers: token ? { Authorization: token.startsWith('Bearer ') ? token : `Bearer ${token}` } : {}
       })
       const d = (res.data && res.data.data) ? res.data.data : {}
@@ -250,9 +241,23 @@ const startPolling = (jobId) => {
         localStorage.removeItem('reportJobId')
         running.value = false
         stopPolling()
+        stopTypewriter()
         return
       }
       progressChars.value = d.progressChars || progressChars.value
+
+      // 1) 追加增量正文（按 agent），并推进本地已读位置（下次 offsets 回传）
+      if (Array.isArray(d.deltas)) {
+        d.deltas.forEach(dl => {
+          const j = agents.value.findIndex(a => a.key === dl.agent)
+          if (j < 0) return
+          const card = agents.value[j]
+          card.received = (card.received || '') + (dl.data || '')
+          offsets[dl.agent] = (card.received || '').length
+          if (card.status === 'waiting') card.status = 'running'
+        })
+      }
+      // 2) 推进卡片状态（currentAgent 高亮 / agentsDone 标完成）
       const idx = agents.value.findIndex(a => a.key === d.currentAgent)
       if (idx >= 0) {
         markPreviousDone(idx)
@@ -264,22 +269,31 @@ const startPolling = (jobId) => {
           if (j >= 0) agents.value[j].status = 'done'
         })
       }
+      startTypewriter()
+
+      // 3) 完成：用最终全文校准，打字机继续播完剩余
       if (d.status === 'done') {
+        doneReceived = true
         reportName.value = d.reportName || ''
         reportId.value = d.reportId ? String(d.reportId) : ''
         savedHint.value = d.saved === false ? '（但落库失败，详见后端日志）' : '并已保存'
         localStorage.removeItem('reportJobId')
         stopPolling()
         const list = d.content && Array.isArray(d.content.agents) ? d.content.agents : []
-        revealSegments(list)   // 内部会把 running 置 false
+        list.forEach(seg => {
+          const j = agents.value.findIndex(a => a.key === (seg.key || seg.name))
+          if (j >= 0) agents.value[j].received = String(seg.content || '')
+        })
+        startTypewriter()
         return
       }
-      pollTimer = setTimeout(poll, 4000)
+      pollTimer = setTimeout(poll, 1500)
     } catch (e) {
       errorMsg.value = `轮询失败：${e.message}`
       localStorage.removeItem('reportJobId')
       running.value = false
       stopPolling()
+      stopTypewriter()
     }
   }
   poll()
