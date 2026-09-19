@@ -266,11 +266,20 @@ public class CareerReportController {
         java.util.List<java.util.Map<String, String>> agents = new java.util.ArrayList<>();
         try {
             com.fasterxml.jackson.databind.JsonNode root = objectMapper.readTree(report.getReportContent());
-            for (com.fasterxml.jackson.databind.JsonNode a : root.path("agents")) {
+            String finalText = root.path("final").asText("");
+            if (!finalText.isBlank()) {
+                // 最终报告 = 第 6 段整合后的简介
                 java.util.Map<String, String> m = new java.util.LinkedHashMap<>();
-                m.put("name", a.path("name").asText("报告章节"));
-                m.put("content", a.path("content").asText(""));
+                m.put("name", report.getReportName());
+                m.put("content", finalText);
                 agents.add(m);
+            } else {
+                for (com.fasterxml.jackson.databind.JsonNode a : root.path("agents")) {
+                    java.util.Map<String, String> m = new java.util.LinkedHashMap<>();
+                    m.put("name", a.path("name").asText("报告章节"));
+                    m.put("content", a.path("content").asText(""));
+                    agents.add(m);
+                }
             }
         } catch (Exception e) {
             System.err.println("解析报告内容失败，导出纯文本: " + e.getMessage());
@@ -296,6 +305,9 @@ public class CareerReportController {
         try {
             java.util.List<java.util.Map<String, Object>> agents = new java.util.ArrayList<>();
             StringBuilder fullText = new StringBuilder();
+            String finalText = null;
+            java.util.List<java.util.Map<String, Object>> goals = new java.util.ArrayList<>();
+            String targetJob = null;
             for (com.fasterxml.jackson.databind.JsonNode a : agentsNode) {
                 String key = a.path("key").asText("");
                 String name = a.path("name").asText(AGENT_NAMES.getOrDefault(key, key));
@@ -306,10 +318,37 @@ public class CareerReportController {
                 item.put("content", content);
                 agents.add(item);
                 fullText.append(content).append("\n\n");
+                // 最终报告 = 第 6 段（report_composition）；其中可能含结构化 1/3/5 目标块（前端不展示）
+                if ("report_composition".equals(key)) {
+                    final String M_START = "<<<GOALS_JSON>>>";
+                    final String M_END = "<<<END_GOALS_JSON>>>";
+                    int s = content.indexOf(M_START);
+                    int e = content.indexOf(M_END);
+                    if (s >= 0 && e > s) {
+                        String goalJson = content.substring(s + M_START.length(), e).trim();
+                        finalText = (content.substring(0, s) + content.substring(e + M_END.length())).trim();
+                        try {
+                            com.fasterxml.jackson.databind.JsonNode g = objectMapper.readTree(goalJson);
+                            targetJob = g.path("targetJob").asText(null);
+                            for (com.fasterxml.jackson.databind.JsonNode gi : g.path("goals")) {
+                                goals.add(objectMapper.convertValue(gi, java.util.Map.class));
+                            }
+                        } catch (Exception ex) {
+                            System.err.println("解析结构化目标失败（降级，不影响报告）: " + ex.getMessage());
+                        }
+                    } else {
+                        finalText = content;
+                    }
+                }
+            }
+            if (finalText == null || finalText.isBlank()) {
+                finalText = fullText.toString().trim();   // 降级：无第 6 段则用全文
             }
             java.util.Map<String, Object> content = new java.util.LinkedHashMap<>();
-            content.put("agents", agents);
-            content.put("fullText", fullText.toString());
+            content.put("agents", agents);          // 6 段过程（multi-agent 页 / 过程留档）
+            content.put("final", finalText);         // 最终报告（简介，用户可见）
+            content.put("goals", goals);             // 结构化 1/3/5 目标（仅后端用）
+            content.put("fullText", finalText);
 
             String reportName = (platformName != null && !platformName.isBlank())
                     ? platformName
@@ -338,6 +377,14 @@ public class CareerReportController {
             history.setCreateTime(java.time.LocalDateTime.now());
             careerReportHistoryMapper.insert(history);
             System.out.println("职业报告已落库, id=" + report.getId() + ", 智能体数=" + agents.size());
+            // 结构化 1/3/5 年目标 → grow_plan / grow_task（完成情况后续由 /api/grow 更新）
+            if (!goals.isEmpty()) {
+                try {
+                    growPlanService.saveGoalsFromReport(userId, report.getId(), targetJob, goals);
+                } catch (Exception ex) {
+                    System.err.println("写入成长计划失败（不影响报告落库）: " + ex.getMessage());
+                }
+            }
             java.util.Map<String, Object> info = new java.util.LinkedHashMap<>();
             info.put("reportId", report.getId());
             info.put("reportName", report.getReportName());
@@ -362,6 +409,9 @@ public class CareerReportController {
 
     @Autowired
     private CareerReportService careerReportService;
+
+    @Autowired
+    private org.example.web.service.GrowPlanService growPlanService;
 
     /**
      * 创建职业报告
