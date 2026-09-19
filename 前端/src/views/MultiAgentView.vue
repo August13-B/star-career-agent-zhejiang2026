@@ -54,7 +54,15 @@
             </div>
           </div>
           <div class="agent-body" v-if="agent.content">
-            <div class="markdown" v-html="renderMarkdown(agent.content)"></div>
+            <div
+              class="markdown"
+              :class="{ 'is-collapsed': !agent.expanded }"
+              :ref="el => setBodyRef(i, el)"
+              v-html="renderMarkdown(agent.expanded ? agent.content : tailLines(agent.content, 3))"
+            ></div>
+            <button class="expand-btn" @click="toggleExpand(i)">
+              {{ agent.expanded ? '收起' : '展开全文' }}
+            </button>
           </div>
           <div class="agent-placeholder" v-else>
             {{ agent.status === 'running' ? '正在检索知识库并生成…' : '等待前序智能体完成' }}
@@ -77,7 +85,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import axios from 'axios'
 import AppIcon from '../components/AppIcon.vue'
@@ -106,7 +114,27 @@ const progressChars = ref(0)
 const reportName = ref('')
 const reportId = ref('')
 const errorMsg = ref('')
-const agents = ref(AGENT_DEFS.map(a => ({ ...a, status: 'waiting', content: '' })))
+const agents = ref(AGENT_DEFS.map(a => ({ ...a, status: 'waiting', content: '', received: '', expanded: false })))
+
+// 卡片正文 DOM（展开态自动滚到底部）
+const bodyRefs = []
+const setBodyRef = (i, el) => { if (el) bodyRefs[i] = el }
+const toggleExpand = (i) => {
+  const card = agents.value[i]
+  if (!card) return
+  card.expanded = !card.expanded
+  if (card.expanded) {
+    nextTick(() => {
+      const el = bodyRefs[i]
+      if (el) el.scrollTop = el.scrollHeight
+    })
+  }
+}
+// 收起态：只展示最新的 n 行
+const tailLines = (text, n = 3) => {
+  const lines = String(text || '').split('\n').map(l => l.replace(/\s+$/, '')).filter(l => l.trim() !== '')
+  return lines.slice(-n).join('\n')
+}
 
 const getUserInfo = async () => {
   const token = localStorage.getItem('token')
@@ -148,7 +176,7 @@ const startTypewriter = () => {
   if (typeTimer) return
   typeTimer = setInterval(() => {
     let catchingUp = false
-    agents.value.forEach(card => {
+    agents.value.forEach((card, i) => {
       const recv = card.received || ''
       const shown = card.content || ''
       if (shown.length < recv.length) {
@@ -156,6 +184,11 @@ const startTypewriter = () => {
         const step = Math.max(2, Math.ceil(backlog / 30))
         card.content = recv.slice(0, shown.length + step)
         catchingUp = true
+        // 展开态：自动滚到底，保证总看到最新输出
+        if (card.expanded && bodyRefs[i]) {
+          const el = bodyRefs[i]
+          el.scrollTop = el.scrollHeight
+        }
       }
     })
     // 全部播完 且 已收到 done → 收尾
@@ -173,7 +206,7 @@ const reset = () => {
   stopTypewriter()
   offsets = {}
   doneReceived = false
-  agents.value = AGENT_DEFS.map(a => ({ ...a, status: 'waiting', content: '', received: '' }))
+  agents.value = AGENT_DEFS.map(a => ({ ...a, status: 'waiting', content: '', received: '', expanded: false }))
   finished.value = false
   errorMsg.value = ''
   savedHint.value = ''
@@ -224,16 +257,37 @@ const generate = async () => {
 }
 
 // 轮询平台任务：带 offsets 拿正文增量 → 本地打字机实时呈现
+// 健壮性：请求超时 + 失败重试（不中断、不清 jobId） + 页面可见时立即补拉
+let pollFailures = 0
+let pollToken = 0
+const POLL_MS = 1500
+const POLL_TIMEOUT_MS = 12000
+
 const startPolling = (jobId) => {
   stopPolling()
+  pollFailures = 0
+  const myToken = ++pollToken
   const poll = async () => {
+    if (myToken !== pollToken) return
     try {
       const token = localStorage.getItem('token') || ''
       const res = await axios.get(`/api/career-report/jobs/${jobId}`, {
         params: { offsets: JSON.stringify(offsets) },
+        timeout: POLL_TIMEOUT_MS,
         headers: token ? { Authorization: token.startsWith('Bearer ') ? token : `Bearer ${token}` } : {}
       })
-      const d = (res.data && res.data.data) ? res.data.data : {}
+      // 已被新一轮轮询（如可见性回调）取代 → 丢弃旧响应，避免重复追加
+      if (myToken !== pollToken) return
+      pollFailures = 0
+      const body = res.data || {}
+      // 后端返回业务错误（如 Result.error）时不能默默继续轮询
+      if (body.code !== undefined && body.code !== 10001 && body.code !== 200 && body.code !== 0) {
+        throw new Error(body.message || '查询报告任务失败')
+      }
+      const d = body.data || {}
+      if (!d.status && !d.error) {
+        throw new Error('报告任务响应异常（无 status）')
+      }
       if (d.error) {
         errorMsg.value = String(d.error)
         const ra = agents.value.find(a => a.status === 'running')
@@ -287,13 +341,20 @@ const startPolling = (jobId) => {
         startTypewriter()
         return
       }
-      pollTimer = setTimeout(poll, 1500)
+      pollTimer = setTimeout(poll, POLL_MS)
     } catch (e) {
-      errorMsg.value = `轮询失败：${e.message}`
-      localStorage.removeItem('reportJobId')
-      running.value = false
-      stopPolling()
-      stopTypewriter()
+      if (myToken !== pollToken) return
+      pollFailures++
+      if (pollFailures >= 6) {
+        errorMsg.value = `轮询失败（已重试 ${pollFailures} 次）：${e.message}`
+        localStorage.removeItem('reportJobId')
+        running.value = false
+        stopPolling()
+        stopTypewriter()
+        return
+      }
+      // 保留 jobId，稍后重试；不中断、不清 localStorage
+      pollTimer = setTimeout(poll, 3000)
     }
   }
   poll()
@@ -315,13 +376,67 @@ const renderMarkdown = (text) => {
   return `<p>${html}</p>`
 }
 
+// 无进行中任务时：拉取该用户最近一份报告并直接展示（刷新后也能看到最终报告）
+const loadLatestReport = async () => {
+  if (!userId.value) return
+  try {
+    const token = localStorage.getItem('token') || ''
+    const res = await axios.get(`/api/career-report/user/${userId.value}`, {
+      timeout: 12000,
+      headers: token ? { Authorization: token.startsWith('Bearer ') ? token : `Bearer ${token}` } : {}
+    })
+    const body = res.data || {}
+    if (body.code !== 10001 && body.code !== 200 && body.code !== 0) return
+    const list = Array.isArray(body.data) ? body.data : []
+    if (list.length === 0) return
+    const latest = list[0]
+    let content = null
+    try {
+      content = typeof latest.reportContent === 'string' ? JSON.parse(latest.reportContent) : latest.reportContent
+    } catch (e) { content = null }
+    const list2 = content && Array.isArray(content.agents) ? content.agents : []
+    if (list2.length === 0) return
+    reportName.value = latest.reportName || ''
+    reportId.value = latest.id ? String(latest.id) : ''
+    savedHint.value = '（最近一次）'
+    list2.forEach(seg => {
+      const j = agents.value.findIndex(a => a.key === (seg.key || seg.name))
+      if (j >= 0) {
+        const card = agents.value[j]
+        card.received = String(seg.content || '')
+        card.content = card.received
+        card.status = 'done'
+      }
+    })
+    agents.value.forEach(c => { if (c.status !== 'error' && !c.received) c.status = 'done' })
+    finished.value = true
+    running.value = false
+  } catch (e) { /* 无历史/未登录时忽略 */ }
+}
+
+// 页面可见/聚焦时立即补拉一次（后台标签页会被浏览器节流定时器，表现就是“看着卡住”）
+const catchUp = () => {
+  if (document.visibilityState !== 'visible') return
+  if (!running.value) return
+  const jobId = localStorage.getItem('reportJobId')
+  if (jobId) {
+    stopPolling()
+    startPolling(jobId)
+  }
+  if (!typeTimer) startTypewriter()
+}
+document.addEventListener('visibilitychange', catchUp)
+window.addEventListener('focus', catchUp)
+
 onMounted(async () => {
   await getUserInfo()
-  // 刷新续跑：任务在平台侧独立运行，用持久化的 jobId 继续轮询
   const jobId = localStorage.getItem('reportJobId')
   if (jobId && userId.value) {
+    // 刷新续跑：任务在平台侧独立运行，用持久化的 jobId 继续轮询
     running.value = true
     startPolling(jobId)
+  } else {
+    await loadLatestReport()
   }
 })
 </script>
@@ -379,7 +494,13 @@ onMounted(async () => {
 .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; animation: pulse 1.2s infinite; }
 @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.25; } }
 
-.agent-body { margin-top: 12px; border-top: 1px solid #F1F5F9; padding-top: 10px; }
+.agent-body { margin-top: 12px; border-top: 1px solid #F1F5F9; padding-top: 10px; display: flex; flex-direction: column; }
+/* 收起态：只显示最新 3 行（内容由 tailLines 截取） */
+.agent-body .markdown.is-collapsed { max-height: none; overflow: hidden; }
+/* 展开态：可滚动，JS 每次输出自动滚到底，保证总看到最新 */
+.agent-body .markdown:not(.is-collapsed) { max-height: 60vh; overflow-y: auto; padding-right: 6px; }
+.expand-btn { align-self: flex-start; margin-top: 8px; background: none; border: none; color: #2563EB; font-size: 0.78rem; font-weight: 600; cursor: pointer; padding: 2px 0; }
+.expand-btn:hover { text-decoration: underline; }
 .agent-placeholder { margin-top: 10px; font-size: 0.82rem; color: #B6C2D2; }
 
 .markdown :deep(h2), .markdown :deep(h3), .markdown :deep(h4) { color: #1E293B; margin: 12px 0 8px; font-weight: 650; }
