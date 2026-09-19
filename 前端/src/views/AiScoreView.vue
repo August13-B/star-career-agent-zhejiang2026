@@ -131,7 +131,11 @@ const getHeaders = () => {
 
 const startAnalysis = async () => {
   if (!analyzeMessage.value.trim()) return
-  const userId = localStorage.getItem('userId') || 8 
+  const userId = localStorage.getItem('userId') || ''
+  if (!/^\d+$/.test(userId) || userId === '0') {
+    alert('登录状态已失效，请重新登录后再测算')
+    return
+  }
   
   isAnalyzing.value = true
   scoreData.value = null
@@ -139,7 +143,8 @@ const startAnalysis = async () => {
 
   try {
     const payload = {
-      userId: Number(userId),
+      // 64 位雪花 ID 必须保持字符串，Number() 会丢精度
+      userId: userId,
       message: analyzeMessage.value.trim(),
       temperature: temperature.value
     }
@@ -150,7 +155,7 @@ const startAnalysis = async () => {
       scoreData.value = data
       
       // ... 前面的代码 ...
-      decryptedComment.value = "AI 已完成测算" + data.scoreComment.substring(0, 500)
+      decryptedComment.value = "AI 已完成测算" + String(data.scoreComment || '').substring(0, 500)
 
       await nextTick()
       // 🌟 修复 ECharts 缩骨功：延迟 150 毫秒，等 CSS 和 Flexbox 把盒子完全撑开后再画图！

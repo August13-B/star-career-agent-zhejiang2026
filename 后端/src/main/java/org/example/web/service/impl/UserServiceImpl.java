@@ -122,7 +122,7 @@ public class UserServiceImpl implements UserService {
 
     @Autowired
     JavaMailSender mailSender;
-    @Async
+    // 注意：不能加 @Async：邮件发送失败会被异步线程吞掉，接口仍返回“已发送”
     @Override
     public void sendmail(String email, HttpSession session) {
         System.out.println(email);
@@ -142,7 +142,12 @@ public class UserServiceImpl implements UserService {
 
             }
         };
-        mailSender.send(preparator);
+        try {
+            mailSender.send(preparator);
+        } catch (Exception e) {
+            System.err.println("【发送注册验证码失败】to=" + email + " : " + e.getMessage());
+            throw new RuntimeException("邮件发送失败：" + e.getMessage(), e);
+        }
     }
 
     @Override
@@ -197,7 +202,6 @@ public class UserServiceImpl implements UserService {
             throw new RuntimeException("手机号查询失败", e);
         }
     }
-    @Async
     @Override
     public void forget_password_sendmail(String email, HttpSession session) {
         System.out.println(email);
@@ -218,7 +222,12 @@ public class UserServiceImpl implements UserService {
 
             }
         };
-        mailSender.send(preparator);
+        try {
+            mailSender.send(preparator);
+        } catch (Exception e) {
+            System.err.println("【发送重置密码验证码失败】to=" + email + " : " + e.getMessage());
+            throw new RuntimeException("邮件发送失败：" + e.getMessage(), e);
+        }
     }
 
     @Override

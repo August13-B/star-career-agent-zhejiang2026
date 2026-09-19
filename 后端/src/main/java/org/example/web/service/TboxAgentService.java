@@ -25,6 +25,18 @@ public interface TboxAgentService {
     Flux<String> chatStream(Long userId, Long localConversationId, String message);
 
     /**
+     * 同步对话（内部调用）：收集平台 WS 文本输出，返回完整纯文本。
+     *
+     * <p>用于「非流式」后端内部场景（如岗位图谱对比分析、兼容旧的同步接口）。
+     * 平台不可用时返回空字符串。
+     *
+     * @param userId              本地用户ID（可为 null）
+     * @param localConversationId 本地对话ID（可为 null，不落库会话映射）
+     * @param message             用户消息
+     */
+    String chatSync(Long userId, Long localConversationId, String message);
+
+    /**
      * 职业报告多智能体流式（按段标记切分）
      *
      * <p>返回元素为结构化 JSON：{"agent":"<智能体key>","data":"<增量文本>"}；

@@ -50,6 +50,9 @@ public class StudentProfileServiceImpl implements StudentProfileService {
         if (profile.getSkill() != null) profile.setSkill(rsa256.rsaEncrypt(profile.getSkill()));
         if (profile.getCertificate() != null) profile.setCertificate(rsa256.rsaEncrypt(profile.getCertificate()));
 
+        // 逻辑删除列必须显式写 0（否则 NULL 会让 `is_deleted = 0` 的查询永远查不到）
+        if (profile.getIsDeleted() == null) profile.setIsDeleted(0);
+
         // 入库
         studentProfileMapper.insert(profile);
         return List.of(profile);
@@ -433,6 +436,11 @@ public class StudentProfileServiceImpl implements StudentProfileService {
         try {
             // 使用雪花算法生成分布式ID
             student.setId(SnowIdCreater.generateId(3)); // 类别3=student_profile
+
+            // 逻辑删除列必须显式写 0（否则 NULL 会让 `is_deleted = 0` 的查询永远查不到）
+            if (student.getIsDeleted() == null) {
+                student.setIsDeleted(0);
+            }
 
             // 使用RSA加密所有敏感字段
             if (student.getUserName() != null) {

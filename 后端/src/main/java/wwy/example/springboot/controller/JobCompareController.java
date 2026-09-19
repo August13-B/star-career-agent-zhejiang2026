@@ -8,7 +8,7 @@ import wwy.example.springboot.dto.JobIdRequest;
 import wwy.example.springboot.service.JobCompareService;
 
 @RestController
-@CrossOrigin(origins = "*")
+@CrossOrigin
 @RequestMapping("/job-compare")
 @RequiredArgsConstructor
 public class JobCompareController {

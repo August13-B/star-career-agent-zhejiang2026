@@ -405,7 +405,9 @@ public class UserController {
      */
     @GetMapping("/getUserInfo")
     @CrossOrigin
-    public Result<Map<String, Object>> getUserInfo(@RequestHeader("Authorization") String token,@RequestParam String IV,@RequestParam String AES) {
+    public Result<Map<String, Object>> getUserInfo(@RequestHeader("Authorization") String token,
+                                                   @RequestParam(value = "IV", required = false) String IV,
+                                                   @RequestParam(value = "AES", required = false) String AES) {
         if (AES != null && AES.contains(" ")) {
             AES = AES.replace(' ', '+');
         }
@@ -424,8 +426,21 @@ public class UserController {
             if (user == null) {
                 return Result.<Map<String, Object>>error("用户不存在", null);
             }
-            String aesKey = rsa256.rsaDecrypt(AES);
-            String aesIv = rsa256.rsaDecrypt(IV);
+            // IV/AES 为可选：仅当调用方需要拿回加密的手机号/邮箱时才需要传。
+            // 很多调用点（个人中心、多智能体页）只取 id/nickname/userRole，
+            // 早期版本把 IV/AES 声明为必填，导致这些请求 400 被静默吞掉，
+            // 进而 userId 无法刷新（旧 userId 残留 → 保存外键失败）。
+            boolean canEncryptContact = IV != null && !IV.isBlank() && AES != null && !AES.isBlank();
+            String aesKey = null;
+            String aesIv = null;
+            if (canEncryptContact) {
+                try {
+                    aesKey = rsa256.rsaDecrypt(AES);
+                    aesIv = rsa256.rsaDecrypt(IV);
+                } catch (Exception e) {
+                    canEncryptContact = false;
+                }
+            }
             String phone=null;
             String email=null;
             if(user.getPhone() != null && !user.getPhone().isEmpty()){
@@ -444,10 +459,10 @@ public class UserController {
             userInfo.put("userStatus", user.getUserStatus());
             userInfo.put("createTime", user.getCreateTime());
             userInfo.put("nickname", user.getNickname());
-            if(phone!=null && !phone.isEmpty()){
+            if(canEncryptContact && phone!=null && !phone.isEmpty()){
                 userInfo.put("phone", rsa256.aesEncrypt(phone, aesKey, aesIv));
             }
-            if(email!=null && !email.isEmpty()){
+            if(canEncryptContact && email!=null && !email.isEmpty()){
                 userInfo.put("email", rsa256.aesEncrypt(email, aesKey, aesIv));
             }
             return Result.success(userInfo);
@@ -482,7 +497,12 @@ public class UserController {
         // 检查发送频率
         Long lasttime = userService.getcodetime(session);
         if (lasttime==null || System.currentTimeMillis()-lasttime>60*1000){
-            userService.sendmail(email,session);
+            try {
+                userService.sendmail(email,session);
+            } catch (Exception mailEx) {
+                // 邮件发送失败需明确告知，不能再假成功
+                return Result.error("验证码发送失败：" + mailEx.getMessage());
+            }
             return Result.success("验证码已发送，请注意查收！！");
         } else{
             Integer time = Math.toIntExact((60000-(System.currentTimeMillis()-lasttime)) / 1000);
@@ -571,7 +591,11 @@ public class UserController {
         if (userEmail != null){
             Long lasttime = userService.getcodetime(session);
             if (lasttime==null || System.currentTimeMillis()-lasttime>60*1000){
-                userService.forget_password_sendmail(email,session);
+                try {
+                    userService.forget_password_sendmail(email,session);
+                } catch (Exception mailEx) {
+                    return Result.error("验证码发送失败：" + mailEx.getMessage());
+                }
                 return Result.success("验证码已发送，请注意查收！！");
             } else{
                 Integer time = Math.toIntExact((60000-(System.currentTimeMillis()-lasttime)) / 1000);

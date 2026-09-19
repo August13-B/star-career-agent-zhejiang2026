@@ -77,8 +77,11 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import axios from 'axios'
 import AppIcon from '../components/AppIcon.vue'
+
+const router = useRouter()
 
 const AGENT_DEFS = [
   { key: 'profile_analysis', name: '画像分析', desc: '能力现状与优劣势诊断' },
@@ -101,16 +104,28 @@ const errorMsg = ref('')
 const agents = ref(AGENT_DEFS.map(a => ({ ...a, status: 'waiting', content: '' })))
 
 const getUserInfo = async () => {
+  const token = localStorage.getItem('token')
+  if (!token) {
+    userId.value = ''
+    return
+  }
   try {
-    const token = localStorage.getItem('token')
-    const headers = token ? { Authorization: token.startsWith('Bearer ') ? token : `Bearer ${token}` } : {}
+    const headers = { Authorization: token.startsWith('Bearer ') ? token : `Bearer ${token}` }
     const res = await axios.get('/api/user/getUserInfo', { headers })
     if (res.data?.data?.id) {
+      // 64 位雪花 ID 保持字符串，切勿 Number()
       userId.value = String(res.data.data.id)
       localStorage.setItem('userId', userId.value)
+    } else {
+      // token 失效 / 用户已被清理：旧的 localStorage.userId 会直接导致报告落库外键失败
+      localStorage.removeItem('userId')
+      userId.value = ''
+      alert('登录状态已失效，请重新登录后再生成报告')
+      router.push('/login')
     }
   } catch (e) {
-    /* 未登录时保持为空 */
+    localStorage.removeItem('userId')
+    userId.value = ''
   }
 }
 
@@ -167,11 +182,11 @@ const generate = async () => {
         try { msg = JSON.parse(raw) } catch { continue }
 
         if (msg.done) {
-          // 兼容两种后端契约：{done,agents,hasMarkers} 与 {done,agents,reportName,reportId}
+          // 后端结束帧：{done, agents, hasMarkers, saved, reportId, reportName}
           hasMarkers.value = msg.hasMarkers !== false
           reportName.value = msg.reportName || ''
           reportId.value = msg.reportId ? String(msg.reportId) : ''
-          savedHint.value = '并已保存'
+          savedHint.value = msg.saved === false ? '（但落库失败，详见后端日志）' : '并已保存'
           continue
         }
         const idx = agents.value.findIndex(a => a.key === msg.agent)

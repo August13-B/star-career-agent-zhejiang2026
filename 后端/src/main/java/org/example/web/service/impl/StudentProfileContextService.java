@@ -73,15 +73,16 @@ public class StudentProfileContextService {
             StudentProfile p = firstOf(studentProfileMapper.selectByUserId(userId));
             if (p != null) {
                 sb.append("[基本信息]\n");
-                append(sb, "学历", p.getEducation());
+                append(sb, "姓名", dec(p.getUserName()));
+                append(sb, "学历", dec(p.getEducation()));
                 append(sb, "学院/专业", join(dec(p.getCollege()), dec(p.getMajor())));
-                append(sb, "年级", p.getGrade());
+                append(sb, "年级", dec(p.getGrade()));
                 append(sb, "毕业时间", p.getGraduationDate() == null ? null : p.getGraduationDate().toLocalDate().toString());
-                append(sb, "职业意向", p.getCareerIntentions());
-                append(sb, "职位意向详情", p.getJobIntentionDetail());
-                append(sb, "目标城市", p.getTargetCity());
-                append(sb, "期望薪资", p.getExpectedSalary());
-                append(sb, "行业偏好", p.getIndustryPreference());
+                append(sb, "职业意向", dec(p.getCareerIntentions()));
+                append(sb, "职位意向详情", dec(p.getJobIntentionDetail()));
+                append(sb, "目标城市", dec(p.getTargetCity()));
+                append(sb, "期望薪资", dec(p.getExpectedSalary()));
+                append(sb, "行业偏好", dec(p.getIndustryPreference()));
                 if (p.getWorkTypePreference() != null) {
                     append(sb, "工作类型偏好", String.valueOf(p.getWorkTypePreference()));
                 }

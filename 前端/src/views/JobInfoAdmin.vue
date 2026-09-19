@@ -415,7 +415,8 @@ const closeRequirementModal = () => { requirementModal.visible = false }
 const submitRequirementForm = async () => {
   requirementModal.submitting = true
   try {
-    const payload = { ...requirementForm, jobId: Number(requirementForm.jobId) }
+    // jobId 为 64 位雪花值，必须保持字符串，Number() 会丢精度
+    const payload = { ...requirementForm, jobId: String(requirementForm.jobId) }
     if (requirementModal.type === 'add') {
       await axios.post(`${baseURL}/api/job-hard-requirement`, payload, { headers: getHeaders() })
       alert('新增成功！')

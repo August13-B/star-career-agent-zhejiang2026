@@ -100,6 +100,7 @@
             <if test="certificate != null">certificate,</if>
             <if test="studentGroup != null">student_group,</if>
             <if test="privacyLevel != null">privacy_level,</if>
+            is_deleted,
         </trim>
         <trim prefix="values (" suffix=")" suffixOverrides=",">
             <if test="id != null">#{id},</if>
@@ -129,6 +130,7 @@
             <if test="certificate != null">#{certificate},</if>
             <if test="studentGroup != null">#{studentGroup},</if>
             <if test="privacyLevel != null">#{privacyLevel},</if>
+            COALESCE(#{isDeleted}, 0),
         </trim>;
         select * from <include refid="baseTable" /> where id = #{id};
     </select>

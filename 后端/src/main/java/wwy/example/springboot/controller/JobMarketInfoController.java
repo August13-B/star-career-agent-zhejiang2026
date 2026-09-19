@@ -8,7 +8,7 @@ import wwy.example.springboot.entity.JobMarketInfo;
 import wwy.example.springboot.service.JobMarketInfoService;
 
 @RestController
-@CrossOrigin(origins = "*")
+@CrossOrigin
 @RequestMapping("/job-market-info")
 @RequiredArgsConstructor
 public class JobMarketInfoController {
