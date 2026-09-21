@@ -47,7 +47,7 @@ def _win(cmd: list[str]) -> list[str]:
         return cmd
     exe = cmd[0].lower()
     if exe.endswith((".cmd", ".bat")) or exe in ("npm", "npx", "nginx"):
-        return ["cmd", "/c"] + cmd
+        return [os.environ.get("COMSPEC", "cmd.exe"), "/c"] + cmd
     return cmd
 
 
@@ -87,6 +87,7 @@ def _pid_on_port(port: str) -> int | None:
     try:
         if IS_WINDOWS:
             r = subprocess.run(["netstat", "-ano"], capture_output=True, text=True,
+                               encoding="mbcs", errors="replace",
                                creationflags=subprocess.CREATE_NO_WINDOW)
             for line in r.stdout.splitlines():
                 if f":{port} " in line and "LISTENING" in line:
@@ -546,6 +547,7 @@ def _read_pid(name: str) -> int | None:
 def _pid_alive(pid: int) -> bool:
     if IS_WINDOWS:
         r = subprocess.run(["tasklist", "/FI", f"PID eq {pid}"], capture_output=True, text=True,
+                           encoding="mbcs", errors="replace",
                            creationflags=subprocess.CREATE_NO_WINDOW)
         return str(pid) in r.stdout
     try:
