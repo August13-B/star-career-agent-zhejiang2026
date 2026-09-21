@@ -56,8 +56,9 @@ python manage.py free-port backend
     平台**尚未实现** `POST {TBOX_API_URL}/api/chat/stream`（实测 **404 Not Found**），故默认走已验证的 `WSS /ws`
     （HELLO → SEND_MESSAGE → TEXT_MESSAGE_CONTENT* → RUN_FINISHED），后端 `TboxAgentServiceImpl.chatStream()` → 桥接为对前端的 SSE。
     - 带图片对话也走 `WS /ws`。待平台上线 `/api/chat/stream` 后，把 `TBOX_CHAT_CHANNEL` 改回 `http` 即可。
-    - 对话上下文：ws 路径用 `getFormattedStudentInfo()`（基本信息 + 能力文本，RSA 解密）；
-      http 路径用 `StudentProfileContextService.build()`（含 10 维评分 + 最近匹配）——两者范围不同，待统一。
+    - 对话上下文（**两条链路已统一**）：均用 `StudentProfileContextService.build()`
+      （基本信息 + 10 维评分 + 能力文本 + 最近一次人岗匹配，RSA 解密）。
+    - **RAG**：由**平台侧**完成（百宝箱应用挂载「岗位知识库」→ 智能体自动检索）；后端只注入画像。
     - 多轮历史：ws 路径由后端拼历史；http 路径由平台按 `conversationId` 注入。
 13. **报告可随时停止**（平台已上线）：前端「停止生成」→ 后端 `POST /api/career-report/jobs/{jobId}/cancel`
     → 平台 `POST /api/report/jobs/{jobId}/cancel`（abort、不落库、幂等、done no-op；`status=canceled` 为终态）。

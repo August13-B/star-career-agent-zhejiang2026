@@ -217,7 +217,8 @@ public class AIConversationServiceImpl implements AIConversationService {
             String conversationHistory = formatConversationHistory(historyMessages);
             
             // 6. 获取学生信息（每次对话都获取）
-            String studentInfo = getFormattedStudentInfo(userId);
+            // 统一复用报告的画像上下文（基本信息 + 10 维评分 + 能力文本 + 最近匹配）
+            String studentInfo = studentProfileContextService.build(userId, null, null);
             
             // 7. 构建完整的AI请求（按照用户要求的新格式）
             // 使用用户提供的temperature参数，如果为空则使用1.0
@@ -1394,7 +1395,8 @@ public class AIConversationServiceImpl implements AIConversationService {
             aiConversationMapper.updateConversationStatus(conversation.getId(), 1);
 
             // 7. 获取学生信息（每次对话都获取）
-            String studentInfo = getFormattedStudentInfo(userId);
+            // 统一复用报告的画像上下文（基本信息 + 10 维评分 + 能力文本 + 最近匹配）
+            String studentInfo = studentProfileContextService.build(userId, null, null);
             
             // 8. 构建最终消息
             String finalMessage;
@@ -1760,7 +1762,8 @@ public class AIConversationServiceImpl implements AIConversationService {
             String conversationHistory = formatConversationHistory(historyMessages);
 
             // 6. 获取学生信息（每次对话都获取）
-            String studentInfo = getFormattedStudentInfo(userId);
+            // 统一复用报告的画像上下文（基本信息 + 10 维评分 + 能力文本 + 最近匹配）
+            String studentInfo = studentProfileContextService.build(userId, null, null);
             
             // 7. 构建最终消息
             String finalMessage;
@@ -1935,7 +1938,8 @@ public class AIConversationServiceImpl implements AIConversationService {
             }
 
             // 6. 获取学生信息（每次对话都获取）
-            String studentInfo = getFormattedStudentInfo(userId);
+            // 统一复用报告的画像上下文（基本信息 + 10 维评分 + 能力文本 + 最近匹配）
+            String studentInfo = studentProfileContextService.build(userId, null, null);
             
             // 7. 更新对话状态为生成中
             conversation.setStatus(1);
