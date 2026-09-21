@@ -264,7 +264,14 @@ public class TboxAgentServiceImpl implements TboxAgentService {
             String type = n.path("type").asText("");
             switch (type) {
                 case "TEXT_MESSAGE_CONTENT" -> {
-                    String delta = firstNonBlank(n, "delta", "content", "text");
+                    // 空格和换行也是正文，不能沿用 ID 字段的非空白筛选。
+                    String delta = null;
+                    for (String field : List.of("delta", "content", "text")) {
+                        if (n.path(field).isTextual()) {
+                            delta = n.get(field).asText();
+                            break;
+                        }
+                    }
                     if (delta != null && !delta.isEmpty()) {
                         sink.tryEmitNext(chunk(delta));
                     }

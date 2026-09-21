@@ -9,6 +9,24 @@ import static org.mockito.Mockito.*;
 
 class TboxErrorFrameTest {
     @Test
+    void textDeltasPreserveWhitespaceAndMarkdownBoundaries() throws Exception {
+        var tbox = new TboxAgentServiceImpl(new TboxProperties(), mock(AiConversationMapper.class));
+        var mapper = new ObjectMapper();
+        var sink = reactor.core.publisher.Sinks.many().unicast().<String>onBackpressureBuffer();
+        var frames = new java.util.ArrayList<String>();
+        sink.asFlux().subscribe(frames::add);
+        var chunks = java.util.List.of("###", " ", "职业建议", "\n\n", "-", " ", "学习 Vue", "\n");
+        for (String delta : chunks) {
+            org.springframework.test.util.ReflectionTestUtils.invokeMethod(tbox, "handleEvent",
+                    mapper.writeValueAsString(java.util.Map.of("type", "TEXT_MESSAGE_CONTENT", "delta", delta)),
+                    sink, new java.util.concurrent.atomic.AtomicBoolean(), 2L);
+        }
+        StringBuilder text = new StringBuilder();
+        for (String frame : frames) text.append(mapper.readTree(frame).path("data").asText());
+        assertEquals(String.join("", chunks), text.toString());
+    }
+
+    @Test
     void missingConfigurationAndUnsupportedImageUseErrorFrames() throws Exception {
         var tbox = new TboxAgentServiceImpl(new TboxProperties(), mock(AiConversationMapper.class));
         var mapper = new ObjectMapper();
