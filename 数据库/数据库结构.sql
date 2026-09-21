@@ -869,7 +869,8 @@ CREATE TABLE `user`  (
   `update_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   `is_deleted` tinyint NOT NULL DEFAULT 0 COMMENT '逻辑删除：0=未删除，1=已删除',
   PRIMARY KEY (`id`) USING BTREE,
-  UNIQUE INDEX `uk_user_account`(`user_account` ASC) USING BTREE COMMENT '账号唯一索引'
+  UNIQUE INDEX `uk_user_account`(`user_account` ASC) USING BTREE COMMENT '账号唯一索引',
+  UNIQUE INDEX `uk_user_nickname`(`nickname` ASC) USING BTREE COMMENT '昵称唯一索引（支持昵称登录）'
 ) ENGINE = InnoDB CHARACTER SET = utf8mb4 COLLATE = utf8mb4_0900_ai_ci COMMENT = '用户核心信息表' ROW_FORMAT = DYNAMIC;
 
 -- ----------------------------

@@ -26,8 +26,8 @@
         
         <form v-if="isLogin" @submit.prevent="handleLogin" class="login-form">
           <div class="input-group">
-            <label>账号 / 邮箱 / 手机号 <span>*</span></label>
-            <input type="text" v-model="loginForm.account" placeholder="请输入登录凭证" required />
+            <label>账号 / 邮箱 / 昵称 <span>*</span></label>
+            <input type="text" v-model="loginForm.account" placeholder="请输入账号 / 邮箱 / 昵称" required />
           </div>
           <div class="input-group">
             <label>密码 <span>*</span></label>
@@ -300,9 +300,8 @@ const handleLogin = async () => {
 
   try {
     isLoading.value = true
-    let loginWay = 'userAccount'
-    if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(loginForm.account)) loginWay = 'email'
-    else if (/^\d{11}$/.test(loginForm.account)) loginWay = 'phone'
+    // 登录方式统一交给后端自动识别：邮箱 → 账号 → 昵称
+    const loginWay = 'auto'
 
     const { aesKey, aesIv } = generateAesKeyAndIv()
     const encryptedLoginValue = aesEncrypt(loginForm.account, aesKey, aesIv)

@@ -48,6 +48,11 @@ public class UserController {
         }
     }
 
+    /** 是否邮箱格式（用于登录方式的自动识别） */
+    private boolean isEmailLike(String s) {
+        return s != null && s.matches("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$");
+    }
+
     /**
      * 注册用户（支持加密邮箱、加密手机号、账号注册，支持邀请码验证）
      * 请求参数：nickname, userPassword, encryptedEmail, encryptedPhone, AES, IV, userAccount（可选），userRole（可选，整数），invitationCode（可选，字符串）
@@ -99,6 +104,10 @@ public class UserController {
         // 1. 参数验证
         if (nickname == null || nickname.length() > 32 || nickname.length() < 2) {
             return Result.error("昵称长度应在2-32位之间");
+        }
+        // 昵称唯一（支持昵称登录；DB 有唯一索引 uk_user_nickname 兜底防并发）
+        if (userService.isNicknameExist(nickname)) {
+            return Result.error("该昵称已被使用，请换一个");
         }
         if (userPassword == null || userPassword.length() < 6 || userPassword.length() > 20) {
             return Result.error("密码长度应在6-20位之间");
@@ -288,8 +297,8 @@ public class UserController {
         String AES = login_data.get("AES");
         String IV = login_data.get("IV");
         
-        // 1. 参数验证
-        if (login_way == null || encryptedLoginValue == null || encryptedPassword == null || 
+        // 1. 参数验证（login_way 可为空/auto，届时自动识别）
+        if (encryptedLoginValue == null || encryptedPassword == null || 
             AES == null || IV == null) {
             return Result.error("参数不能为空");
         }
@@ -330,20 +339,34 @@ public class UserController {
             return Result.error("密码不能为空");
         }
         
-        // 5. 根据登录方式查找用户
+        // 5. 查找用户：auto（默认）= 邮箱 → 账号 → 昵称；也兼容显式指定方式
         User user = null;
-        switch (login_way) {
-            case "userAccount":
-                user = userService.findByUserAccount(login_value);
-                break;
-            case "email":
-                user = userService.findByEmail(login_value);
-                break;
-            case "phone":
-                user = userService.findByPhone(login_value);
-                break;
-            default:
-                return Result.error("登录方式填写有误，应为 userAccount/email/phone");
+        String way = login_way == null ? "" : login_way.trim();
+        String lv = login_value.trim();
+        if (way.isEmpty() || "auto".equalsIgnoreCase(way)) {
+            if (isEmailLike(lv)) {
+                user = userService.findByEmail(lv);
+            }
+            if (user == null) {
+                user = userService.findByUserAccount(lv);
+            }
+            if (user == null) {
+                user = userService.findByNickname(lv);
+            }
+        } else {
+            switch (way) {
+                case "userAccount":
+                    user = userService.findByUserAccount(lv);
+                    break;
+                case "email":
+                    user = userService.findByEmail(lv);
+                    break;
+                case "nickname":
+                    user = userService.findByNickname(lv);
+                    break;
+                default:
+                    return Result.error("登录方式填写有误，应为 auto/userAccount/email/nickname");
+            }
         }
         
         // 6. 检查用户是否存在

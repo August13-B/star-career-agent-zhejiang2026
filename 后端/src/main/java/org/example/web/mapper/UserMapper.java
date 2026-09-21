@@ -41,6 +41,12 @@ public interface UserMapper {
     public User findByPhone(String phone);
 
     /**
+     * 根据昵称查找用户（用于昵称登录；nickname 有唯一索引 uk_user_nickname）
+     */
+    @Select("select * from user where nickname=#{nickname}")
+    public User findByNickname(String nickname);
+
+    /**
      * 根据邮箱更新密码
      */
     @Update("UPDATE user SET user_password = #{newPassword}, update_time = NOW() WHERE email = #{email}")
@@ -69,6 +75,9 @@ public interface UserMapper {
      */
     @Select("select count(*) from user where user_account=#{userAccount}")
     int countByUserAccount(String userAccount);
+
+    @Select("select count(*) from user where nickname=#{nickname}")
+    int countByNickname(String nickname);
 
     /**
      * 根据用户ID更新密码
