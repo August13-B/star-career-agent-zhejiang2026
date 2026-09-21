@@ -26,6 +26,8 @@
       </form>
       <p v-if="errorMessage" role="alert">{{ errorMessage }}</p>
       <CareerNextSteps :target="activeNode?.category !== '星尘' && activeNode?.name || realGraphData.center?.name || ''" />
+      <button v-if="realGraphData.center" :disabled="isGenerating" @click="generatePreview">{{ isGenerating ? '正在结合个人画像生成…' : '结合我的能力生成探索路径' }}</button>
+      <p v-if="isPreview">当前为 AI 个性化探索预览，仅供参考；刷新后恢复岗位库星图，不会更改公共数据。</p>
       <p v-if="realGraphData.center && !realGraphData.promotions?.length && !realGraphData.transfers?.length">该岗位尚无已保存的路径，可先进行能力测评或向智能体咨询。AI 建议不代表已验证的职业路线。</p>
     </div>
 
@@ -98,6 +100,26 @@ const selectedId = ref(String(route.query.id || ''))
 const keyword = ref(String(route.query.target || ''))
 const jobs = ref([])
 const errorMessage = ref('')
+const isGenerating = ref(false)
+const isPreview = ref(false)
+let graphRequest = 0
+const generatePreview = async () => {
+  if (isGenerating.value) return
+  const requestId = ++graphRequest
+  isGenerating.value = true
+  errorMessage.value = ''
+  try {
+    const res = await axios.post(`${baseURL}/api/analysis/graph/${selectedId.value}/preview`, {}, { headers: getHeaders(), timeout: 180000 })
+    if (requestId !== graphRequest) return
+    if (res.data.code !== 200 || !res.data.data?.center) throw new Error(res.data.message || '生成失败')
+    realGraphData.value = res.data.data
+    activeNode.value = null
+    isPreview.value = true
+    await nextTick()
+    initChart()
+  } catch (e) { if (requestId === graphRequest) errorMessage.value = e.message || '生成失败，请重试' }
+  finally { isGenerating.value = false }
+}
 const searchJobs = async () => {
   errorMessage.value = ''
   try {
@@ -133,6 +155,8 @@ const getStarStyle = () => {
 
 // ================= 🌟 获取星图数据 (带超级防崩盾) =================
 const fetchGraphData = async () => {
+  const requestId = ++graphRequest
+  isPreview.value = false
   const profileId = selectedId.value
   activeNode.value = null
   realGraphData.value = { center: null, promotions: [], transfers: [] }
@@ -143,6 +167,7 @@ const fetchGraphData = async () => {
     isDataEmpty.value = false;
     
     const res = await axios.get(`${baseURL}/api/analysis/graph/${profileId}`, { headers: getHeaders() })
+    if (requestId !== graphRequest) return
     
     // 防范后端嵌套多层数据
     let remoteData = res.data.data || res.data;
@@ -167,6 +192,7 @@ const fetchGraphData = async () => {
       isLoading.value = false;
     }
   } catch (error) {
+    if (requestId !== graphRequest) return
     errorMessage.value = '星图读取失败，请检查登录状态或稍后重试'
     console.error("接口请求失败:", error);
     isDataEmpty.value = true; 
@@ -285,7 +311,7 @@ const initChart = () => {
       padding: [12, 18], borderRadius: 12, boxShadow: '0 10px 30px rgba(0,0,0,0.5)',
       formatter: (p) => {
         if (!p.data || p.data.category === '星尘') return '';
-        return `<div style="display:flex;align-items:center;gap:8px;"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${p.color}"></span>${p.name}</div>`;
+        return String(p.name || '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
       } 
     },
     color: ['#3B82F6', '#10B981', '#A855F7'],
@@ -411,4 +437,10 @@ onUnmounted(() => {
 .close-btn:hover { background: rgba(255,255,255,0.05); color: #F8FAFC; border-color: rgba(255,255,255,0.2);}
 .panel-fade-enter-active, .panel-fade-leave-active { transition: all 0.5s cubic-bezier(0.2, 1, 0.3, 1); }
 .panel-fade-enter-from, .panel-fade-leave-to { opacity: 0; transform: translateX(30px) scale(0.95); filter: blur(5px); }
+.page-header form { display:flex; flex-wrap:wrap; gap:8px; margin:12px 0; }
+.page-header input, .page-header select, .page-header button { padding:10px; border-radius:8px; border:1px solid #bfd3ed; max-width:100%; }
+.graph-page.dark-universe { height:auto; min-height:100vh; overflow:auto; min-width:0; flex-shrink:1; }
+.page-header { min-width:0; overflow-wrap:anywhere; color:#e6efff; }
+.chart-container { min-height:520px; }
+@media (max-width: 1000px) { .graph-workspace { flex-direction:column; } .detail-panel { width:auto; } }
 </style>

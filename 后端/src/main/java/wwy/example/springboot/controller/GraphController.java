@@ -23,6 +23,43 @@ public class GraphController {
     private final JobRequirementProfileService profileService;
     private final JobPromotionGraphService promotionGraphService;
     private final JobTransferGraphService transferGraphService;
+    private final org.example.web.service.TboxAgentService tboxAgentService;
+    private final org.example.web.service.impl.StudentProfileContextService profileContext;
+
+    /** 按岗位画像生成个人探索预览，不把模型建议写入公共岗位库。 */
+    @PostMapping("/graph/{profileId}/preview")
+    public Result<GraphVO> preview(@PathVariable Long profileId,
+            @RequestHeader(value = "Authorization", required = false) String token) {
+        Long userId;
+        try {
+            userId = Long.valueOf(String.valueOf(org.example.web.tool.JwtUtil.parseToken(token).get("id")));
+        } catch (Exception e) { return Result.unauthorized("请登录后生成个人职业星图"); }
+        JobRequirementProfile profile = profileService.findById(profileId);
+        if (profile == null) return Result.notFound("岗位画像不存在");
+        try {
+            String prompt = "基于以下资料生成职业探索路径，仅输出JSON。它是AI参考建议，不是确定的晋升承诺。"
+                    + "promotions与transfers各最多3条，没有依据返回空数组；name必须是岗位名称，"
+                    + "skillDiff说明与当前能力差距。learningCycle无法估计时为null，不编造学历和经历。"
+                    + "结构：{\"promotions\":[{\"name\":\"岗位名\",\"skillDiff\":\"能力差距\",\"experience\":\"参考经验\",\"learningCycle\":null}],"
+                    + "\"transfers\":[{\"name\":\"岗位名\",\"skillDiff\":\"差距\",\"education\":\"参考学历\",\"experience\":\"参考经验\",\"learningCycle\":null,\"difficulty\":2}]}\n"
+                    + profileContext.build(userId, profile.getPositionName(), "以选择的岗位画像为基准")
+                    + "\n选中的岗位资料：" + cn.hutool.json.JSONUtil.toJsonStr(profile);
+            String text = tboxAgentService.chatSync(userId, null, prompt);
+            if (text == null || text.indexOf('{') < 0 || text.lastIndexOf('}') <= text.indexOf('{'))
+                return Result.error("AI未返回有效路径，请稍后重试");
+            GraphVO graph = cn.hutool.json.JSONUtil.toBean(text.substring(text.indexOf('{'), text.lastIndexOf('}') + 1), GraphVO.class);
+            if (graph.getPromotions() == null || graph.getTransfers() == null)
+                return Result.error("AI路径结构不完整，请重试");
+            graph.setPromotions(graph.getPromotions().stream().filter(n -> n != null && n.getName() != null && !n.getName().isBlank()).limit(3).toList());
+            graph.setTransfers(graph.getTransfers().stream().filter(n -> n != null && n.getName() != null && !n.getName().isBlank()).limit(3).toList());
+            if (graph.getPromotions().isEmpty() && graph.getTransfers().isEmpty())
+                return Result.error("当前资料不足以形成路径，请先完善个人画像");
+            GraphVO.CenterNode center = new GraphVO.CenterNode();
+            center.setName(profile.getPositionName()); center.setCategory(profile.getCategory());
+            graph.setCenter(center);
+            return Result.success("AI个人探索预览，不写入公共岗位库", graph);
+        } catch (Exception e) { return Result.error("AI路径生成失败，请稍后重试"); }
+    }
 
     @GetMapping("/graph/{profileId}")
     public Result<GraphVO> getGraphData(@PathVariable Long profileId) {
