@@ -167,6 +167,7 @@ AUTO_MIGRATIONS = [
     MIGRATIONS_DIR / "006_add_platform_report_id.sql",
     MIGRATIONS_DIR / "007_grow_plan_goals.sql",
     MIGRATIONS_DIR / "008_grow_task_record.sql",
+    MIGRATIONS_DIR / "009_user_nickname_unique.sql",
 ]
 EXPECTED_TABLES = 31
 
@@ -377,6 +378,7 @@ def cmd_db(args):
             "006_add_platform_report_id.sql",
             "007_grow_plan_goals.sql",
             "008_grow_task_record.sql",
+            "009_user_nickname_unique.sql",
         )]
         _apply_migrations(files)
     else:

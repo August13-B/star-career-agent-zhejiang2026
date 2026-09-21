@@ -279,6 +279,22 @@ public class UserServiceImpl implements UserService {
     }
 
     @Override
+    public User findByNickname(String nickname) {
+        if (nickname == null || nickname.isBlank()) {
+            return null;
+        }
+        return userMapper.findByNickname(nickname.trim());
+    }
+
+    @Override
+    public boolean isNicknameExist(String nickname) {
+        if (nickname == null || nickname.isBlank()) {
+            return false;
+        }
+        return userMapper.countByNickname(nickname.trim()) > 0;
+    }
+
+    @Override
     public void updatePasswordById(Long userId, String newPassword) {
         int affectedRows = userMapper.updatePasswordById(userId, newPassword);
         if (affectedRows == 0) {

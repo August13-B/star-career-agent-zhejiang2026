@@ -71,6 +71,9 @@ python manage.py free-port backend
     - 结构化目标写入 `grow_plan`（每 horizon 一行，`plan_type` 1=1年/2=3年/3=5年）+ `grow_task`（每 keyAction 一条）
     - 完成情况 API：`GET /api/grow/plans?userId=`、`PATCH /api/grow/tasks/{id}`（改状态并自动重算计划 progress/total_status）
     - 表迁移 **007**：`grow_plan.match_id` 改可空、`plan_type` 重定义；提示词见 `百宝箱/提示词-报告整合与结构化目标.md`
+17. **登录方式**：前端统一发 `login_way=auto`，后端按 **邮箱 → 账号 → 昵称** 依次查找；
+    手机号已从**登录方式**移除（注册/画像仍保留手机号）。`user.nickname` 有唯一索引（迁移 **009**），
+    注册接口会先校验昵称是否已被使用（唯一索引兜底并发）。
 
 ## 5. 当前阻塞（平台侧）
 

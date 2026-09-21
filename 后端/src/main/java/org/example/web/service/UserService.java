@@ -67,6 +67,9 @@ public interface UserService {
      */
     User findByPhone(String phone);
 
+    /** 根据昵称查找用户（昵称登录；nickname 有唯一索引） */
+    User findByNickname(String nickname);
+
     /**
      * 忘记密码发送邮件（针对邮箱）
      */
@@ -96,6 +99,9 @@ public interface UserService {
      * 检查用户账号是否已存在
      */
     boolean isUserAccountExist(String userAccount);
+
+    /** 昵称是否已存在 */
+    boolean isNicknameExist(String nickname);
 
     /**
      * 根据用户ID更新密码
