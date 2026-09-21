@@ -37,14 +37,8 @@
             </div>
           </div>
 
-          <div class="input-group slider-group">
-            <label>AI 严谨度 <span class="temp-val">{{ temperature }}</span></label>
-            <input type="range" v-model.number="temperature" min="0.1" max="1.0" step="0.1" class="hologram-slider" />
-            <div class="slider-labels">
-              <span>精准客观</span>
-              <span>发散创造</span>
-            </div>
-          </div>
+          <p>测评会使用个人中心已保存的画像与能力描述；请先补全实际经历。结果会供后续智能体咨询与职业报告参考。</p>
+          <p v-if="historyError" role="alert">{{ historyError }}</p>
 
           <button 
             class="start-btn" 
@@ -126,6 +120,7 @@ const analyzeMessage = ref(`请结合我的个人画像和能力描述，分析$
 const temperature = ref(0.1)
 const isAnalyzing = ref(false)
 const scoreData = ref(null)
+const historyError = ref('')
 const decryptedComment = ref('')
 
 const radarChartRef = ref(null)
@@ -271,9 +266,23 @@ const renderRadarChart = () => {
   chartInstance.value.setOption(option)
 }
 
-onMounted(() => { window.addEventListener('resize', () => chartInstance.value?.resize()) })
+const resizeChart = () => chartInstance.value?.resize()
+onMounted(async () => {
+  window.addEventListener('resize', resizeChart)
+  const userId = localStorage.getItem('userId') || ''
+  if (!/^\d+$/.test(userId)) return
+  try {
+    const res = await axios.get(`${baseURL}/api/ability/score/user/${userId}`, { headers: getHeaders() })
+    if (res.data.code !== 200) throw new Error(res.data.message || '读取测评失败')
+    const scores = Array.isArray(res.data.data) ? res.data.data : []
+    scoreData.value = [...scores].sort((a, b) => String(b.updateTime || b.createTime || '').localeCompare(String(a.updateTime || a.createTime || '')))[0] || null
+    decryptedComment.value = scoreData.value?.scoreComment || ''
+    await nextTick()
+    if (scoreData.value) renderRadarChart()
+  } catch (e) { historyError.value = '历史测评读取失败，请检查登录状态后重试。' }
+})
 onUnmounted(() => {
-  window.removeEventListener('resize', () => chartInstance.value?.resize())
+  window.removeEventListener('resize', resizeChart)
   if (chartInstance.value) chartInstance.value.dispose()
 })
 </script>

@@ -33,6 +33,7 @@ public class AIAnalysisServiceImpl implements AIAnalysisService {
     /** A02：AI 能力统一走蚂蚁百宝箱（自研 AI 服务已退役） */
     private final org.example.web.service.TboxAgentService tboxAgentService;
     private final StudentAbilityScoreService studentAbilityScoreService;
+    private final StudentProfileContextService profileContext;
 
     // 固定核心Prompt，用户的message会补充到这里
     private static final String AI_ANALYSIS_CORE_PROMPT = "请你根据提供的学生画像和能力维度信息，对学生的各项能力进行专业评分，严格按照以下要求输出：\n" +
@@ -123,10 +124,8 @@ public class AIAnalysisServiceImpl implements AIAnalysisService {
                 // 初步分缺失不影响本次测评
             }
             String prompt = finalUserPrompt
-                    + "\n\n【学生画像】\n" + JSONUtil.toJsonStr(userBackground)
-                    + "\n\n【能力维度】\n" + userData
-                    + (preliminary.isEmpty() ? ""
-                        : "\n\n【初步问卷测评分数（供参考，请在此基础上细化，不要简单照搬）】\n" + preliminary);
+                    + "\n评分仅为参考；缺失证据请在评语说明，不要虚构经历、排名或岗位要求。"
+                    + "\n" + profileContext.build(userId, null, userMessage);
             logger.info("【AI能力分析】构建的提示词长度: {}", prompt.length());
 
             // 6. 调用百宝箱（同步收集 WS 输出）
@@ -145,6 +144,7 @@ public class AIAnalysisServiceImpl implements AIAnalysisService {
             StudentAbilityScore abilityScore;
             try {
                 abilityScore = JSONUtil.toBean(jsonText, StudentAbilityScore.class);
+                validateScore(abilityScore);
             } catch (Exception e) {
                 logger.error("【AI能力分析】AI评分解析失败，数据：{}", jsonText, e);
                 return Result.error("AI返回结果解析失败", null);
@@ -216,11 +216,29 @@ public class AIAnalysisServiceImpl implements AIAnalysisService {
                 }
             }
 
-            return Result.success("AI能力分析评分完成", savedScoreList);
+            return Result.success("AI能力分析评分完成", savedScoreList.stream()
+                    .filter(score -> abilityScore.getId().equals(score.getId())).toList());
 
         } catch (Exception e) {
+            // 本方法返回业务错误而非抛出时，仍需撤销先前删除/插入。
+            org.springframework.transaction.interceptor.TransactionAspectSupport.currentTransactionStatus().setRollbackOnly();
             logger.error("【AI能力分析】全流程失败，userId：{}", userId, e);
             return Result.error("AI能力分析评分失败：" + e.getMessage(), null);
+        }
+    }
+
+    static void validateScore(StudentAbilityScore score) {
+        Integer[] values = {score.getEducationScore(), score.getInternshipScore(),
+                score.getProfessionalScore(), score.getCertificateScore(), score.getInnovationScore(),
+                score.getLearningScore(), score.getPressureScore(), score.getCommunicationScore(),
+                score.getProblemSolvingScore(), score.getTeamworkScore()};
+        for (Integer value : values) {
+            if (value == null || value < 0 || value > 100) throw new IllegalArgumentException("测评维度必须完整且在0至100之间");
+        }
+        if (score.getTotalScore() == null || score.getTotalScore().signum() < 0
+                || score.getTotalScore().compareTo(java.math.BigDecimal.valueOf(100)) > 0
+                || score.getScoreComment() == null || score.getScoreComment().isBlank()) {
+            throw new IllegalArgumentException("测评总分或评语不完整");
         }
     }
 
