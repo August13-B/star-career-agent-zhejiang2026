@@ -151,6 +151,7 @@ import axios from 'axios'
 import AppIcon from '../components/AppIcon.vue'
 import { generateAesKeyAndIv, rsaEncrypt } from '../utils/crypto'
 import { readSseData } from '../utils/sse'
+import { renderChatMarkdown as renderMarkdown } from '../utils/chatMarkdown'
 import { useRouter } from 'vue-router'
 const router = useRouter()
 
@@ -193,7 +194,7 @@ const formatText = (text) => {
   if (!text) return '';
   let str = String(text);
 
-  str = str.replace(/\\"/g, '"').replace(/\\\\/g, '\\').replace(/\\n/g, '\n');
+  // 原始正文保留反斜杠/换行；JSON 包装交由 JSON.parse 解码。
 
   if (str.includes('"career_pathway"') || str.includes('career_blueprint') || str.includes('career蓝图')) {
       let formatted = str
@@ -234,25 +235,6 @@ const formatText = (text) => {
 // ==========================================
 // Markdown 渲染器 (增强版：修复加粗、列表、换行)
 // ==========================================
-const renderMarkdown = (text) => {
-  if (!text) return '';
-  let html = text;
-  html = html.replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  html = html.replace(/```([\s\S]*?)```/g, '<pre class="md-pre"><code class="md-code-block">$1</code></pre>');
-  html = html.replace(/`([^`]+)`/g, '<code class="md-inline-code">$1</code>');
-  // 增强加粗正则，支持多行和复杂内容
-  html = html.replace(/\*\*([\s\S]*?)\*\*/g, '<strong class="md-bold">$1</strong>');
-  html = html.replace(/__([\s\S]*?)__/g, '<strong class="md-bold">$1</strong>');
-  html = html.replace(/^### (.*$)/gim, '<h3 class="md-h3">$1</h3>');
-  html = html.replace(/^#### (.*$)/gim, '<h4 class="md-h4">$1</h4>');
-  html = html.replace(/^## (.*$)/gim, '<h2 class="md-h2">$1</h2>');
-  // 支持无序列表
-  html = html.replace(/^\s*[-*+]\s+(.*$)/gim, '<div class="md-list-item"><span class="md-bullet">•</span> $1</div>');
-  // 支持数字有序列表 (1. 2. 3.)
-  html = html.replace(/^\s*(\d+\.)\s+(.*$)/gim, '<div class="md-list-item"><span class="md-num">$1</span> $2</div>');
-  html = html.replace(/\n/g, '<br>');
-  return html;
-};
 
 const getUserInfo = async () => {
   const token = localStorage.getItem('token')
@@ -600,6 +582,11 @@ onMounted(async () => {
 .bubble-image { width: 100%; height: auto; display: block; border-radius: 8px; }
 :deep(.markdown-body) { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; font-size: 1rem; }
 :deep(.md-bold) { color: #1E293B; font-weight: 800; }
+:deep(.md-paragraph) { margin: 0 0 10px; }
+:deep(.md-paragraph:last-child) { margin-bottom: 0; }
+:deep(.md-list) { margin: 8px 0 12px; padding-left: 1.5em; }
+:deep(.md-list li) { margin: 5px 0; }
+:deep(.md-h1), :deep(.md-h5), :deep(.md-h6) { font-size: 1.05rem; margin: 14px 0 8px; }
 :deep(.md-h2), :deep(.md-h3), :deep(.md-h4) { margin: 15px 0 10px 0; color: #1E293B; font-weight: 800; }
 :deep(.md-h2) { font-size: 1.25rem; border-bottom: 1px solid #E2E8F0; padding-bottom: 5px; }
 :deep(.md-h3) { font-size: 1.15rem; color: #2563EB; }
