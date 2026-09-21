@@ -12,7 +12,10 @@
         <div class="title-badge">
           <span class="pulse-dot"></span> AI 综合能力评估矩阵
         </div>
-        <h1 class="gradient-text">多维神经元测算系统</h1>
+        <h1 class="gradient-text">AI 能力测评</h1>
+        <CareerNextSteps :target="target" />
+        <router-link :to="{ path: '/graph', query: { target } }">返回职业星图选择岗位</router-link>
+        <p>基于已保存的个人画像与能力描述生成参考评估，不等于录用概率或正式考试成绩。</p>
       </div>
 
       <div class="holographic-layout">
@@ -83,7 +86,7 @@
               <div class="grid-circle"></div>
               <div class="grid-circle inner"></div>
             </div>
-            <p class="scanning-text">正在通过千万级简历库进行多维比对</p>
+            <p class="scanning-text">正在结合个人画像与目标方向分析能力，请稍候</p>
           </div>
 
           <div v-show="scoreData && !isAnalyzing" class="chart-wrapper">
@@ -112,10 +115,14 @@ import { ref, onMounted, onUnmounted, shallowRef, nextTick } from 'vue'
 import * as echarts from 'echarts'
 import axios from 'axios'
 import API_CONFIG from '../config/api'
+import { useRoute } from 'vue-router'
+import CareerNextSteps from '../components/CareerNextSteps.vue'
+const route = useRoute()
+const target = typeof route.query.target === 'string' ? route.query.target.slice(0, 200) : ''
 
 const baseURL = API_CONFIG.BASE_URL
 
-const analyzeMessage = ref('重点分析该学生的编程能力和项目实践能力，偏向互联网后端开发方向')
+const analyzeMessage = ref(`请结合我的个人画像和能力描述，分析${target || '我的职业意向'}所需能力，指出已有优势、证据不足之处及下一步行动。`)
 const temperature = ref(0.1)
 const isAnalyzing = ref(false)
 const scoreData = ref(null)
@@ -155,7 +162,7 @@ const startAnalysis = async () => {
       scoreData.value = data
       
       // ... 前面的代码 ...
-      decryptedComment.value = "AI 已完成测算" + String(data.scoreComment || '').substring(0, 500)
+      decryptedComment.value = String(data.scoreComment || '')
 
       await nextTick()
       // 🌟 修复 ECharts 缩骨功：延迟 150 毫秒，等 CSS 和 Flexbox 把盒子完全撑开后再画图！

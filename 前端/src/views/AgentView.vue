@@ -152,7 +152,8 @@ import AppIcon from '../components/AppIcon.vue'
 import { generateAesKeyAndIv, rsaEncrypt } from '../utils/crypto'
 import { readSseData } from '../utils/sse'
 import { renderChatMarkdown as renderMarkdown } from '../utils/chatMarkdown'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
+const route = useRoute()
 const router = useRouter()
 
 // 注意：不要再改 axios.defaults.transformResponse（全局副作用）。
@@ -170,7 +171,8 @@ const userId = ref(localStorage.getItem('userId') || '')
 const conversationList = ref([])
 const currentChatId = ref(null)
 const messages = ref([])
-const inputContent = ref('')
+// 跨页咨询只预填草稿，由用户确认后发送。
+const inputContent = ref(typeof route.query.prompt === 'string' ? route.query.prompt.slice(0, 2000) : '')
 const isWaitingResponse = ref(false) 
 const isTyping = ref(false)
 const loadingList = ref(false)

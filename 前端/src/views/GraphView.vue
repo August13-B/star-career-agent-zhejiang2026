@@ -14,8 +14,19 @@
     <div class="nebula-glow glow-2"></div>
 
     <div class="page-header">
-      <h2 class="neon-text">🌌 全息宇宙演化星图</h2>
-      <p class="subtitle">AI 神经元引擎 · 维度跃迁链路分析</p>
+      <h2 class="neon-text">职业星图</h2>
+      <p class="subtitle">探索岗位画像中的晋升与转岗路径，结合个人能力制定计划</p>
+      <form @submit.prevent="searchJobs">
+        <input v-model="keyword" placeholder="搜索目标岗位，如前端" aria-label="岗位名称" />
+        <button type="submit">搜索岗位</button>
+        <select v-model="selectedId" @change="fetchGraphData" aria-label="选择岗位画像">
+          <option value="">请选择目标岗位</option>
+          <option v-for="job in jobs" :key="job.id" :value="String(job.id)">{{ job.positionName }}（{{ job.level || '未分级' }}）</option>
+        </select>
+      </form>
+      <p v-if="errorMessage" role="alert">{{ errorMessage }}</p>
+      <CareerNextSteps :target="activeNode?.category !== '星尘' && activeNode?.name || realGraphData.center?.name || ''" />
+      <p v-if="realGraphData.center && !realGraphData.promotions?.length && !realGraphData.transfers?.length">该岗位尚无已保存的路径，可先进行能力测评或向智能体咨询。AI 建议不代表已验证的职业路线。</p>
     </div>
 
     <div class="graph-workspace">
@@ -28,10 +39,7 @@
         
         <div v-else-if="isDataEmpty" class="overlay-state empty-state">
           <span class="empty-icon">🛰️</span>
-          <p>当前星系坐标未建立，空间折叠尚未展开</p>
-          <button @click="handleTriggerGeneration" class="cyber-btn" :disabled="isGenerating">
-            {{ isGenerating ? '⚡ 星轨引擎充能中...' : '🚀 唤醒 AI 重构星图' }}
-          </button>
+          <p>请选择一个有效的岗位画像查看星图</p>
         </div>
 
         <div v-show="!isLoading && !isDataEmpty" ref="chartRef" class="echarts-box"></div>
@@ -49,7 +57,7 @@
           <div class="panel-body">
             <div class="info-row">
               <span class="label">🎯 技能跃迁向量</span>
-              <span class="value">{{ activeNode.skillDiff || '核心能力平滑过渡' }}</span>
+              <span class="value">{{ activeNode.skillDiff || '暂无技能差异资料' }}</span>
             </div>
             <div class="info-row" v-if="activeNode.education">
               <span class="label">🎓 学历结界</span>
@@ -61,7 +69,7 @@
             </div>
             <div class="info-row">
               <span class="label">⏱️ 蜕变周期估算</span>
-              <span class="value highlight">{{ activeNode.learningCycle || '3-6' }} 个月</span>
+              <span class="value highlight">{{ activeNode.learningCycle ? `${activeNode.learningCycle} 个月（画像参考值）` : '暂无周期资料' }}</span>
             </div>
           </div>
           <button class="close-btn" @click="activeNode = null">关闭控制台 ✕</button>
@@ -77,6 +85,7 @@ import * as echarts from 'echarts'
 import axios from 'axios'
 import { useRoute } from 'vue-router'
 import API_CONFIG from '../config/api'
+import CareerNextSteps from '../components/CareerNextSteps.vue'
 
 const route = useRoute()
 const chartRef = ref(null)
@@ -85,7 +94,18 @@ const activeNode = ref(null)
 
 const isLoading = ref(true)
 const isDataEmpty = ref(false)
-const isGenerating = ref(false)
+const selectedId = ref(String(route.query.id || ''))
+const keyword = ref(String(route.query.target || ''))
+const jobs = ref([])
+const errorMessage = ref('')
+const searchJobs = async () => {
+  errorMessage.value = ''
+  try {
+    const res = await axios.get(`${baseURL}/api/job-requirement-profile/page`, { params: { current: 1, size: 50, positionName: keyword.value }, headers: getHeaders() })
+    if (!res.data.data?.records) throw new Error(res.data.message || '岗位查询失败')
+    jobs.value = res.data.data.records
+  } catch (e) { errorMessage.value = e.message || '岗位查询失败，请重试' }
+}
 
 const realGraphData = ref({ center: null, promotions: [], transfers: [] })
 
@@ -113,7 +133,11 @@ const getStarStyle = () => {
 
 // ================= 🌟 获取星图数据 (带超级防崩盾) =================
 const fetchGraphData = async () => {
-  const profileId = route.query.id || '232745912058150912'
+  const profileId = selectedId.value
+  activeNode.value = null
+  realGraphData.value = { center: null, promotions: [], transfers: [] }
+  errorMessage.value = ''
+  if (!/^\d+$/.test(profileId)) { isLoading.value = false; isDataEmpty.value = true; return }
   try {
     isLoading.value = true; 
     isDataEmpty.value = false;
@@ -143,22 +167,13 @@ const fetchGraphData = async () => {
       isLoading.value = false;
     }
   } catch (error) {
+    errorMessage.value = '星图读取失败，请检查登录状态或稍后重试'
     console.error("接口请求失败:", error);
     isDataEmpty.value = true; 
     isLoading.value = false;
   }
 }
 
-const handleTriggerGeneration = async () => {
-  const jobId = route.query.id || '232745912058150912'
-  try {
-    isGenerating.value = true
-    const res = await axios.post(`${baseURL}/api/analysis/job/${jobId}`, {}, { headers: getHeaders() })
-    if (res.data.code === 200 || res.data.code === 0) await fetchGraphData()
-  } finally {
-    isGenerating.value = false
-  }
-}
 
 // ================= 🌟 暗黑荧光数据构建 (超强容错版) =================
 const buildGraphData = () => {
@@ -336,6 +351,7 @@ const initChart = () => {
 }
 
 onMounted(() => {
+  searchJobs()
   fetchGraphData()
   window.addEventListener('resize', () => chartInstance.value?.resize())
 })

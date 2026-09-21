@@ -86,7 +86,7 @@
 
 <script setup>
 import { ref, onMounted, nextTick, computed } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import axios from 'axios'
 import AppIcon from '../components/AppIcon.vue'
 
@@ -95,6 +95,7 @@ import AppIcon from '../components/AppIcon.vue'
 defineOptions({ name: 'MultiAgentView' })
 
 const router = useRouter()
+const route = useRoute()
 
 const AGENT_DEFS = [
   { key: 'profile_analysis', name: '画像分析', desc: '能力现状与优劣势诊断' },
@@ -106,7 +107,7 @@ const AGENT_DEFS = [
 ]
 
 const userId = ref(localStorage.getItem('userId') || '')
-const extraInput = ref('')
+const extraInput = ref(typeof route.query.target === 'string' ? `目标岗位：${route.query.target.slice(0, 200)}。请结合最新能力测评制定职业路径与行动计划。` : '')
 const running = ref(false)
 const finished = ref(false)
 const savedHint = ref('')
