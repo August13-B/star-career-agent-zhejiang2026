@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.Map;
 
 import org.example.web.entity.AiConversation;
+import org.example.web.entity.CareerReport;
 import org.example.web.entity.AiMessage;
 import org.example.web.entity.Result;
 import org.example.web.entity.StudentAbility;
@@ -46,6 +47,10 @@ public class AIConversationServiceImpl implements AIConversationService {
     /** 账号画像上下文构建（对话与报告同源） */
     @Autowired
     private StudentProfileContextService studentProfileContextService;
+
+    /** 最近一次职业报告（注入对话作参考） */
+    @Autowired
+    private org.example.web.mapper.CareerReportMapper careerReportMapper;
 
 
     @Autowired
@@ -218,7 +223,7 @@ public class AIConversationServiceImpl implements AIConversationService {
             
             // 6. 获取学生信息（每次对话都获取）
             // 统一复用报告的画像上下文（基本信息 + 10 维评分 + 能力文本 + 最近匹配）
-            String studentInfo = studentProfileContextService.build(userId, null, null);
+            String studentInfo = buildUserContext(userId);
             
             // 7. 构建完整的AI请求（按照用户要求的新格式）
             // 使用用户提供的temperature参数，如果为空则使用1.0
@@ -448,6 +453,137 @@ public class AIConversationServiceImpl implements AIConversationService {
             return "女";
         }
         return v;
+    }
+
+    // ====================== 对话上下文注入（画像 + 最近一次报告摘要） ======================
+
+    /**
+     * 对话上下文 = 账号画像（基本信息 + 10 维评分 + 能力文本 + 最近匹配）
+     *             + 最近一次职业报告的精简摘要（**无报告则不注入**）。
+     */
+    private String buildUserContext(Long userId) {
+        StringBuilder sb = new StringBuilder();
+        try {
+            String profile = studentProfileContextService.build(userId, null, null);
+            if (profile != null && !profile.isBlank()) {
+                sb.append(profile);
+            }
+        } catch (Exception e) {
+            System.err.println("构建画像上下文失败（忽略）: " + e.getMessage());
+        }
+        try {
+            String report = buildReportSummary(userId);
+            if (report != null && !report.isBlank()) {
+                if (sb.length() > 0) {
+                    sb.append("\n\n");
+                }
+                sb.append(report);
+            }
+        } catch (Exception e) {
+            System.err.println("构建报告摘要失败（忽略）: " + e.getMessage());
+        }
+        return sb.toString();
+    }
+
+    /**
+     * 最近一次职业报告的精简摘要：报告名 + 目标岗位 + 1/3/5 年目标 + 最关键 3 条建议。
+     * 没有报告时返回空字符串（不注入）。
+     */
+    private String buildReportSummary(Long userId) {
+        try {
+            List<CareerReport> reports = careerReportMapper.selectByUserId(userId);
+            if (reports == null || reports.isEmpty()) {
+                return "";
+            }
+            CareerReport r = reports.get(0);
+            com.fasterxml.jackson.databind.JsonNode c =
+                    objectMapper.readTree(r.getReportContent() == null ? "{}" : r.getReportContent());
+            com.fasterxml.jackson.databind.JsonNode goals = c.path("goals");
+
+            String targetJob = null;
+            java.util.List<String[]> goalLines = new ArrayList<>();
+            if (goals.isArray()) {
+                for (com.fasterxml.jackson.databind.JsonNode g : goals) {
+                    String tj = g.path("targetJob").asText("");
+                    if (targetJob == null && !tj.isBlank()) {
+                        targetJob = tj;
+                    }
+                    String h = g.path("horizon").asText("");
+                    String label = "3y".equals(h) ? "3 年" : ("5y".equals(h) ? "5 年" : "1 年");
+                    String title = g.path("title").asText("");
+                    String line = !title.isBlank() ? title : g.path("goal").asText("");
+                    if (!line.isBlank()) {
+                        goalLines.add(new String[]{label, line});
+                    }
+                }
+            }
+
+            StringBuilder sb = new StringBuilder("【用户的职业规划报告（最近一次，供参考）】\n");
+            sb.append("- 报告：").append(r.getReportName() == null ? "职业规划报告" : r.getReportName()).append("\n");
+            if (targetJob != null) {
+                sb.append("- 目标岗位：").append(targetJob).append("\n");
+            }
+            for (String[] gl : goalLines) {
+                sb.append("- ").append(gl[0]).append("目标：").append(clip(gl[1], 80)).append("\n");
+            }
+            String finalText = c.path("final").asText("");
+            java.util.List<String> tips = extractSectionListItems(finalText, "关键建议", 3);
+            if (!tips.isEmpty()) {
+                sb.append("- 关键建议：");
+                for (int i = 0; i < tips.size(); i++) {
+                    sb.append(i + 1).append(") ").append(clip(tips.get(i), 60)).append("  ");
+                }
+                sb.append("\n");
+            } else if (!finalText.isBlank()) {
+                sb.append("- 报告摘要：").append(clip(finalText, 300)).append("\n");
+            }
+            return sb.toString();
+        } catch (Exception e) {
+            System.err.println("构建报告摘要失败（忽略）: " + e.getMessage());
+            return "";
+        }
+    }
+
+    /** 从 Markdown 的某个小节（标题含 keyword）中提取最多 max 条列表项 */
+    private java.util.List<String> extractSectionListItems(String markdown, String keyword, int max) {
+        java.util.List<String> out = new ArrayList<>();
+        if (markdown == null || markdown.isBlank()) {
+            return out;
+        }
+        boolean inSection = false;
+        for (String raw : markdown.split("\n")) {
+            String line = raw.strip();
+            if (line.startsWith("#")) {
+                if (inSection) {
+                    break;   // 进入下一个标题
+                }
+                if (line.contains(keyword)) {
+                    inSection = true;
+                }
+                continue;
+            }
+            if (!inSection || line.isEmpty()) {
+                continue;
+            }
+            String item = line.replaceFirst("^[-*+]\\s+", "")
+                    .replaceFirst("^\\d+[.、)]\\s*", "").strip();
+            if (!item.isEmpty()) {
+                out.add(item);
+                if (out.size() >= max) {
+                    break;
+                }
+            }
+        }
+        return out;
+    }
+
+    /** 单行截断（压空白 + 超长加省略号） */
+    private String clip(String s, int max) {
+        if (s == null) {
+            return "";
+        }
+        String t = s.strip().replaceAll("\\s+", " ");
+        return t.length() <= max ? t : t.substring(0, max) + "…";
     }
 
     private String getFormattedStudentInfo(Long userId) {
@@ -1396,7 +1532,7 @@ public class AIConversationServiceImpl implements AIConversationService {
 
             // 7. 获取学生信息（每次对话都获取）
             // 统一复用报告的画像上下文（基本信息 + 10 维评分 + 能力文本 + 最近匹配）
-            String studentInfo = studentProfileContextService.build(userId, null, null);
+            String studentInfo = buildUserContext(userId);
             
             // 8. 构建最终消息
             String finalMessage;
@@ -1722,7 +1858,7 @@ public class AIConversationServiceImpl implements AIConversationService {
 
             // 6. 获取学生信息（每次对话都获取）
             // 统一复用报告的画像上下文（基本信息 + 10 维评分 + 能力文本 + 最近匹配）
-            String studentInfo = studentProfileContextService.build(userId, null, null);
+            String studentInfo = buildUserContext(userId);
             
             // 7. 构建最终消息
             String finalMessage;
@@ -1898,7 +2034,7 @@ public class AIConversationServiceImpl implements AIConversationService {
 
             // 6. 获取学生信息（每次对话都获取）
             // 统一复用报告的画像上下文（基本信息 + 10 维评分 + 能力文本 + 最近匹配）
-            String studentInfo = studentProfileContextService.build(userId, null, null);
+            String studentInfo = buildUserContext(userId);
             
             // 7. 更新对话状态为生成中
             conversation.setStatus(1);
