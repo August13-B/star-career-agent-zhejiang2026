@@ -150,6 +150,7 @@ import { ref, onMounted, nextTick } from 'vue'
 import axios from 'axios'
 import AppIcon from '../components/AppIcon.vue'
 import { generateAesKeyAndIv, rsaEncrypt } from '../utils/crypto'
+import { readSseData } from '../utils/sse'
 import { useRouter } from 'vue-router'
 const router = useRouter()
 
@@ -378,6 +379,8 @@ const sendMessage = async () => {
   let isNewConversation = false
   let tempConversationId = currentChatId.value
   let base64ImageToBackend = null;
+  let typeTimer = null;
+  let newMsgIndex = -1;
 
   try {
     if (hasImage) {
@@ -422,13 +425,13 @@ const sendMessage = async () => {
 
     isWaitingResponse.value = false; 
     
-    const newMsgIndex = messages.value.length;
+    newMsgIndex = messages.value.length;
     messages.value.push({ role: 'ai', content: '', rawContent: '', isTypingEffect: true });
 
     let charQueue = [];
     let backendDone = false;
 
-    const typeTimer = setInterval(() => {
+    typeTimer = setInterval(() => {
       if (charQueue.length > 0) {
         const takeCount = Math.floor(Math.random() * 3) + 1;
         const chars = charQueue.splice(0, takeCount).join('');
@@ -453,20 +456,8 @@ const sendMessage = async () => {
       }
     }, 25);
 
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder('utf-8');
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break; 
-      
-      const decoded = decoder.decode(value, { stream: true });
-      const lines = decoded.split('\n');
-
-      for (let line of lines) {
-         if (!line.trim()) continue;
-         let rawStream = line.replace(/^data:\s*/gm, '').trim();
-         if (!rawStream) continue;
+    for await (const rawStream of readSseData(response.body)) {
+         if (!rawStream || rawStream === '[DONE]') continue;
          
          let parsed = null;
          try { parsed = JSON.parse(rawStream); } catch(e) {}
@@ -491,17 +482,20 @@ const sendMessage = async () => {
 
          let chunkText = rawStream;
          if (parsed) {
-            if (parsed.data) chunkText = parsed.data;
-            else if (parsed.response) chunkText = parsed.response;
+            chunkText = parsed.data ?? parsed.response ?? parsed.delta ?? '';
          }
+         if (typeof chunkText !== 'string') continue;
 
          // 核心修复点 1：使用 Array.from() 拆分，完美保留 Emoji 图标不乱码！
          charQueue.push(...Array.from(chunkText));
-      }
     }
     backendDone = true;
 
   } catch (error) {
+    if (typeTimer !== null) clearInterval(typeTimer);
+    if (newMsgIndex >= 0 && messages.value[newMsgIndex]) {
+      messages.value[newMsgIndex].isTypingEffect = false;
+    }
     console.error('流式请求错误:', error);
     isWaitingResponse.value = false;
     isTyping.value = false; 

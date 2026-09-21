@@ -117,6 +117,10 @@ jobs:
         working-directory: 前端
         run: npm ci
 
+      - name: 流式解析回归测试（npm test）
+        working-directory: 前端
+        run: npm test
+
       - name: 构建（npm run build）
         working-directory: 前端
         run: npm run build
