@@ -36,7 +36,7 @@ class ConversationStreamingTest {
         var properties = new TboxProperties();
         properties.setChatChannel("ws");
         var profile = mock(StudentProfileContextService.class);
-        when(profile.build(1L, null, null)).thenReturn("测试画像");
+        when(profile.buildChat(1L)).thenReturn("测试画像");
         ReflectionTestUtils.setField(service, "aiConversationMapper", conversations);
         ReflectionTestUtils.setField(service, "userMapper", users);
         ReflectionTestUtils.setField(service, "aiService", ai);
