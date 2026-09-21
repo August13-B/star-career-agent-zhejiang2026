@@ -1,0 +1,138 @@
+# ============================================================
+# CI：后端（编译 + 测试，含 MySQL 服务） + 前端（构建）
+#
+# 触发：PR 到 develop/main、push 到 develop/main、手动触发
+# 说明：
+#   - 未使用 paths 过滤：因为本 workflow 会被设为「合并前必须通过」，
+#     若按路径跳过某个 job，GitHub 会把它判为 Expected（等待中）而卡住 PR。
+#   - 后端测试需要一个可达的 MySQL（Spring 上下文启动即建连接池）；
+#     并需要一对有效 RSA 密钥（启动期创建 RSA_256 bean）。
+#     密钥在 CI 现场用 openssl 生成，不依赖仓库 Secrets、也不暴露真实密钥。
+# ============================================================
+name: CI
+
+on:
+  pull_request:
+    branches: [develop, main]
+  push:
+    branches: [develop, main]
+  workflow_dispatch:
+
+# 同一分支/PR 的新推送取消旧的运行
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ---------------- 后端：编译 + 测试 ----------------
+  backend:
+    name: 后端（编译 + 测试）
+    runs-on: ubuntu-latest
+
+    services:
+      mysql:
+        image: mysql:8
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: youthpath
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -proot"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=12
+
+    env:
+      DB_URL: jdbc:mysql://127.0.0.1:3306/youthpath?allowPublicKeyRetrieval=true&useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=UTC&allowMultiQueries=true
+      DB_USERNAME: root
+      DB_PASSWORD: root
+      # 16 字符（AES-128-CBC）；仅测试用
+      AES_KEY: CICICICICICICI16
+      AES_IV: IVIVIVIVIVIVIV16
+
+    steps:
+      - name: 拉取代码
+        uses: actions/checkout@v4
+
+      - name: 生成 RSA 测试密钥（PKCS#8 私钥 + X.509 公钥，Base64 DER）
+        run: |
+          openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out /tmp/priv.pem
+          # 注意：必须用 pkcs8 转 PKCS#8 私钥；genpkey -outform DER 输出的是 PKCS#1，
+          # Hutool 会报 InvalidKeySpecException: algid parse error, not a sequence
+          openssl pkcs8 -topk8 -nocrypt -in /tmp/priv.pem -outform DER -out /tmp/priv.der
+          openssl rsa -in /tmp/priv.pem -pubout -outform DER -out /tmp/pub.der
+          echo "RSA_PRIVATE_KEY=$(base64 -w0 /tmp/priv.der)" >> "$GITHUB_ENV"
+          echo "RSA_PUBLIC_KEY=$(base64 -w0 /tmp/pub.der)" >> "$GITHUB_ENV"
+
+      - name: 安装 JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+
+      - name: 等待 MySQL 就绪
+        run: |
+          for i in $(seq 1 30); do
+            if mysqladmin ping -h 127.0.0.1 -P 3306 -uroot -proot --silent; then
+              echo "MySQL 已就绪"; exit 0
+            fi
+            echo "等待 MySQL… ($i)"; sleep 3
+          done
+          echo "MySQL 未就绪"; exit 1
+
+      - name: 后端测试（mvnw test）
+        working-directory: 后端
+        run: |
+          chmod +x ./mvnw
+          ./mvnw -B -ntp test
+
+      - name: 上传测试报告（失败时）
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-surefire-reports
+          path: 后端/target/surefire-reports/**
+          if-no-files-found: ignore
+          retention-days: 7
+
+  # ---------------- 前端：构建 ----------------
+  frontend:
+    name: 前端（构建）
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 拉取代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: 前端/package-lock.json
+
+      - name: 安装依赖（npm ci）
+        working-directory: 前端
+        run: npm ci
+
+      - name: 构建（npm run build）
+        working-directory: 前端
+        run: npm run build
+
+  # ---------------- 汇总门禁（建议把它设为必需检查） ----------------
+  ci-success:
+    name: CI 通过
+    if: always()
+    needs: [backend, frontend]
+    runs-on: ubuntu-latest
+    steps:
+      - name: 汇总结果
+        run: |
+          echo "backend=${{ needs.backend.result }}  frontend=${{ needs.frontend.result }}"
+          if [ "${{ needs.backend.result }}" != "success" ] || [ "${{ needs.frontend.result }}" != "success" ]; then
+            echo "::error::CI 未通过（后端或前端失败）"
+            exit 1
+          fi
+          echo "✅ CI 全部通过"

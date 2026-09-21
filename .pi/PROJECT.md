@@ -95,5 +95,9 @@ python manage.py free-port backend
 - **「自动化推送」= 管理员 + 合并后删除分支**（用户已设为默认，无需再问身份与删除意向）。
   流程：`git pull origin develop` → `git push -u origin <分支>` → `gh pr create --base develop`
   → `gh pr checks`（无 CI 则跳过）→ `gh pr merge --merge --delete-branch`。
+- **CI**：`.github/workflows/ci.yml`（PR/push 到 `develop`/`main` + 手动触发）：
+  后端 `后端/mvnw test`（起 `mysql:8` 服务 + 现场 openssl 生成 RSA 测试密钥）；前端 `前端/npm ci && npm run build`；
+  汇总门禁 job 名为 **`CI 通过`**，建议在 GitHub 网页设为「必需检查」。
+  ⚠️ **未使用 paths 过滤**：因为设为必需检查后，按路径跳过的 job 会被判为 Expected（等待中）而卡住 PR。
 - 其它改动遵循「小步提交」；后端 Java 改动需用户重启后端，前端改动 Vite 热更新。
 - Agent 不启动/构建项目（`npm run build`、`mvnw spring-boot:run` 等由用户在 Windows 侧执行）。
