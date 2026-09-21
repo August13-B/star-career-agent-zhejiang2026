@@ -439,7 +439,8 @@ onUnmounted(() => {
 .panel-fade-enter-from, .panel-fade-leave-to { opacity: 0; transform: translateX(30px) scale(0.95); filter: blur(5px); }
 .page-header form { display:flex; flex-wrap:wrap; gap:8px; margin:12px 0; }
 .page-header input, .page-header select, .page-header button { padding:10px; border-radius:8px; border:1px solid #bfd3ed; max-width:100%; }
-.graph-page.dark-universe { height:auto; min-height:100vh; overflow:auto; min-width:0; flex-shrink:1; }
+.graph-page.dark-universe { height:100%; min-height:0; overflow:auto; min-width:0; flex-shrink:1; }
+.graph-workspace { flex-shrink:0; }
 .page-header { min-width:0; overflow-wrap:anywhere; color:#e6efff; }
 .chart-container { min-height:520px; }
 @media (max-width: 1000px) { .graph-workspace { flex-direction:column; } .detail-panel { width:auto; } }

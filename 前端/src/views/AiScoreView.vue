@@ -384,7 +384,7 @@ onUnmounted(() => {
 .cyber-dots span { display: inline-block; width: 6px; height: 6px; background: #3B82F6; border-radius: 50%; margin: 0 2px; animation: bounce 1.4s infinite ease-in-out; }
 .cyber-dots span:nth-child(1) { animation-delay: -0.32s; }
 .cyber-dots span:nth-child(2) { animation-delay: -0.16s; }
-.innovative-score-page { width:100%; height:auto; min-height:100vh; overflow:auto; }
+.innovative-score-page { width:100%; height:100%; min-height:0; overflow:auto; align-items:flex-start; }
 .page-container { height:auto; min-height:90vh; box-sizing:border-box; padding:24px; }
 .control-glass-panel { box-sizing:border-box; overflow:auto; }
 @media (max-width: 1100px) {
