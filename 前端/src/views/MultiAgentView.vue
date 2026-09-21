@@ -1,21 +1,24 @@
 <template>
-  <div class="report-page">
+  <div class="report-page career-workbench">
     <div class="workspace">
       <header class="page-header">
         <div class="title-block">
-          <span class="badge"><AppIcon name="cpu" :size="13" /> 多智能体协同</span>
-          <h1>职业规划报告生成</h1>
-          <p class="subtitle">6 个专职智能体按顺序协作，逐段实时输出</p>
+          <span class="eyebrow">JOINT ASSESSMENT / 01</span>
+          <h1>你的可能性，<em>共同发现。</em></h1>
+          <p class="subtitle">六个专职智能体，联合评估你的能力、方向与职业路径。</p>
         </div>
         <div class="header-actions">
           <button class="btn ghost" @click="reset" :disabled="running">清空</button>
           <button v-if="running" class="btn danger" @click="stopGenerating">停止生成</button>
           <button class="btn primary" @click="generate" :disabled="running || !userId">
             <AppIcon name="sparkle" :size="15" />
-            {{ running ? '生成中…' : '生成职业报告' }}
+            {{ running ? '联合测评中…' : '开始联合测评' }}
           </button>
         </div>
       </header>
+
+      <nav class="journey" aria-label="职业规划流程"><span class="current"><b>01</b> 联合测评</span><router-link to="/graph"><b>02</b> 职业星图</router-link><router-link to="/growth"><b>03</b> 行动计划</router-link></nav>
+      <section class="assessment-intro"><div><span class="eyebrow">A CLEARER PICTURE OF YOU</span><h2>不止一个分数，<br>而是一条有依据的路径。</h2><p>综合个人画像与能力资料，形成联合测评报告，再把结果绘成可探索的职业星图。</p><router-link to="/profile">先完善个人画像 →</router-link></div><div class="assessment-facts"><strong>06</strong><span>专职智能体参与</span><hr><span>画像 → 探索 → 目标 → 路径 → 行动 → 整合</span></div></section>
 
       <div v-if="!userId" class="notice warn">请先登录后再生成报告。</div>
 
@@ -75,7 +78,8 @@
           <span>报告已生成{{ savedHint }}<template v-if="reportName">：{{ reportName }}</template></span>
           <span v-if="reportId" class="report-id">ID {{ reportId }}</span>
         </div>
-        <router-link class="btn ghost" to="/profile">前往个人中心查看</router-link>
+        <router-link v-if="reportId && !partialMsg" class="btn primary" :to="{path:'/graph',query:{reportId:String(reportId)}}">下一步：绘制职业星图 →</router-link>
+        <router-link v-else class="btn ghost" to="/profile">查看已保存内容</router-link>
       </footer>
 
       <div v-if="partialMsg" class="notice partial">{{ partialMsg }}</div>
@@ -89,6 +93,7 @@ import { ref, onMounted, nextTick, computed, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import axios from 'axios'
 import AppIcon from '../components/AppIcon.vue'
+import '../styles/careerWorkbench.css'
 
 // 组件名：供 App.vue 的 <keep-alive :include="['MultiAgentView']"> 命中，
 // 保证生成报告期间切页/返回不丢进度（后台 fetch 仍在累积）
@@ -293,7 +298,7 @@ const generate = async () => {
       body: JSON.stringify({
         user_id: userId.value,
         content: extraInput.value.trim() ||
-          '请为我生成一份完整的职业规划报告。若缺少我的画像信息，请基于岗位知识库与通用情况给出，并说明假设。'
+          '请结合我的个人画像完成六智能体联合职业测评，给出有依据的职业方向、能力差距、发展阶段和行动计划。信息缺失请明确说明，不要编造我的经历。'
       })
     })
     const data = await resp.json()
@@ -656,4 +661,7 @@ onMounted(async () => {
 .notice.error { background: #FEF2F2; color: #B91C1C; border: 1px solid #FECACA; margin-top: 12px; }
 /* 容错提示：中性（白底/灰边），不报红，也不似警告 */
 .notice.partial { background: #FFFFFF; color: #475569; border: 1px solid #E2E8F0; margin-top: 12px; }
+.report-page.career-workbench{padding:32px;background:#f7f9fc;height:100%;overflow:auto}.workspace{max-width:1240px;margin:auto}.page-header{margin-bottom:26px}.title-block h1{font-size:clamp(26px,2.6vw,36px);letter-spacing:-1px;color:#172337}.title-block h1 em{font-style:normal;color:#315fe9}.assessment-intro{display:grid;grid-template-columns:1fr 220px;gap:35px;margin:26px 0;background:#fff;border:1px solid #e0e7f0;border-radius:16px;padding:30px}.assessment-intro h2{font-size:25px;line-height:1.55;margin:14px 0}.assessment-intro p{font-size:13px;color:#69788e;line-height:1.8;max-width:490px}.assessment-intro a{font-size:13px;color:#315fe9;text-decoration:none}.assessment-facts{background:#14233b;color:#b7c9e6;padding:22px;border-radius:12px;display:flex;flex-direction:column;justify-content:center;font-size:11px;line-height:1.8}.assessment-facts strong{font-size:50px;line-height:1.2;font-weight:500;color:#fff}.assessment-facts hr{border:0;border-top:1px solid #344760;width:100%;margin:18px 0}.input-panel{border:1px solid #e0e7f0;background:white;border-radius:14px;padding:22px;margin:24px 0}.agents{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.agent-card{border:1px solid #e0e7f0;border-radius:14px;box-shadow:none;background:#fff}.agent-head{padding:20px}.agent-index{background:#edf3ff;color:#315fe9;border-radius:8px}.agent-card.running{border-color:#7597f5}.agent-placeholder{padding:0 20px 24px;color:#8390a3;font-size:12px}.btn.primary{background:#315fe9;border-color:#315fe9;color:#fff;min-height:44px;border-radius:10px}.agent-card.is-expanded{grid-column:1/-1}.result-bar{margin:24px 0;padding:20px;border:1px solid #b7d7cb;background:#eff8f4;border-radius:14px}
+.agent-card{padding:0 18px;min-height:148px}.agent-card.waiting{height:148px}.agent-head{padding:18px 0}.agent-placeholder{padding:12px 0}.header-actions{flex-wrap:wrap}.page-header{flex-wrap:wrap}
+@media(max-width:1000px){.agents{grid-template-columns:1fr}.assessment-intro{grid-template-columns:1fr}.assessment-facts{display:none}.report-page.career-workbench{padding:18px}.page-header{flex-wrap:wrap}.header-actions{flex-wrap:wrap}}
 </style>

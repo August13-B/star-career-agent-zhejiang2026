@@ -12,7 +12,8 @@
         <div class="title-badge">
           <span class="pulse-dot"></span> AI 综合能力评估矩阵
         </div>
-        <h1 class="gradient-text">AI 能力测评</h1>
+        <h1 class="gradient-text">能力补充测评</h1>
+        <router-link to="/multi-agent">完整职业测评请从多智能体联合测评开始 →</router-link>
         <CareerNextSteps :target="target" />
         <router-link :to="{ path: '/graph', query: { target } }">返回职业星图选择岗位</router-link>
         <p>基于已保存的个人画像与能力描述生成参考评估，不等于录用概率或正式考试成绩。</p>

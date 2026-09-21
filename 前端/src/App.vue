@@ -10,9 +10,9 @@
       <div class="nav-section">
         <p class="section-title">核心功能</p>
         <nav class="nav-menu">
-          <router-link to="/" class="nav-item">
-            <AppIcon name="chat" class="nav-icon" :size="17" />
-            <span class="nav-text">智能体对话</span>
+          <router-link to="/multi-agent" class="nav-item">
+            <AppIcon name="cpu" class="nav-icon" :size="17" />
+            <span class="nav-text">多智能体联合测评</span>
           </router-link>
           
           <router-link to="/graph" class="nav-item">
@@ -22,12 +22,12 @@
 
           <router-link to="/ai-score" class="nav-item">
             <AppIcon name="radar" class="nav-icon" :size="17" />
-            <span class="nav-text">AI 能力测评</span>
+            <span class="nav-text">能力补充测评</span>
           </router-link>
 
-          <router-link to="/multi-agent" class="nav-item">
-            <AppIcon name="cpu" class="nav-icon" :size="17" />
-            <span class="nav-text">多智能体中枢</span>
+          <router-link to="/" class="nav-item">
+            <AppIcon name="chat" class="nav-icon" :size="17" />
+            <span class="nav-text">智能体对话</span>
           </router-link>
 
           <router-link to="/growth" class="nav-item">
