@@ -327,7 +327,6 @@ public class UserController {
         try {
             login_value = rsa256.aesDecrypt(encryptedLoginValue, aesKey, aesIv);
             user_password = rsa256.aesDecrypt(encryptedPassword, aesKey, aesIv);
-            System.out.println("解密后的登录凭证：" + login_value);
         } catch (Exception e) {
             return Result.error("登录凭证或密码解密失败");
         }
@@ -341,11 +340,14 @@ public class UserController {
         
         // 5. 查找用户：auto（默认）= 邮箱 → 账号 → 昵称；也兼容显式指定方式
         User user = null;
+        // 邮箱查询已由 Service 解密，账号/昵称查询仍返回数据库密文。
+        boolean contactsEncrypted = true;
         String way = login_way == null ? "" : login_way.trim();
         String lv = login_value.trim();
         if (way.isEmpty() || "auto".equalsIgnoreCase(way)) {
             if (isEmailLike(lv)) {
                 user = userService.findByEmail(lv);
+                contactsEncrypted = user == null;
             }
             if (user == null) {
                 user = userService.findByUserAccount(lv);
@@ -360,6 +362,7 @@ public class UserController {
                     break;
                 case "email":
                     user = userService.findByEmail(lv);
+                    contactsEncrypted = false;
                     break;
                 case "nickname":
                     user = userService.findByNickname(lv);
@@ -401,11 +404,13 @@ public class UserController {
         loginData.put("userStatus", user.getUserStatus());
         // 返回的邮箱和手机号需要加密（使用相同的临时AES密钥）
         if (user.getEmail() != null && !user.getEmail().isEmpty()) {
-            String encryptedReturnEmail = rsa256.aesEncrypt(user.getEmail(), aesKey, aesIv);
+            String email = contactsEncrypted ? rsa256.decryptFromDB(user.getEmail()) : user.getEmail();
+            String encryptedReturnEmail = rsa256.aesEncrypt(email, aesKey, aesIv);
             loginData.put("encryptedEmail", encryptedReturnEmail);
         }
         if (user.getPhone() != null && !user.getPhone().isEmpty()) {
-            String encryptedReturnPhone = rsa256.aesEncrypt(user.getPhone(), aesKey, aesIv);
+            String phone = contactsEncrypted ? rsa256.decryptFromDB(user.getPhone()) : user.getPhone();
+            String encryptedReturnPhone = rsa256.aesEncrypt(phone, aesKey, aesIv);
             loginData.put("encryptedPhone", encryptedReturnPhone);
         }
         loginData.put("token", jwtToken);
