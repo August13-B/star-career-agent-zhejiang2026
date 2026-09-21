@@ -80,7 +80,8 @@ public class TboxAgentServiceImpl implements TboxAgentService {
         return Mono.fromCallable(() -> resolveSession(userId, localConversationId))
                 .subscribeOn(Schedulers.boundedElastic())
                 .flatMapMany(session -> streamFromPlatform(session, localConversationId, message))
-                .timeout(Duration.ofSeconds(Math.max(5, props.getTimeoutSeconds())))
+                // 对话可能涉及 RAG 检索（20~30s 空窗），用对话超时（默认 180s）而非 30s 首响超时
+                .timeout(Duration.ofSeconds(Math.max(30, props.getChatTimeoutSeconds())))
                 .onErrorResume(e -> {
                     log.error("百宝箱对话失败: {}", e.toString());
                     return Flux.just(chunk(translateError(e)));

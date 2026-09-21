@@ -52,10 +52,14 @@ python manage.py free-port backend
     - `jobId` 存 localStorage，刷新/切页可续（任务在平台侧独立运行，与浏览器连接无关）
     - 后端首次 done 时按 `content.agents` 幂等落库 MySQL；前端详情/PDF 用我们的 `reportId`
     - 注意：平台 done 帧顶层 `agents` 为 `null`，6 段在 **`content.agents[]`**（key/name/content）
-12. **纯文本对话默认走平台 SSE**：`POST {TBOX_API_URL}/api/chat/stream`（`TBOX_CHAT_CHANNEL=http`，待平台提供）；
-    平台未就绪时设 `TBOX_CHAT_CHANNEL=ws` 回退 WS。带图片对话始终走 `WS /ws`。
-    - 对话上下文：后端用 `StudentProfileContextService.build()` 注入账号画像 + 本轮问题；多轮历史由平台按 `conversationId` 注入。
-    - 帧：`{"delta":...}`* + `{"type":"tool",...}` + `{"done":...}` + `{"error":...}`；我们 `done` 时另存 MySQL。
+12. **纯文本对话当前走 WebSocket（`TBOX_CHAT_CHANNEL=ws`）**：
+    平台**尚未实现** `POST {TBOX_API_URL}/api/chat/stream`（实测 **404 Not Found**），故默认走已验证的 `WSS /ws`
+    （HELLO → SEND_MESSAGE → TEXT_MESSAGE_CONTENT* → RUN_FINISHED），后端 `TboxAgentServiceImpl.chatStream()` → 桥接为对前端的 SSE。
+    - 带图片对话也走 `WS /ws`。待平台上线 `/api/chat/stream` 后，把 `TBOX_CHAT_CHANNEL` 改回 `http` 即可。
+    - 对话上下文（**两条链路已统一**）：均用 `StudentProfileContextService.build()`
+      （基本信息 + 10 维评分 + 能力文本 + 最近一次人岗匹配，RSA 解密）。
+    - **RAG**：由**平台侧**完成（百宝箱应用挂载「岗位知识库」→ 智能体自动检索）；后端只注入画像。
+    - 多轮历史：ws 路径由后端拼历史；http 路径由平台按 `conversationId` 注入。
 13. **报告可随时停止**（平台已上线）：前端「停止生成」→ 后端 `POST /api/career-report/jobs/{jobId}/cancel`
     → 平台 `POST /api/report/jobs/{jobId}/cancel`（abort、不落库、幂等、done no-op；`status=canceled` 为终态）。
     停止后丢弃本次内容（**不写 MySQL**）；轮询遇 `canceled` 也自动收尾。

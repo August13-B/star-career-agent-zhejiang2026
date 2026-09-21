@@ -44,7 +44,7 @@ public class TboxProperties {
      *   <li>{@code ws} —— 旧 WebSocket {@code /ws}（平台新接口未就绪时的兜底；图片对话始终走 WS）</li>
      * </ul>
      */
-    private String chatChannel = "http";
+    private String chatChannel = "ws";
 
     /** 对话（HTTP SSE）超时（秒），含 RAG 检索空窗 */
     private int chatTimeoutSeconds = 180;
