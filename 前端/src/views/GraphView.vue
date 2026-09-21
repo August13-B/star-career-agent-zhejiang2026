@@ -1,447 +1,67 @@
 <template>
-  <div class="graph-page dark-universe">
-    
-    <div class="starfield">
-      <div 
-        v-for="i in 150" 
-        :key="i" 
-        class="star" 
-        :style="getStarStyle()"
-      ></div>
-    </div>
-
-    <div class="nebula-glow glow-1"></div>
-    <div class="nebula-glow glow-2"></div>
-
-    <div class="page-header">
-      <h2 class="neon-text">职业星图</h2>
-      <p class="subtitle">探索岗位画像中的晋升与转岗路径，结合个人能力制定计划</p>
-      <form @submit.prevent="searchJobs">
-        <input v-model="keyword" placeholder="搜索目标岗位，如前端" aria-label="岗位名称" />
-        <button type="submit">搜索岗位</button>
-        <select v-model="selectedId" @change="fetchGraphData" aria-label="选择岗位画像">
-          <option value="">请选择目标岗位</option>
-          <option v-for="job in jobs" :key="job.id" :value="String(job.id)">{{ job.positionName }}（{{ job.level || '未分级' }}）</option>
-        </select>
-      </form>
-      <p v-if="errorMessage" role="alert">{{ errorMessage }}</p>
-      <CareerNextSteps :target="activeNode?.category !== '星尘' && activeNode?.name || realGraphData.center?.name || ''" />
-      <button v-if="realGraphData.center" :disabled="isGenerating" @click="generatePreview">{{ isGenerating ? '正在结合个人画像生成…' : '结合我的能力生成探索路径' }}</button>
-      <p v-if="isPreview">当前为 AI 个性化探索预览，仅供参考；刷新后恢复岗位库星图，不会更改公共数据。</p>
-      <p v-if="realGraphData.center && !realGraphData.promotions?.length && !realGraphData.transfers?.length">该岗位尚无已保存的路径，可先进行能力测评或向智能体咨询。AI 建议不代表已验证的职业路线。</p>
-    </div>
-
-    <div class="graph-workspace">
-      <div class="chart-container dark-glass">
-        
-        <div v-if="isLoading" class="overlay-state">
-          <div class="quantum-loader"></div>
-          <p class="loading-text">正在扫描深空拓扑数据...</p>
-        </div>
-        
-        <div v-else-if="isDataEmpty" class="overlay-state empty-state">
-          <span class="empty-icon">🛰️</span>
-          <p>请选择一个有效的岗位画像查看星图</p>
-        </div>
-
-        <div v-show="!isLoading && !isDataEmpty" ref="chartRef" class="echarts-box"></div>
-      </div>
-
-      <transition name="panel-fade">
-        <div v-if="activeNode && activeNode.category && activeNode.category !== '当前岗位' && activeNode.category !== '星尘'" class="detail-panel dark-glass">
-          <div class="panel-deco-line"></div>
-          <div class="panel-header">
-            <h3>{{ activeNode.name }}</h3>
-            <span class="node-tag" :class="activeNode.category === '晋升路线' ? 'tag-up' : 'tag-transfer'">
-              {{ activeNode.category === '晋升路线' ? '🔺 维度跃升' : '🌀 平行跃迁' }}
-            </span>
-          </div>
-          <div class="panel-body">
-            <div class="info-row">
-              <span class="label">🎯 技能跃迁向量</span>
-              <span class="value">{{ activeNode.skillDiff || '暂无技能差异资料' }}</span>
-            </div>
-            <div class="info-row" v-if="activeNode.education">
-              <span class="label">🎓 学历结界</span>
-              <span class="value">{{ activeNode.education }}</span>
-            </div>
-            <div class="info-row" v-if="activeNode.experience">
-              <span class="label">💼 经验沉淀要求</span>
-              <span class="value">{{ activeNode.experience }}</span>
-            </div>
-            <div class="info-row">
-              <span class="label">⏱️ 蜕变周期估算</span>
-              <span class="value highlight">{{ activeNode.learningCycle ? `${activeNode.learningCycle} 个月（画像参考值）` : '暂无周期资料' }}</span>
-            </div>
-          </div>
-          <button class="close-btn" @click="activeNode = null">关闭控制台 ✕</button>
-        </div>
-      </transition>
-    </div>
-  </div>
+  <main class="career-workbench">
+    <header class="workbench-heading"><div><span class="eyebrow">CAREER ATLAS / 02</span><h1>让下一步，<em>清晰可见。</em></h1><p>从联合测评出发，连接职业方向、能力差距与行动。</p></div><router-link class="wb-button" to="/multi-agent">返回联合测评</router-link></header>
+    <nav class="journey" aria-label="职业规划流程"><router-link to="/multi-agent"><b>01</b> 联合测评</router-link><span class="current"><b>02</b> 职业星图</span><router-link to="/growth"><b>03</b> 行动计划</router-link></nav>
+    <p v-if="error" class="wb-notice" role="alert">{{ error }} <button @click="loadReports">重新加载</button></p>
+    <section v-if="loading" class="wb-empty" aria-live="polite"><h2>正在读取联合测评…</h2></section>
+    <section v-else-if="!reports.length && !error" class="wb-empty"><span class="eyebrow">START WITH YOU</span><h2>先认识自己，再展开职业宇宙。</h2><p>请先完成六个智能体的联合测评。职业分支将来自你的测评结论，不会凭空生成。</p><router-link class="wb-button primary" to="/multi-agent">开始联合测评 →</router-link><small>未完整完成的报告不会用作星图依据。</small></section>
+    <template v-else-if="reports.length">
+      <section class="source-bar"><div><label for="report-select">测评来源</label><select id="report-select" v-model="reportId" :disabled="generating" @change="loadGraph"><option v-for="r in reports" :key="r.id" :value="String(r.id)">{{ r.name }}</option></select></div><span class="source-date">{{ selectedReport?.createdAt }}</span><button v-if="!graph" class="wb-button primary" :disabled="generating || graphLoading" @click="generate">{{ generating ? '正在提取分支…' : '根据测评绘制星图' }}</button><span v-else class="saved-mark">已保存 · 刷新可恢复</span></section>
+      <section v-if="!graph" class="wb-empty"><span class="eyebrow">ASSESSMENT READY</span><h2>{{ generating ? '正在连接你的职业坐标…' : '测评已就绪，开始探索可能性。' }}</h2><p>{{ generating ? '正在提取推荐方向、发展阶段和能力差距，请保持当前页面。' : '生成后，点击岗位节点查看测评依据、待补能力与行动建议。' }}</p></section>
+      <section v-else class="atlas-layout">
+        <div class="atlas-panel"><div class="atlas-toolbar"><div><span class="eyebrow">YOUR CAREER CONSTELLATION</span><h2>{{ graph.center }}</h2></div><button class="chart-reset" @click="render">重置视图</button></div><div class="atlas-legend"><span>蓝 · 目标方向</span><span>青 · 进阶路径</span><span>金 · 迁移方向</span><span>小节点 · 待补能力</span></div><div ref="chartEl" class="atlas-canvas" role="img" :aria-label="`职业星图，${graph.branches.length}条分支，可通过下方按钮选择岗位`"></div><div class="atlas-footer"><span>{{ graph.branches.length }} 条分支 / {{ skillCount }} 个能力节点</span><span>拖拽 · 缩放 · 点击查看</span></div></div>
+        <aside class="insight-panel"><span class="eyebrow">PATH INSIGHT</span><h2>{{ active?.name || '你的测评摘要' }}</h2><p>{{ active?.reason || graph.summary }}</p><template v-if="active"><h3>推荐依据 · 测评原文</h3><blockquote>{{ active.evidence }}</blockquote><h3>需要补齐的能力</h3><ul><li v-for="(s,i) in active.skills" :key="i">{{ s }}</li></ul><h3>从这些行动开始</h3><ol><li v-for="(a,i) in active.actions" :key="i">{{ a }}</li></ol><router-link class="wb-button primary" :to="{path:'/',query:{prompt:consultPrompt}}">和智能体深入讨论 →</router-link></template><p v-else>点击星图或下方岗位按钮，查看推荐依据和下一步行动。</p><router-link class="wb-button" to="/growth">查看成长行动计划</router-link><small>AI 整理自联合测评，仅供职业探索参考，不代表录用或晋升承诺。</small></aside>
+      </section>
+      <section v-if="graph" class="branch-list" aria-label="职业分支列表"><button v-for="(branch,i) in graph.branches" :key="i" :class="{selected:active===branch}" @click="selectBranch(i)"><span>{{ String(i+1).padStart(2,'0') }}</span>{{ branch.name }}<small>{{ kindLabel[branch.kind] }}</small></button></section>
+    </template>
+  </main>
 </template>
-
 <script setup>
-import { ref, onMounted, onUnmounted, shallowRef, nextTick } from 'vue'
-import * as echarts from 'echarts'
-import axios from 'axios'
+import { ref, computed, shallowRef, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
-import API_CONFIG from '../config/api'
-import CareerNextSteps from '../components/CareerNextSteps.vue'
-
-const route = useRoute()
-const chartRef = ref(null)
-const chartInstance = shallowRef(null)
-const activeNode = ref(null)
-
-const isLoading = ref(true)
-const isDataEmpty = ref(false)
-const selectedId = ref(String(route.query.id || ''))
-const keyword = ref(String(route.query.target || ''))
-const jobs = ref([])
-const errorMessage = ref('')
-const isGenerating = ref(false)
-const isPreview = ref(false)
-let graphRequest = 0
-const generatePreview = async () => {
-  if (isGenerating.value) return
-  const requestId = ++graphRequest
-  isGenerating.value = true
-  errorMessage.value = ''
-  try {
-    const res = await axios.post(`${baseURL}/api/analysis/graph/${selectedId.value}/preview`, {}, { headers: getHeaders(), timeout: 180000 })
-    if (requestId !== graphRequest) return
-    if (res.data.code !== 200 || !res.data.data?.center) throw new Error(res.data.message || '生成失败')
-    realGraphData.value = res.data.data
-    activeNode.value = null
-    isPreview.value = true
-    await nextTick()
-    initChart()
-  } catch (e) { if (requestId === graphRequest) errorMessage.value = e.message || '生成失败，请重试' }
-  finally { isGenerating.value = false }
+import axios from 'axios'
+import * as echarts from 'echarts'
+import { buildCareerGraph } from '../utils/careerGraph'
+import '../styles/careerWorkbench.css'
+const route=useRoute()
+const reports=ref([]),reportId=ref(''),loading=ref(true),graphLoading=ref(false),generating=ref(false),error=ref('')
+const graph=ref(null),active=ref(null),chartEl=ref(null),chart=shallowRef(null)
+const kindLabel={target:'目标方向',promotion:'进阶路径',transfer:'迁移方向'}
+const selectedReport=computed(()=>reports.value.find(r=>String(r.id)===reportId.value))
+const skillCount=computed(()=>graph.value?.branches.reduce((n,b)=>n+b.skills.slice(0,3).length,0)||0)
+const consultPrompt=computed(()=>`我完成了联合测评，正在探索「${active.value?.name}」。测评依据：${active.value?.evidence}。能力差距：${active.value?.skills.join('、')}。请结合我的画像细化行动：${active.value?.actions.join('；')}。`)
+const headers=()=>{const token=localStorage.getItem('token')||'';return {Authorization:token.startsWith('Bearer ')?token:`Bearer ${token}`}}
+let request=0,observer
+const read=res=>{if(res.data.code!==200)throw new Error(res.data.message||'读取失败');return res.data.data}
+const loadReports=async()=>{
+  loading.value=true;error.value=''
+  try{reports.value=read(await axios.get('/api/report-graph/reports',{headers:headers()}))||[];const wanted=String(route.query.reportId||'');reportId.value=String(reports.value.find(r=>String(r.id)===wanted)?.id||reports.value[0]?.id||'');if(reportId.value)await loadGraph()}
+  catch(e){error.value=e.message}finally{loading.value=false;await nextTick();render()}
 }
-const searchJobs = async () => {
-  errorMessage.value = ''
-  try {
-    const res = await axios.get(`${baseURL}/api/job-requirement-profile/page`, { params: { current: 1, size: 50, positionName: keyword.value }, headers: getHeaders() })
-    if (!res.data.data?.records) throw new Error(res.data.message || '岗位查询失败')
-    jobs.value = res.data.data.records
-  } catch (e) { errorMessage.value = e.message || '岗位查询失败，请重试' }
+const loadGraph=async()=>{
+  const current=++request;graphLoading.value=true;graph.value=null;active.value=null;error.value='';chart.value?.dispose();chart.value=null;observer?.disconnect()
+  try{const data=read(await axios.get(`/api/report-graph/${reportId.value}`,{headers:headers()}));if(current===request)graph.value=data}
+  catch(e){if(current===request)error.value=e.message}finally{if(current===request){graphLoading.value=false;await nextTick();render()}}
 }
-
-const realGraphData = ref({ center: null, promotions: [], transfers: [] })
-
-const baseURL = API_CONFIG.BASE_URL
-const getHeaders = () => {
-  const token = localStorage.getItem('token') || ''
-  return { 'Authorization': token.startsWith('Bearer ') ? token : `Bearer ${token}` }
+const generate=async()=>{
+  if(generating.value)return
+  const current=++request;generating.value=true;error.value=''
+  try{const data=read(await axios.post(`/api/report-graph/${reportId.value}`,{},{headers:headers(),timeout:180000}));if(current!==request)return;graph.value=data;await nextTick();render()}
+  catch(e){if(current===request)error.value=e.message||'生成失败，请重试'}finally{if(current===request)generating.value=false}
 }
-
-// ================= 🌟 生成繁星的随机算法 =================
-const getStarStyle = () => {
-  const size = Math.random() * 2.5 + 0.5 // 星星大小 0.5px - 3px
-  const duration = Math.random() * 3 + 1.5 // 闪烁周期 1.5s - 4.5s
-  const delay = Math.random() * 5 // 错开闪烁时间
-  return {
-    width: `${size}px`,
-    height: `${size}px`,
-    left: `${Math.random() * 100}%`,
-    top: `${Math.random() * 100}%`,
-    animationDuration: `${duration}s`,
-    animationDelay: `${delay}s`,
-    opacity: Math.random() * 0.5 + 0.1 // 初始透明度随机
-  }
+const selectBranch=i=>{active.value=graph.value.branches[i]}
+const render=()=>{
+  if(!chartEl.value||!graph.value)return
+  observer?.disconnect();chart.value?.dispose();chart.value=echarts.init(chartEl.value)
+  const {nodes,links}=buildCareerGraph(graph.value)
+  chart.value.setOption({animationDuration:450,tooltip:{show:false},series:[{type:'graph',layout:'none',left:'14%',right:'14%',top:'14%',bottom:'18%',roam:true,scaleLimit:{min:.5,max:2.5},data:nodes,links,label:{show:true,color:'#dce7fa',fontSize:12,position:'bottom',distance:9,width:110,overflow:'break'},lineStyle:{color:'#506884',width:1.5,curveness:.08,opacity:.65},emphasis:{focus:'adjacency',lineStyle:{width:3,opacity:1}}}]})
+  chart.value.on('click',p=>{if(Number.isInteger(p.data?.branchIndex))selectBranch(p.data.branchIndex)})
+  observer=new ResizeObserver(()=>chart.value?.resize());observer.observe(chartEl.value)
 }
-
-// ================= 🌟 获取星图数据 (带超级防崩盾) =================
-const fetchGraphData = async () => {
-  const requestId = ++graphRequest
-  isPreview.value = false
-  const profileId = selectedId.value
-  activeNode.value = null
-  realGraphData.value = { center: null, promotions: [], transfers: [] }
-  errorMessage.value = ''
-  if (!/^\d+$/.test(profileId)) { isLoading.value = false; isDataEmpty.value = true; return }
-  try {
-    isLoading.value = true; 
-    isDataEmpty.value = false;
-    
-    const res = await axios.get(`${baseURL}/api/analysis/graph/${profileId}`, { headers: getHeaders() })
-    if (requestId !== graphRequest) return
-    
-    // 防范后端嵌套多层数据
-    let remoteData = res.data.data || res.data;
-    
-    // 防范后端传回的是个 JSON 字符串
-    if (typeof remoteData === 'string') {
-        try { remoteData = JSON.parse(remoteData); } catch(e) {}
-    }
-
-    if (remoteData && remoteData.center) {
-      realGraphData.value = remoteData;
-      isLoading.value = false; 
-      
-      await nextTick(); 
-      try {
-        initChart()
-      } catch(e) {
-        console.error("星图渲染引擎报错，已安全拦截:", e);
-      }
-    } else {
-      isDataEmpty.value = true; 
-      isLoading.value = false;
-    }
-  } catch (error) {
-    if (requestId !== graphRequest) return
-    errorMessage.value = '星图读取失败，请检查登录状态或稍后重试'
-    console.error("接口请求失败:", error);
-    isDataEmpty.value = true; 
-    isLoading.value = false;
-  }
-}
-
-
-// ================= 🌟 暗黑荧光数据构建 (超强容错版) =================
-const buildGraphData = () => {
-  const nodes = []
-  const links = []
-  const data = realGraphData.value
-  
-  if (!data || !data.center) return { nodes, links }
-
-  // 兜底中心点名称，防止 null
-  const centerName = data.center.name || '未知基准岗位';
-
-  // 1. 核心主星 (赛博亮蓝)
-  nodes.push({
-    name: centerName,
-    category: '当前岗位',
-    symbolSize: 95,
-    itemStyle: { 
-      color: new echarts.graphic.RadialGradient(0.3, 0.3, 1, [{ offset: 0, color: '#60A5FA' }, { offset: 1, color: '#1E3A8A' }]), 
-      shadowBlur: 50, shadowColor: '#3B82F6', borderColor: '#BFDBFE', borderWidth: 2
-    }
-  })
-
-  const dustNames = []
-
-  // 2. 晋升行星 (高亮荧光绿) - 强加 Array.isArray 校验！
-  if (Array.isArray(data.promotions)) {
-    data.promotions.forEach((p, index) => {
-      // 容错：如果后端传的是个纯字符串数组，把它变成对象
-      let nodeData = typeof p === 'string' ? { name: p } : p;
-      // 容错：如果没有名字，给个默认名字防止 Echarts 崩溃
-      let nodeName = nodeData.name || `晋升锚点 ${index + 1}`;
-      
-      const size = 50 + Math.random() * 25
-      nodes.push({ 
-        ...nodeData, 
-        name: nodeName,
-        category: '晋升路线', 
-        symbolSize: size,
-        itemStyle: { 
-          color: new echarts.graphic.RadialGradient(0.3, 0.3, 1, [{ offset: 0, color: '#34D399' }, { offset: 1, color: '#064E3B' }]), 
-          shadowBlur: 30, shadowColor: '#10B981', borderColor: '#A7F3D0', borderWidth: 1.5
-        } 
-      })
-      links.push({ source: centerName, target: nodeName, lineStyle: { width: 2 } })
-    })
-  }
-
-  // 3. 换岗行星 (幻影霓虹紫) - 强加 Array.isArray 校验！
-  if (Array.isArray(data.transfers)) {
-    data.transfers.forEach((t, index) => {
-      // 容错机制同上
-      let nodeData = typeof t === 'string' ? { name: t } : t;
-      let nodeName = nodeData.name || `换岗锚点 ${index + 1}`;
-
-      const size = 45 + Math.random() * 20
-      nodes.push({ 
-        ...nodeData, 
-        name: nodeName,
-        category: '换岗路线', 
-        symbolSize: size,
-        itemStyle: { 
-          color: new echarts.graphic.RadialGradient(0.3, 0.3, 1, [{ offset: 0, color: '#C084FC' }, { offset: 1, color: '#6B21A8' }]), 
-          shadowBlur: 30, shadowColor: '#A855F7', borderColor: '#E9D5FF', borderWidth: 1.5
-        } 
-      })
-      links.push({ source: centerName, target: nodeName, lineStyle: { width: 2 } })
-    })
-  }
-
-  // 4. 星座底纹 (填补空白的终极武器)
-  const dustColors = ['#38BDF8', '#818CF8', '#34D399', '#A78BFA']
-  for (let i = 0; i < 35; i++) {
-    const name = `dust_${Math.random()}`
-    dustNames.push(name)
-    nodes.push({
-      name, category: '星尘', symbolSize: Math.random() * 4 + 1.5,
-      itemStyle: { color: dustColors[i % dustColors.length], opacity: 0.8, shadowBlur: 10, shadowColor: dustColors[i % dustColors.length] },
-      label: { show: false }
-    })
-    links.push({ source: centerName, target: name, lineStyle: { opacity: 0 } })
-  }
-  for (let i = 0; i < 40; i++) {
-    links.push({
-      source: dustNames[Math.floor(Math.random() * dustNames.length)],
-      target: dustNames[Math.floor(Math.random() * dustNames.length)],
-      lineStyle: { opacity: 0.15, width: 0.5, type: 'dashed', curveness: 0.1, color: '#64748B' }
-    })
-  }
-
-  return { nodes, links }
-}
-
-// ================= 🌟 深空暗黑 ECharts 配置 =================
-const initChart = () => {
-  if (!chartRef.value) return
-  if (chartInstance.value) chartInstance.value.dispose()
-  
-  chartInstance.value = echarts.init(chartRef.value)
-  const { nodes, links } = buildGraphData()
-
-  const option = {
-    backgroundColor: 'transparent',
-    tooltip: { 
-      trigger: 'item', 
-      backgroundColor: 'rgba(15, 23, 42, 0.9)',
-      borderColor: 'rgba(51, 65, 85, 0.8)',
-      textStyle: { color: '#F8FAFC', fontWeight: 'bold' },
-      padding: [12, 18], borderRadius: 12, boxShadow: '0 10px 30px rgba(0,0,0,0.5)',
-      formatter: (p) => {
-        if (!p.data || p.data.category === '星尘') return '';
-        return String(p.name || '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
-      } 
-    },
-    color: ['#3B82F6', '#10B981', '#A855F7'],
-    legend: { 
-      data: ['当前岗位', '晋升路线', '换岗路线'], 
-      bottom: '4%', icon: 'circle', itemGap: 40, itemWidth: 12,
-      textStyle: { color: '#CBD5E1', fontSize: 13, fontWeight: '700' }
-    },
-    series: [{
-      type: 'graph',
-      layout: 'force',
-      force: { 
-        repulsion: [1500, 4000],
-        edgeLength: [150, 400], 
-        gravity: 0.05,
-        friction: 0.1 
-      },
-      roam: true,
-      categories: [{ name: '当前岗位' }, { name: '晋升路线' }, { name: '换岗路线' }, { name: '星尘' }],
-      label: { 
-        show: true, 
-        position: 'right', 
-        distance: 12,
-        formatter: (p) => (p.data && p.data.category === '星尘') ? '' : `{title|${p.name}}`,
-        rich: {
-          title: {
-            color: '#F8FAFC',
-            fontSize: 13,
-            fontWeight: 800,
-            backgroundColor: 'rgba(15, 23, 42, 0.7)',
-            borderColor: 'rgba(51, 65, 85, 0.8)',
-            borderWidth: 1.5,
-            padding: [6, 14],
-            borderRadius: 20,
-            shadowColor: 'rgba(0,0,0,0.5)',
-            shadowBlur: 10,
-          }
-        }
-      },
-      data: nodes,
-      links: links,
-      lineStyle: { color: 'source', curveness: 0.25, opacity: 0.4 },
-      emphasis: { 
-        focus: 'adjacency', 
-        lineStyle: { width: 4, opacity: 1, shadowBlur: 15, shadowColor: 'rgba(255,255,255,0.5)' },
-        itemStyle: { shadowBlur: 60 }
-      }
-    }],
-    animationEasingUpdate: 'quinticInOut', animationDurationUpdate: 2500
-  }
-  
-  chartInstance.value.setOption(option)
-  
-  chartInstance.value.on('click', (p) => {
-    if (p.dataType === 'node' && p.data && p.data.category !== '星尘') {
-      activeNode.value = p.data
-    }
-  })
-  
-  chartInstance.value.getZr().on('click', (p) => {
-    if (!p.target) activeNode.value = null
-  })
-}
-
-onMounted(() => {
-  searchJobs()
-  fetchGraphData()
-  window.addEventListener('resize', () => chartInstance.value?.resize())
-})
-
-onUnmounted(() => {
-  window.removeEventListener('resize', () => chartInstance.value?.resize())
-  if (chartInstance.value) chartInstance.value.dispose()
-})
+onMounted(loadReports)
+onUnmounted(()=>{++request;observer?.disconnect();chart.value?.dispose()})
 </script>
-
 <style scoped>
-/* 🌟 终极暗黑宇宙底层 */
-.graph-page.dark-universe { width: 100%; height: 100vh; display: flex; flex-direction: column; background: radial-gradient(ellipse at bottom, #589dec 0%, #394b9c 100%); padding: 30px; overflow: hidden; box-sizing: border-box; font-family: 'Inter', -apple-system, sans-serif; position: relative; }
-
-/* 🌟 满天繁星生成器 */
-.starfield { position: absolute; inset: 0; pointer-events: none; z-index: 0; overflow: hidden;}
-.star { position: absolute; background: white; border-radius: 50%; box-shadow: 0 0 8px 2px rgba(255, 255, 255, 0.4); animation: twinkle linear infinite alternate; }
-@keyframes twinkle { 
-  0% { transform: scale(0.8); opacity: 0.1; } 
-  100% { transform: scale(1.2); opacity: 1; } 
-}
-/* 巨大的深空星云光晕 */
-.nebula-glow { position: absolute; width: 1200px; height: 1200px; border-radius: 50%; filter: blur(200px); opacity: 0.15; z-index: 0; pointer-events: none;}
-.glow-1 { top: -20%; left: -10%; background: #31539d; }
-.glow-2 { bottom: -20%; right: -10%; background: #9333EA; }
-/* 头部科幻排版 */
-.page-header { text-align: center; margin-bottom: 25px; z-index: 2; position: relative; }
-.neon-text { font-size: 2.2rem; font-weight: 900; color: #F8FAFC; margin: 0 0 8px 0; letter-spacing: 2px; text-shadow: 0 0 20px rgba(75, 128, 212, 0.8), 0 0 40px rgba(59, 130, 246, 0.4);}
-.subtitle { color: #94A3B8; margin: 0; font-size: 1.05rem; font-weight: 500; letter-spacing: 3px; text-transform: uppercase;}
-.graph-workspace { flex: 1; position: relative; display: flex; justify-content: center; z-index: 1;}
-/* 极客黑晶玻璃态主容器 */
-.chart-container.dark-glass { width: 100%; height: 100%; border-radius: 30px; position: relative; background: rgba(17, 47, 122, 0.4); backdrop-filter: blur(15px); overflow: hidden; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.05), 0 20px 50px rgba(0,0,0,0.5);}
-.echarts-box { width: 100%; height: 100%; min-height: 500px; }
-/* 加载状态与空状态（暗黑版） */
-.overlay-state { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 20px; background: rgba(2, 6, 23, 0.7); backdrop-filter: blur(10px); z-index: 5;}
-.quantum-loader { width: 60px; height: 60px; border-radius: 50%; border: 3px solid rgba(56, 189, 248, 0.1); border-top-color: #38BDF8; border-right-color: #818CF8; animation: spin 1s linear infinite; box-shadow: 0 0 30px rgba(56, 189, 248, 0.3); }
-@keyframes spin { to { transform: rotate(360deg); } }
-.loading-text { color: #38BDF8; font-weight: 800; font-size: 1.1rem; letter-spacing: 2px;}
-.empty-state p { color: #94A3B8; font-weight: 600; font-size: 1.1rem;}
-.empty-icon { font-size: 5rem; margin-bottom: -10px; filter: drop-shadow(0 0 20px rgba(56, 189, 248, 0.4));}
-.cyber-btn { padding: 16px 32px; background: rgba(15, 23, 42, 0.8); color: #38BDF8; border: 1px solid #38BDF8; border-radius: 12px; cursor: pointer; font-size: 1.05rem; font-weight: 800; transition: all 0.3s ease; box-shadow: 0 0 15px rgba(56, 189, 248, 0.2), inset 0 0 15px rgba(56, 189, 248, 0.1);}
-.cyber-btn:hover:not(:disabled) { transform: translateY(-3px); background: #38BDF8; color: #020617; box-shadow: 0 0 30px rgba(56, 189, 248, 0.5);}
-/* 🌟 深空探测站（暗黑悬浮面板） */
-.detail-panel.dark-glass { position: absolute; right: 40px; top: 40px; width: 340px; padding: 28px; border-radius: 24px; background: rgba(15, 23, 42, 0.85); z-index: 100; box-shadow: 0 30px 60px rgba(0,0,0,0.6), inset 0 0 0 1px rgba(255,255,255,0.1); backdrop-filter: blur(25px); display: flex; flex-direction: column; gap: 20px;}
-.panel-deco-line { position: absolute; left: 0; top: 30px; bottom: 30px; width: 4px; background: linear-gradient(to bottom, #38BDF8, #818CF8); border-radius: 0 4px 4px 0; box-shadow: 0 0 10px rgba(56, 189, 248, 0.5);}
-.panel-header { border-bottom: 1px solid rgba(58, 119, 205, 0.2); padding-bottom: 18px; }
-.panel-header h3 { margin: 0 0 12px 0; font-size: 1.3rem; color: #F8FAFC; font-weight: 900; line-height: 1.3; text-shadow: 0 0 10px rgba(255,255,255,0.2);}
-.node-tag { padding: 6px 14px; border-radius: 12px; font-size: 0.8rem; font-weight: 900; display: inline-block; border: 1px solid transparent;}
-.tag-up { background: rgba(5, 150, 105, 0.2); color: #34D399; border-color: rgba(52, 211, 153, 0.3); }
-.tag-transfer { background: rgba(109, 40, 217, 0.2); color: #C084FC; border-color: rgba(192, 132, 252, 0.3); }
-.panel-body { display: flex; flex-direction: column; gap: 16px; }
-.info-row { display: flex; flex-direction: column; gap: 8px; }
-.info-row .label { color: #94A3B8; font-size: 0.85rem; font-weight: 800; letter-spacing: 1px;}
-.info-row .value { color: #E2E8F0; font-weight: 700; background: rgba(30, 41, 59, 0.6); padding: 12px 16px; border-radius: 12px; display: block; border: 1px solid rgba(148, 163, 184, 0.1); font-size: 0.95rem; line-height: 1.5;}
-.highlight { color: #38BDF8 !important; font-weight: 900 !important; background: rgba(56, 189, 248, 0.1) !important; border-color: rgba(56, 189, 248, 0.3) !important; text-shadow: 0 0 8px rgba(56,189,248,0.4); }
-.close-btn { width: 100%; margin-top: 10px; padding: 14px; border: 1px solid rgba(148, 163, 184, 0.2); border-radius: 12px; cursor: pointer; background: transparent; font-weight: 900; color: #94A3B8; transition: 0.3s; font-size: 0.95rem;}
-.close-btn:hover { background: rgba(255,255,255,0.05); color: #F8FAFC; border-color: rgba(255,255,255,0.2);}
-.panel-fade-enter-active, .panel-fade-leave-active { transition: all 0.5s cubic-bezier(0.2, 1, 0.3, 1); }
-.panel-fade-enter-from, .panel-fade-leave-to { opacity: 0; transform: translateX(30px) scale(0.95); filter: blur(5px); }
-.page-header form { display:flex; flex-wrap:wrap; gap:8px; margin:12px 0; }
-.page-header input, .page-header select, .page-header button { padding:10px; border-radius:8px; border:1px solid #bfd3ed; max-width:100%; }
-.graph-page.dark-universe { height:100%; min-height:0; overflow:auto; min-width:0; flex-shrink:1; }
-.graph-workspace { flex-shrink:0; }
-.page-header { min-width:0; overflow-wrap:anywhere; color:#e6efff; }
-.chart-container { min-height:520px; }
-@media (max-width: 1000px) { .graph-workspace { flex-direction:column; } .detail-panel { width:auto; } }
+.source-bar{display:flex;align-items:center;gap:18px;background:#fff;border:1px solid var(--wb-border);padding:18px 22px;border-radius:14px;margin:24px 0}.source-bar>div{flex:1;min-width:0}.source-bar label{display:block;font-size:11px;color:var(--wb-muted);margin-bottom:6px}.source-bar select{width:100%;border:0;background:transparent;font:inherit;color:var(--wb-ink)}.source-date,.saved-mark{font-size:12px;color:var(--wb-muted)}.saved-mark{color:#197065}.atlas-layout{display:grid;grid-template-columns:minmax(0,1fr) 290px;gap:18px}.atlas-panel{background:#111d31;border-radius:18px;color:#e6edfa;min-width:0;background-image:radial-gradient(#26374e 1px,transparent 1px);background-size:24px 24px;overflow:hidden}.atlas-toolbar{padding:24px;display:flex;align-items:center;justify-content:space-between}.atlas-toolbar h2{font-size:22px;margin:10px 0 0}.atlas-toolbar .eyebrow{color:#91a6c6;font-size:10px}.chart-reset{background:#21334c;color:#dce7fa;border:1px solid #40536e;border-radius:8px;padding:10px;cursor:pointer}.atlas-legend{display:flex;gap:14px;flex-wrap:wrap;padding:0 24px;color:#aabbd3;font-size:11px}.atlas-canvas{width:100%;height:530px}.atlas-footer{border-top:1px solid #293b54;display:flex;gap:10px;justify-content:space-between;padding:16px 24px;color:#91a6c6;font-size:11px}.insight-panel{background:white;border:1px solid var(--wb-border);border-radius:18px;padding:24px;min-width:0}.insight-panel h2{font-size:23px;line-height:1.4;margin:14px 0}.insight-panel h3{font-size:13px;margin-top:24px}.insight-panel p,.insight-panel li{font-size:13px;line-height:1.85;color:#59677b}.insight-panel blockquote{font-size:12px;line-height:1.8;color:#50617c;margin:12px 0;border-left:3px solid #5a82e8;padding:4px 12px;background:#f5f8fe}.insight-panel ul,.insight-panel ol{padding-left:18px}.insight-panel .wb-button{margin-top:12px;display:flex;justify-content:center}.insight-panel small{display:block;font-size:11px;line-height:1.8;color:var(--wb-muted);margin-top:22px}.branch-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px;margin:20px 0}.branch-list button{display:flex;align-items:center;gap:10px;border:1px solid var(--wb-border);padding:16px;border-radius:10px;background:#fff;color:var(--wb-ink);cursor:pointer;text-align:left}.branch-list span{font:12px monospace;color:#6580a2}.branch-list small{margin-left:auto;color:#6a7a91;font-size:10px}.branch-list .selected{border-color:var(--wb-accent);background:#edf3ff}.wb-empty small{display:block;margin-top:22px;color:var(--wb-muted)}
+@media(max-width:1250px){.atlas-layout{grid-template-columns:1fr}.source-bar{flex-wrap:wrap}.atlas-canvas{height:480px}}
 </style>
