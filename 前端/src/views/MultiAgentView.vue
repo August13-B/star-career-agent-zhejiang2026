@@ -85,7 +85,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, nextTick, computed } from 'vue'
+import { ref, onMounted, nextTick, computed, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import axios from 'axios'
 import AppIcon from '../components/AppIcon.vue'
@@ -109,6 +109,12 @@ const AGENT_DEFS = [
 const userId = ref(localStorage.getItem('userId') || '')
 const extraInput = ref(typeof route.query.target === 'string' ? `目标岗位：${route.query.target.slice(0, 200)}。请结合最新能力测评制定职业路径与行动计划。` : '')
 const running = ref(false)
+// 缓存中的报告页再次进入时同步新目标，但不覆盖正在生成的任务。
+watch(() => route.query.target, target => {
+  if (route.path === '/multi-agent' && typeof target === 'string' && !running.value) {
+    extraInput.value = `目标岗位：${target.slice(0, 200)}。请结合最新能力测评制定职业路径与行动计划。`
+  }
+})
 const finished = ref(false)
 const savedHint = ref('')
 const progressChars = ref(0)

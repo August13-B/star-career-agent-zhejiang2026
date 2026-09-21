@@ -140,8 +140,7 @@ const startAnalysis = async () => {
   }
   
   isAnalyzing.value = true
-  scoreData.value = null
-  decryptedComment.value = ''
+  historyError.value = ''
 
   try {
     const payload = {
@@ -154,6 +153,7 @@ const startAnalysis = async () => {
 
     if (res.data.code === 10001 || res.data.code === 200 || res.data.code === 0) {
       const data = Array.isArray(res.data.data) ? res.data.data[0] : res.data.data
+      if (!data || data.totalScore == null) throw new Error('测评结果不完整，请重试')
       scoreData.value = data
       
       // ... 前面的代码 ...
@@ -384,4 +384,14 @@ onUnmounted(() => {
 .cyber-dots span { display: inline-block; width: 6px; height: 6px; background: #3B82F6; border-radius: 50%; margin: 0 2px; animation: bounce 1.4s infinite ease-in-out; }
 .cyber-dots span:nth-child(1) { animation-delay: -0.32s; }
 .cyber-dots span:nth-child(2) { animation-delay: -0.16s; }
+.innovative-score-page { width:100%; height:auto; min-height:100vh; overflow:auto; }
+.page-container { height:auto; min-height:90vh; box-sizing:border-box; padding:24px; }
+.control-glass-panel { box-sizing:border-box; overflow:auto; }
+@media (max-width: 1100px) {
+  .holographic-layout { flex-direction:column; }
+  .control-glass-panel { width:100%; }
+  .radar-glass-panel { min-height:480px; padding:12px; }
+  .radar-chart { min-height:480px; }
+  .gradient-text { font-size:1.7rem; }
+}
 </style>
