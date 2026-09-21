@@ -55,10 +55,13 @@ jobs:
       - name: 拉取代码
         uses: actions/checkout@v4
 
-      - name: 生成 RSA 测试密钥（Base64 DER，供启动期 RSA_256 bean）
+      - name: 生成 RSA 测试密钥（PKCS#8 私钥 + X.509 公钥，Base64 DER）
         run: |
-          openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -outform DER -out /tmp/priv.der
-          openssl rsa -in /tmp/priv.der -inform DER -pubout -outform DER -out /tmp/pub.der
+          openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out /tmp/priv.pem
+          # 注意：必须用 pkcs8 转 PKCS#8 私钥；genpkey -outform DER 输出的是 PKCS#1，
+          # Hutool 会报 InvalidKeySpecException: algid parse error, not a sequence
+          openssl pkcs8 -topk8 -nocrypt -in /tmp/priv.pem -outform DER -out /tmp/priv.der
+          openssl rsa -in /tmp/priv.pem -pubout -outform DER -out /tmp/pub.der
           echo "RSA_PRIVATE_KEY=$(base64 -w0 /tmp/priv.der)" >> "$GITHUB_ENV"
           echo "RSA_PUBLIC_KEY=$(base64 -w0 /tmp/pub.der)" >> "$GITHUB_ENV"
 
