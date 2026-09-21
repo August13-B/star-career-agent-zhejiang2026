@@ -1294,8 +1294,8 @@ public class AIConversationServiceImpl implements AIConversationService {
 
     @Override
     public Flux<String> sendMessageStream(Long userId, String userMessage, Integer conversationType, Long conversationId, Double temperature) {
-        // A02：纯文本对话默认走百宝箱 HTTP SSE（POST /api/chat/stream）；
-        // 若平台新接口尚未就绪，可在 .env 设 TBOX_CHAT_CHANNEL=ws 切回旧 WebSocket 兜底。
+        // 默认通过百宝箱 WebSocket 接收回答，实时转发为前端 SSE。
+        // 仅平台提供 HTTP SSE 接口时才设置 TBOX_CHAT_CHANNEL=http。
         // 带图片对话始终走 WS（见 sendMessageWithImageStream）。
         if ("ws".equalsIgnoreCase(tboxProperties.getChatChannel())) {
             return sendMessageStreamWs(userId, userMessage, conversationType, conversationId, temperature);
@@ -1304,7 +1304,7 @@ public class AIConversationServiceImpl implements AIConversationService {
     }
 
     /**
-     * 【兑底/旧链路】WebSocket 流式对话（先收集后落库）。
+     * WebSocket 流式对话（实时转发，正常结束后落库）。
      * 保留以支持 {@code tbox.chat-channel=ws}。
      */
     private Flux<String> sendMessageStreamWs(Long userId, String userMessage, Integer conversationType, Long conversationId, Double temperature) {
@@ -1423,45 +1423,9 @@ public class AIConversationServiceImpl implements AIConversationService {
             Double finalTemperature = temperature != null ? temperature : 1.0;
 
             // 9. 调用AI服务流式接口，收集响应并保存AI消息
-            return aiService.chatStream(finalMessage, finalTemperature, userId, conversation.getId())
-                    .collectList()
-                    .flatMapMany(chunks -> {
-                        // 处理每个chunk，提取纯文本并重新构建chunk，同时拼接完整响应
-                        List<String> processedChunks = new ArrayList<>();
-                        StringBuilder fullResponseBuilder = new StringBuilder();
-                        for (String chunk : chunks) {
-                            try {
-                                // 尝试解析chunk为JSON对象
-                                Map<?, ?> chunkMap = objectMapper.readValue(chunk, Map.class);
-                                if (chunkMap.containsKey("data")) {
-                                    Object data = chunkMap.get("data");
-                                    if (data != null) {
-                                        // 递归提取纯文本
-                                        String pureText = extractPureTextFromResponseObject(data);
-                                        // 重新构建chunk
-                                        Map<String, Object> processedChunkMap = new HashMap<>();
-                                        processedChunkMap.put("data", pureText);
-                                        String processedChunk = objectMapper.writeValueAsString(processedChunkMap);
-                                        processedChunks.add(processedChunk);
-                                        // 用于保存AI消息的拼接
-                                        fullResponseBuilder.append(pureText);
-                                    } else {
-                                        processedChunks.add(chunk);
-                                        fullResponseBuilder.append(chunk);
-                                    }
-                                } else {
-                                    // 如果没有data字段，使用整个chunk的字符串表示
-                                    processedChunks.add(chunk);
-                                    fullResponseBuilder.append(chunk);
-                                }
-                            } catch (Exception e) {
-                                // 不是JSON，直接作为文本
-                                processedChunks.add(chunk);
-                                fullResponseBuilder.append(chunk);
-                            }
-                        }
-                        String fullResponseText = fullResponseBuilder.toString();
-
+            return relayTextStream(
+                    aiService.chatStream(finalMessage, finalTemperature, userId, conversation.getId()),
+                    fullResponseText -> {
                         // 保存AI消息
                         try {
                             // 提取纯文本内容
@@ -1512,13 +1476,8 @@ public class AIConversationServiceImpl implements AIConversationService {
                             // 更新对话状态为已完成
                             aiConversationMapper.updateConversationStatus(conversation.getId(), 2);
                             System.out.println("AI流式回复已保存，对话ID: " + conversation.getId());
-
-                            // 返回处理后的chunks的Flux
-                            return Flux.fromIterable(processedChunks);
                         } catch (Exception e) {
                             System.err.println("保存AI流式消息失败: " + e.getMessage());
-                            // 返回处理后的chunks，但记录错误
-                            return Flux.fromIterable(processedChunks);
                         }
                     })
                     .onErrorResume(e -> {
@@ -1971,45 +1930,9 @@ public class AIConversationServiceImpl implements AIConversationService {
             Double finalTemperature = temperature != null ? temperature : 0.7;
 
             // 9. 调用AI服务带图片流式接口，收集响应并保存AI消息
-            return aiService.chatWithImageStream(finalMessage, finalTemperature, imageUrl)
-                    .collectList()
-                    .flatMapMany(chunks -> {
-                        // 处理每个chunk，提取纯文本并重新构建chunk，同时拼接完整响应
-                        List<String> processedChunks = new ArrayList<>();
-                        StringBuilder fullResponseBuilder = new StringBuilder();
-                        for (String chunk : chunks) {
-                            try {
-                                // 尝试解析chunk为JSON对象
-                                Map<?, ?> chunkMap = objectMapper.readValue(chunk, Map.class);
-                                if (chunkMap.containsKey("data")) {
-                                    Object data = chunkMap.get("data");
-                                    if (data != null) {
-                                        // 递归提取纯文本
-                                        String pureText = extractPureTextFromResponseObject(data);
-                                        // 重新构建chunk
-                                        Map<String, Object> processedChunkMap = new HashMap<>();
-                                        processedChunkMap.put("data", pureText);
-                                        String processedChunk = objectMapper.writeValueAsString(processedChunkMap);
-                                        processedChunks.add(processedChunk);
-                                        // 用于保存AI消息的拼接
-                                        fullResponseBuilder.append(pureText);
-                                    } else {
-                                        processedChunks.add(chunk);
-                                        fullResponseBuilder.append(chunk);
-                                    }
-                                } else {
-                                    // 如果没有data字段，使用整个chunk的字符串表示
-                                    processedChunks.add(chunk);
-                                    fullResponseBuilder.append(chunk);
-                                }
-                            } catch (Exception e) {
-                                // 不是JSON，直接作为文本
-                                processedChunks.add(chunk);
-                                fullResponseBuilder.append(chunk);
-                            }
-                        }
-                        String fullResponseText = fullResponseBuilder.toString();
-
+            return relayTextStream(
+                    aiService.chatWithImageStream(finalMessage, finalTemperature, imageUrl),
+                    fullResponseText -> {
                         // 保存AI消息
                         try {
                             // 提取纯文本内容
@@ -2040,13 +1963,8 @@ public class AIConversationServiceImpl implements AIConversationService {
                             // 更新对话状态为已完成
                             aiConversationMapper.updateConversationStatus(conversation.getId(), 2);
                             System.out.println("AI带图片流式回复已保存，对话ID: " + conversation.getId());
-
-                            // 返回处理后的chunks的Flux
-                            return Flux.fromIterable(processedChunks);
                         } catch (Exception e) {
                             System.err.println("保存AI带图片流式消息失败: " + e.getMessage());
-                            // 返回处理后的chunks，但记录错误
-                            return Flux.fromIterable(processedChunks);
                         }
                     })
                     .onErrorResume(e -> {
@@ -2058,6 +1976,28 @@ public class AIConversationServiceImpl implements AIConversationService {
         }
     }
     
+    private Flux<String> relayTextStream(Flux<String> upstream, java.util.function.Consumer<String> onComplete) {
+        // 每个订阅独立累积正文；边到达边转发，仅正常结束后保存完整回复。
+        return Flux.defer(() -> {
+            StringBuilder fullResponse = new StringBuilder();
+            return upstream.map(chunk -> {
+                String processedChunk = chunk;
+                String text = chunk;
+                try {
+                    Map<?, ?> frame = objectMapper.readValue(chunk, Map.class);
+                    if (frame.get("data") != null) {
+                        text = extractPureTextFromResponseObject(frame.get("data"));
+                        processedChunk = objectMapper.writeValueAsString(Map.of("data", text));
+                    }
+                } catch (Exception ignored) {
+                    // 兼容旧服务返回的纯文本帧。
+                }
+                fullResponse.append(text);
+                return processedChunk;
+            }).doOnComplete(() -> onComplete.accept(fullResponse.toString()));
+        });
+    }
+
     /**
      * 确保文本为纯文本，如果输入是JSON字符串，提取其中的文本内容
      */
