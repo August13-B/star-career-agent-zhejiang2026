@@ -82,7 +82,7 @@ public class TboxAgentServiceImpl implements TboxAgentService {
     public Flux<String> chatStream(Long userId, Long localConversationId, String message) {
         if (!props.isConfigured()) {
             log.warn("百宝箱未配置（TBOX_API_URL 为空），返回不可用提示");
-            return Flux.just(chunk("抱歉，AI 服务暂不可用：后端未配置百宝箱地址（TBOX_API_URL）。"));
+            return Flux.just(errorChunk("AI 服务暂不可用：后端未配置百宝箱地址（TBOX_API_URL）。"));
         }
         return Mono.fromCallable(() -> resolveSession(userId, localConversationId))
                 .subscribeOn(Schedulers.boundedElastic())
@@ -91,7 +91,7 @@ public class TboxAgentServiceImpl implements TboxAgentService {
                 .timeout(Duration.ofSeconds(Math.max(30, props.getChatTimeoutSeconds())))
                 .onErrorResume(e -> {
                     log.error("百宝箱对话失败: {}", e.toString());
-                    return Flux.just(chunk(translateError(e)));
+                    return Flux.just(errorChunk(translateError(e)));
                 });
     }
 
@@ -121,6 +121,8 @@ public class TboxAgentServiceImpl implements TboxAgentService {
                     JsonNode n = objectMapper.readTree(c);
                     if (n.has("data")) {
                         sb.append(n.get("data").asText(""));
+                    } else if (n.has("error")) {
+                        sb.append(n.get("error").asText(""));
                     }
                 } catch (Exception ignore) {
                     sb.append(c);
@@ -244,7 +246,7 @@ public class TboxAgentServiceImpl implements TboxAgentService {
                 null,
                 err -> {
                     log.error("百宝箱 WS 异常", err);
-                    sink.tryEmitNext(chunk(translateError(err)));
+                    sink.tryEmitNext(errorChunk(translateError(err)));
                     sink.tryEmitComplete();
                 },
                 () -> {
@@ -288,7 +290,7 @@ public class TboxAgentServiceImpl implements TboxAgentService {
                     String reqId = n.path("rawEvent").path("requestId").asText(null);
                     rememberRunIds(localConversationId, firstNonBlank(n, "messageId"), reqId);
                     log.warn("百宝箱返回错误: {} (raw={})", msg, raw);
-                    sink.tryEmitNext(chunk(translatePlatformMessage(msg)));
+                    sink.tryEmitNext(errorChunk(translatePlatformMessage(msg)));
                     done.set(true);
                 }
                 case "TOOL_CALL_START" -> log.debug("平台检索中: {}", raw);

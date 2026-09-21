@@ -98,6 +98,19 @@ class ConversationStreamingTest {
 
     @ParameterizedTest
     @ValueSource(booleans = {false, true})
+    void platformErrorFrameIsForwardedButNotSavedAsAnAnswer(boolean withImage) {
+        var received = new ArrayList<String>();
+        response(withImage).subscribe(received::add);
+        String error = "{\"error\":\"平台不可用\"}";
+        upstream.tryEmitNext(error);
+        upstream.tryEmitComplete();
+        assertEquals(List.of(error), received);
+        verify(conversations, never()).insertMessage(argThat(m -> m.getMessageType() == 2));
+        verify(conversations, never()).updateConversationStatus(2L, 2);
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
     void cancelledStreamDoesNotPersistPartialReplyAsComplete(boolean withImage) {
         var subscription = response(withImage).subscribe();
         upstream.tryEmitNext("partial");
