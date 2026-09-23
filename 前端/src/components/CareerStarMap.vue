@@ -80,8 +80,9 @@ onMounted(() => {
   let twinkleFrame = 0
   const twinkle = () => {
     if (document.hidden || motionQuery.matches) return
-    const litPoint = twinklePoints[twinkleFrame++ % twinklePoints.length]
-    chart.setOption({series:[{id:'star-map',data:nodes.map((node,index) => index === litPoint ? { ...node, symbolSize:node.symbolSize + 3, itemStyle:{...node.itemStyle,color:'#fff2c5',shadowBlur:22,shadowColor:'#eebd67'} } : node)}]})
+    const litPoints = new Set([0, 2, 4].map(offset => twinklePoints[(twinkleFrame + offset) % twinklePoints.length]))
+    twinkleFrame++
+    chart.setOption({series:[{id:'star-map',data:nodes.map((node,index) => litPoints.has(index) ? { ...node, symbolSize:node.symbolSize + 5, itemStyle:{...node.itemStyle,color:'#fff2c5',shadowBlur:28,shadowColor:'#eebd67'} } : node)}]})
   }
   const onMotionChange = () => {
     chart.setOption({animation:!motionQuery.matches,series:[{id:'star-map',data:nodes}]})
@@ -89,7 +90,7 @@ onMounted(() => {
   }
   motionQuery.addEventListener('change', onMotionChange)
   stopMotionWatch = () => motionQuery.removeEventListener('change', onMotionChange)
-  twinkleTimer = window.setInterval(twinkle, 1700)
+  twinkleTimer = window.setInterval(twinkle, 1200)
   observer = new ResizeObserver(() => chart?.resize())
   observer.observe(constellationEl.value)
 })
