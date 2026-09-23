@@ -75,9 +75,18 @@ const render=()=>{
     series:[{
       type:'graph',layout:'none',left:0,right:0,top:0,bottom:0,roam:false,
       data:[...nodes,...bounds],links,
-      label:{show:true,color:'#253447',fontSize:12,position:'inside',lineHeight:19,overflow:'break'},
-      lineStyle:{width:1.2,curveness:.12},
-      emphasis:{lineStyle:{width:2.2,opacity:1},itemStyle:{borderWidth:2}}
+      label:{
+        show:true,position:'right',distance:8,color:'#1E293B',fontWeight:600,fontSize:12,
+        fontFamily:'-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif',
+        backgroundColor:'rgba(255, 255, 255, 0.9)',padding:[4,8],borderRadius:6,
+        borderColor:'#E2E8F0',borderWidth:1,
+        shadowColor:'rgba(15, 23, 42, 0.05)',shadowBlur:4,shadowOffsetY:2
+      },
+      lineStyle:{width:1.5,curveness:.15},
+      emphasis:{
+        lineStyle:{width:3.5,opacity:1},
+        itemStyle:{shadowOffsetY:12,shadowBlur:25,shadowColor:'rgba(15, 23, 42, 0.3)'}
+      }
     }]
   })
   chart.value.on('click',p=>{if(Number.isInteger(p.data?.branchIndex))selectBranch(p.data.branchIndex)})
@@ -105,8 +114,8 @@ onUnmounted(()=>{++request;observer?.disconnect();chart.value?.dispose()})
 .atlas-legend span::before{content:'';width:11px;height:11px;border-radius:3px;background:#d9e2f4;border:1px solid #4773ca}
 .atlas-legend .promotion::before{background:#e2f1d8;border-color:#81975e}.atlas-legend .transfer::before{background:#f9dade;border-color:#b76679}
 .atlas-scroll{overflow-x:auto;border-top:1px solid #e9edf1;background:#fff}
-.atlas-diagram{min-width:840px}
-.column-labels{display:grid;grid-template-columns:31% 34% 35%;border-bottom:1px solid #edf0f3;padding:14px 0;font-size:12px;color:#667281;text-align:center;background:#fafbfc}
+.atlas-diagram{min-width:1100px}
+.column-labels{display:grid;grid-template-columns:26% 32% 42%;border-bottom:1px solid #edf0f3;padding:14px 0;font-size:12px;color:#667281;text-align:center;background:#fafbfc}
 .column-labels b{font-family:Georgia,serif;font-size:17px;color:#263448;margin-right:8px}
 .atlas-canvas{width:100%}
 .atlas-footer{border-top:1px solid #e9edf1;display:flex;gap:10px;justify-content:space-between;padding:14px 24px 8px;color:#667281;font-size:11px;flex-wrap:wrap}
