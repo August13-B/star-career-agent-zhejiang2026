@@ -286,7 +286,7 @@
               <section v-for="(s, i) in reportSections" :key="'sec-' + i" class="report-section">
                 <h4 v-if="s.title" class="report-section-title">{{ s.title }}</h4>
                 <div v-if="s.content" class="report-section-body" v-html="renderReportHtml(s.content)"></div>
-                <div v-if="s.advice" class="import-growth-bar">
+                <div v-if="s.importBar" class="import-growth-bar">
                   <button class="upload-btn import-btn" :class="{ done: importDone }"
                           :disabled="!canImport || importing" @click="importToGrowth">
                     <template v-if="importing">导入中…</template>
@@ -785,26 +785,28 @@ const parseReportContent = (r) => {
   }
 }
 
-/** 把最终报告按 `### 小节` 切分，并标出「关键建议」小节（首个无标题节为前言） */
+/** 把最终报告按 `### 小节` 切分，并把「一键导入」按钮挂到「1 / 3 / 5 年目标」小节末尾 */
 const splitReportSections = (text) => {
   const src = String(text || '').trim()
   if (!src) return []
   const parts = src.split(/^#{2,4}\s+/m)
   const secs = []
   if (parts[0].trim()) {
-    secs.push({ title: '', content: parts[0].trim(), advice: false })
+    secs.push({ title: '', content: parts[0].trim() })
   }
   for (let i = 1; i < parts.length; i++) {
     const seg = parts[i]
     const nl = seg.indexOf('\n')
     const title = (nl >= 0 ? seg.slice(0, nl) : seg).trim()
     const content = (nl >= 0 ? seg.slice(nl + 1) : '').trim()
-    secs.push({ title, content, advice: /关键建议|建议/.test(title) })
+    secs.push({ title, content })
   }
-  // 整篇没有小节标题时：整体作为一节，若正文含「关键建议」也给出按钮
-  if (secs.length === 1 && !secs[0].title) {
-    secs[0].advice = /关键建议/.test(src)
-  }
+  if (secs.length === 0) return secs
+  // 「三、1 / 3 / 5 年目标（文字版）」下面；标题变了就按「年目标」兑底；再不行放最后一节
+  let idx = secs.findIndex((s) => /1\s*[\/·、,，]\s*3\s*[\/·、,，]\s*5/.test(s.title))
+  if (idx < 0) idx = secs.findIndex((s) => /年目标/.test(s.title))
+  if (idx < 0) idx = secs.length - 1
+  secs[idx].importBar = true
   return secs
 }
 
@@ -843,7 +845,7 @@ const canImport = computed(() => hasGoals.value && !importDone.value)
 const importHint = computed(() => {
   if (importDone.value) return '该报告已导入过个人成长（同一份报告只能导入一次）'
   if (!hasGoals.value) return '该报告生成时未包含结构化 1/3/5 年目标，无法导入'
-  return '将把该报告的 1/3/5 年目标追加为「个人成长」的规划与待办（不影响你已有的规划）'
+  return '将把该报告的 1/3/5 年目标追加为「个人成长」的规划与待办'
 })
 
 const importToGrowth = async () => {
@@ -1176,7 +1178,7 @@ const changePassword = async () => {
 .report-section-body h2, .report-section-body h3, .report-section-body h4 { color: #1E293B; margin: 12px 0 8px; }
 .report-section-body ul { margin: 6px 0 6px 18px; padding: 0; }
 .report-section-body strong { color: #111827; }
-/* 一键导入「个人成长」——放在「关键建议」小节末尾 */
+/* 一键导入「个人成长」——挂在「1 / 3 / 5 年目标」小节末尾 */
 .import-growth-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 14px; padding: 12px 14px;
   background: #F0F7FF; border: 1px dashed #BFDBFE; border-radius: 10px; }
 .import-btn { padding: 8px 16px; border-radius: 8px; }
