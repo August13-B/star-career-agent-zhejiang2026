@@ -85,6 +85,7 @@
               </div>
               <div class="report-actions">
                 <button class="outline-btn" @click="openReport(r)">查看报告</button>
+                <button class="outline-btn" @click="openFullRecord(r)">查看完整记录</button>
                 <div class="export-wrap">
                   <button class="text-btn" @click.stop="toggleExport(r.id)">导出 PDF ▾</button>
                   <div v-if="String(exportOpenId) === String(r.id)" class="export-menu">
@@ -280,15 +281,58 @@
             <button class="close-modal-btn" @click="reportVis = false">✕</button>
           </div>
           <div class="modal-body report-view">
-            <section v-for="(a, i) in currentReportAgents" :key="i" class="report-section">
+            <!-- 最终报告：按「### 小节」渲染；在「关键建议」小节末尾给出「一键导入个人成长」 -->
+            <template v-if="reportSections.length > 0">
+              <section v-for="(s, i) in reportSections" :key="'sec-' + i" class="report-section">
+                <h4 v-if="s.title" class="report-section-title">{{ s.title }}</h4>
+                <div v-if="s.content" class="report-section-body" v-html="renderReportHtml(s.content)"></div>
+                <div v-if="s.advice" class="import-growth-bar">
+                  <button class="upload-btn import-btn" :class="{ done: importDone }"
+                          :disabled="!canImport || importing" @click="importToGrowth">
+                    <template v-if="importing">导入中…</template>
+                    <template v-else-if="importDone">✓ 已导入个人成长</template>
+                    <template v-else-if="!hasGoals">暂无可导入目标</template>
+                    <template v-else>一键导入个人成长</template>
+                  </button>
+                  <span class="import-hint">{{ importHint }}</span>
+                </div>
+              </section>
+            </template>
+            <!-- 老报告／无最终报告：回退为分段展示 -->
+            <template v-else>
+              <section v-for="(a, i) in currentReportAgents" :key="i" class="report-section">
+                <h4 class="report-section-title">{{ a.name || a.key }}</h4>
+                <div class="report-section-body" v-html="renderReportHtml(a.content)"></div>
+              </section>
+            </template>
+            <div v-if="reportSections.length === 0 && currentReportAgents.length === 0" class="report-empty">报告内容为空</div>
+          </div>
+          <div class="modal-footer">
+            <button class="outline-btn" @click="exportReportPdf(currentReport, 'report')">导出 PDF（简介）</button>
+            <button class="upload-btn" @click="reportVis = false">关闭</button>
+          </div>
+        </div>
+      </div>
+    </transition>
+
+    <transition name="modal-fade">
+      <div class="modal-overlay" v-if="fullRecordVis" @click.self="fullRecordVis = false">
+        <div class="modal-content report-modal">
+          <div class="modal-header">
+            <h3>{{ currentReportName }}（完整记录）</h3>
+            <button class="close-modal-btn" @click="fullRecordVis = false">✕</button>
+          </div>
+          <div class="modal-body report-view">
+            <p class="full-record-tip">以下为多智能体生成该报告时的完整过程记录（不含最终报告，最终报告请看「查看报告」）。</p>
+            <section v-for="(a, i) in currentFullRecordAgents" :key="i" class="report-section">
               <h4 class="report-section-title">{{ a.name || a.key }}</h4>
               <div class="report-section-body" v-html="renderReportHtml(a.content)"></div>
             </section>
-            <div v-if="currentReportAgents.length === 0" class="report-empty">报告内容为空</div>
+            <div v-if="currentFullRecordAgents.length === 0" class="report-empty">暂无过程记录</div>
           </div>
           <div class="modal-footer">
-            <button class="outline-btn" @click="exportReportPdf(currentReport)">导出 PDF</button>
-            <button class="upload-btn" @click="reportVis = false">关闭</button>
+            <button class="outline-btn" @click="exportReportPdf(currentReport, 'full')">导出 PDF（全量过程）</button>
+            <button class="upload-btn" @click="fullRecordVis = false">关闭</button>
           </div>
         </div>
       </div>
@@ -699,6 +743,12 @@ const reportVis = ref(false)
 const currentReport = ref(null)
 const currentReportName = ref('')
 const currentReportAgents = ref([])
+// 查看完整记录（多智能体过程）
+const fullRecordVis = ref(false)
+const currentFullRecordAgents = ref([])
+// 「查看报告」按 ### 小节切分（用于在「关键建议」小节末尾插入导入按钮）
+const reportSections = ref([])
+const importing = ref(false)
 
 const fetchReports = async () => {
   if (!currentUserId.value) return
@@ -712,24 +762,114 @@ const fetchReports = async () => {
   finally { reportLoading.value = false }
 }
 
-const parseReportContent = (r) => {
-  currentReport.value = r
-  currentReportName.value = r.reportName || '职业规划报告'
-  currentReportAgents.value = []
+const parseContent = (r) => {
+  if (!r) return {}
   try {
-    const content = typeof r.reportContent === 'string' ? JSON.parse(r.reportContent) : r.reportContent
-    if (content && content.final) {
-      // 最终报告 = 第 6 段整合后的「简介」（不再叠加 6 段过程）
-      currentReportAgents.value = [{ name: r.reportName || '职业规划报告', content: content.final }]
-    } else if (content && Array.isArray(content.agents)) {
-      currentReportAgents.value = content.agents
-    } else if (content && content.fullText) {
-      currentReportAgents.value = [{ name: '报告正文', content: content.fullText }]
-    }
-  } catch (e) { console.error('解析报告内容失败', e) }
+    const c = typeof r.reportContent === 'string' ? JSON.parse(r.reportContent) : r.reportContent
+    return c || {}
+  } catch (e) { console.error('解析报告内容失败', e); return {} }
 }
 
-const openReport = (r) => { parseReportContent(r); reportVis.value = true }
+const parseReportContent = (r) => {
+  currentReport.value = r
+  currentReportName.value = (r && r.reportName) || '职业规划报告'
+  currentReportAgents.value = []
+  const content = parseContent(r)
+  if (content.final) {
+    // 最终报告 = 第 6 段整合后的「简介」（不再叠加 6 段过程）
+    currentReportAgents.value = [{ name: currentReportName.value, content: content.final }]
+  } else if (Array.isArray(content.agents)) {
+    currentReportAgents.value = content.agents
+  } else if (content.fullText) {
+    currentReportAgents.value = [{ name: '报告正文', content: content.fullText }]
+  }
+}
+
+/** 把最终报告按 `### 小节` 切分，并标出「关键建议」小节（首个无标题节为前言） */
+const splitReportSections = (text) => {
+  const src = String(text || '').trim()
+  if (!src) return []
+  const parts = src.split(/^#{2,4}\s+/m)
+  const secs = []
+  if (parts[0].trim()) {
+    secs.push({ title: '', content: parts[0].trim(), advice: false })
+  }
+  for (let i = 1; i < parts.length; i++) {
+    const seg = parts[i]
+    const nl = seg.indexOf('\n')
+    const title = (nl >= 0 ? seg.slice(0, nl) : seg).trim()
+    const content = (nl >= 0 ? seg.slice(nl + 1) : '').trim()
+    secs.push({ title, content, advice: /关键建议|建议/.test(title) })
+  }
+  // 整篇没有小节标题时：整体作为一节，若正文含「关键建议」也给出按钮
+  if (secs.length === 1 && !secs[0].title) {
+    secs[0].advice = /关键建议/.test(src)
+  }
+  return secs
+}
+
+const openReport = (r) => {
+  parseReportContent(r)
+  reportSections.value = splitReportSections(parseContent(r).final || '')
+  reportVis.value = true
+}
+
+/** 查看完整记录 = 多智能体过程（排除第 6 段「报告整合」，与「全量导出」一致） */
+const openFullRecord = (r) => {
+  currentReport.value = r
+  currentReportName.value = (r && r.reportName) || '职业规划报告'
+  const content = parseContent(r)
+  const process = Array.isArray(content.agents)
+    ? content.agents.filter((a) => a && a.key !== 'report_composition')
+    : []
+  if (process.length > 0) {
+    currentFullRecordAgents.value = process
+  } else if (content.final) {
+    // 老报告没有分段过程：回退为最终报告
+    currentFullRecordAgents.value = [{ name: currentReportName.value, content: content.final }]
+  } else {
+    currentFullRecordAgents.value = []
+  }
+  fullRecordVis.value = true
+}
+
+// ===== 一键导入「个人成长」 =====
+const hasGoals = computed(() => {
+  const goals = parseContent(currentReport.value).goals
+  return Array.isArray(goals) && goals.length > 0
+})
+const importDone = computed(() => !!(currentReport.value && currentReport.value.imported))
+const canImport = computed(() => hasGoals.value && !importDone.value)
+const importHint = computed(() => {
+  if (importDone.value) return '该报告已导入过个人成长（同一份报告只能导入一次）'
+  if (!hasGoals.value) return '该报告生成时未包含结构化 1/3/5 年目标，无法导入'
+  return '将把该报告的 1/3/5 年目标追加为「个人成长」的规划与待办（不影响你已有的规划）'
+})
+
+const importToGrowth = async () => {
+  const r = currentReport.value
+  if (!canImport.value || importing.value || !r || !r.id) return
+  importing.value = true
+  try {
+    const res = await studentApi.post(`/api/career-report/${r.id}/import-to-growth`)
+    const body = res.data || {}
+    if (body.code !== 10001 && body.code !== 200 && body.code !== 0) {
+      alert('导入失败：' + (body.message || '未知错误'))
+      return
+    }
+    const d = body.data || {}
+    // 就地标记为已导入（避免重新拉列表）
+    const idx = reportList.value.findIndex((x) => String(x.id) === String(r.id))
+    if (idx >= 0) reportList.value[idx] = { ...reportList.value[idx], imported: true }
+    currentReport.value = { ...r, imported: true }
+    alert(`已导入个人成长：新增 ${d.plans || 0} 个规划、${d.tasks || 0} 个待办`)
+  } catch (e) {
+    console.error('导入个人成长失败', e)
+    alert('导入出错，请稍后重试')
+  } finally {
+    importing.value = false
+  }
+}
 
 // ===== 报告管理（批量删除：我们侧逻辑删 + 平台侧物理删） =====
 const manageMode = ref(false)
@@ -1036,6 +1176,14 @@ const changePassword = async () => {
 .report-section-body h2, .report-section-body h3, .report-section-body h4 { color: #1E293B; margin: 12px 0 8px; }
 .report-section-body ul { margin: 6px 0 6px 18px; padding: 0; }
 .report-section-body strong { color: #111827; }
+/* 一键导入「个人成长」——放在「关键建议」小节末尾 */
+.import-growth-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 14px; padding: 12px 14px;
+  background: #F0F7FF; border: 1px dashed #BFDBFE; border-radius: 10px; }
+.import-btn { padding: 8px 16px; border-radius: 8px; }
+.import-btn.done, .import-btn:disabled { background: #E2E8F0; color: #94A3B8; cursor: not-allowed; box-shadow: none; }
+.import-hint { font-size: 0.8rem; color: #64748B; line-height: 1.5; }
+.full-record-tip { margin: 0 0 14px; padding: 10px 12px; background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px;
+  font-size: 0.85rem; color: #64748B; }
 
 /* 账号安全 */
 .security-list { display: flex; flex-direction: column; }

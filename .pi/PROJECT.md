@@ -75,7 +75,12 @@ python manage.py free-port backend
     - 我们侧剔除该块：`content.agents[report_composition].content` 与 `fullText` 均**存剔除后正文**；
       另存 `content.final`（简介）与 `content.goals`（结构化，**不下发前端**）
     - `done` 下发给前端的 `content` 由 `contentForFrontend()` 生成（剔除块、不含 goals）；个人中心详情/PDF 只渲染 `final`
-    - 结构化目标写入 `grow_plan`（每 horizon 一行，`plan_type` 1=1年/2=3年/3=5年）+ `grow_task`（每 keyAction 一条）
+    - 结构化目标**不再随报告生成自动写入**成长计划；改为用户在「个人中心 → 查看报告」的
+      「关键建议」小节点「一键导入个人成长」→ `POST /api/career-report/{id}/import-to-growth`
+      → **追加**写入 `grow_plan`（每 horizon 一行，`plan_type` 1=1年/2=3年/3=5年）+ `grow_task`（每 keyAction 一条）；
+      同一报告仅可导入一次（按 `grow_plan.report_id` 判重），报告列表接口回传 `imported` 标记（透传字段，不落库）
+    - 报告查看拆为**两个入口**：「查看报告」（只渲染 `final`，在「关键建议」小节末尾给导入按钮）
+      与「查看完整记录」（前 5 段过程，排除 `report_composition`，与 `mode=full` 导出一致）
     - 完成情况 API：`GET /api/grow/plans?userId=`、`PATCH /api/grow/tasks/{id}`（改状态并自动重算计划 progress/total_status）
     - 表迁移 **007**：`grow_plan.match_id` 改可空、`plan_type` 重定义；提示词见 `百宝箱/提示词-报告整合与结构化目标.md`
 17. **登录方式**：前端统一发 `login_way=auto`，后端按 **邮箱 → 账号 → 昵称** 依次查找；
