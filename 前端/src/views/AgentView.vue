@@ -3,7 +3,7 @@
     <div class="ambient-glow glow-blue"></div>
     <div class="ambient-glow glow-purple"></div>
     
-    <aside class="sidebar glass-panel">
+    <aside class="chat-sidebar glass-panel" aria-label="对话历史">
       <button class="new-chat-btn" @click="prepareNewChat">
         <AppIcon name="plus" :size="16" /> 开启新话题
       </button>
@@ -56,9 +56,9 @@
     <main class="chat-main">
       <div class="workspace-wrapper">
         <div class="page-header">
-          <div class="title-badge"><AppIcon name="activity" :size="13" /> Agent 引擎已就绪</div>
-          <h1 class="gradient-text">准备好规划你的职业未来了吗？</h1>
-          <p class="subtitle">基于 <span class="highlight-number">10,000+</span> 真实企业招聘数据，AI 为你量身定制</p>
+          <div class="title-badge"><AppIcon name="activity" :size="13" /> 职业旅程 / 智能体对话</div>
+          <h1 class="gradient-text">与职业领航员对话</h1>
+          <p class="subtitle">结合个人画像、职业测评和岗位信息，把每个选择聊得更清楚。</p>
         </div>
 
         <div v-if="profileIncomplete && profileBannerVisible" class="profile-hint">
@@ -71,8 +71,9 @@
           <div class="message-container" ref="messageBox">
             
             <div v-if="messages.length === 0" class="welcome-screen">
+              <span class="welcome-mark"><AppIcon name="compass" :size="31" /></span>
               <h3>你的专属领航员在此等候</h3>
-              <p>请在下方输入你的问题，或者发送包含岗位的图片由我来解析</p>
+              <p>输入你关心的岗位或职业问题，也可以上传岗位图片一起分析。</p>
             </div>
             
             <div
@@ -540,7 +541,7 @@ onMounted(async () => {
 .agent-page { position: relative; width: 100vw; height: 100vh; display: flex; background: #F6F8FC; overflow: hidden; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
 /* 环境光晕装饰已移除，保持界面克制专业 */
 .ambient-glow { display: none; }
-.sidebar { width: 268px; position: relative; z-index: 2; border-right: 1px solid #E4EAF2; display: flex; flex-direction: column; padding: 20px 16px; box-sizing: border-box; }
+.chat-sidebar { width: 268px; position: relative; z-index: 2; border-right: 1px solid #E4EAF2; display: flex; flex-direction: column; padding: 20px 16px; box-sizing: border-box; }
 .glass-panel { background-color: #FBFDFF; }
 .new-chat-btn { width: 100%; padding: 11px; background: #FFFFFF; color: #2563EB; border: 1px solid #CBDDF5; border-radius: 8px; font-weight: 600; font-size: 0.88rem; cursor: pointer; transition: background 0.16s ease, border-color 0.16s ease; display: flex; align-items: center; justify-content: center; gap: 7px; }
 .new-chat-btn:hover { background: #EFF6FF; border-color: #4A90E2; }
@@ -637,4 +638,69 @@ textarea::placeholder { color: #94A3B8; }
 .ai-status-hint { display: inline-flex; align-items: center; gap: 8px; align-self: flex-start; margin: 4px 0 8px 46px; padding: 6px 12px; background: #F1F5F9; color: #475569; border-radius: 999px; font-size: 0.82rem; }
 .status-spinner { width: 10px; height: 10px; border: 2px solid #CBD5E1; border-top-color: #4A90E2; border-radius: 50%; animation: spin 0.8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
+
+/* 与封面、职业星图共用山海蓝与暖金；聊天与流式输出逻辑保持不变。 */
+.agent-page{--chat-ink:#14314b;--chat-muted:#63788a;display:flex;width:100%;height:100%;min-height:0;overflow:hidden;background:#f7f4ed;color:var(--chat-ink);font-family:'Noto Sans SC','Microsoft YaHei',system-ui,sans-serif}
+.agent-page::before{position:absolute;inset:0;background:url('../assets/images/career-dawn-hero-v2.png') center 42%/cover no-repeat;opacity:.12;content:'';pointer-events:none}
+.chat-sidebar,.chat-main{position:relative;z-index:1;min-height:0}
+.chat-sidebar{width:220px;flex:0 0 220px;padding:27px 15px 19px;border-right:1px solid #d9cab2;background:rgba(255,252,245,.88);backdrop-filter:blur(11px)}
+.new-chat-btn{min-height:42px;border:1px solid #b69058;border-radius:7px;background:#173a55;color:#fff7e9;font-size:12px;letter-spacing:.04em}
+.new-chat-btn:hover{border-color:#987245;background:#244d67}
+.new-chat-btn .app-icon{color:#e8bf82}
+.chat-list{margin-top:24px}
+.list-title{color:#91764e;font-size:10px;letter-spacing:.16em}
+.chat-item{border-radius:6px}
+.chat-item:hover{background:#f5e9d3}
+.chat-item.active{background:#ead7b5}
+.chat-title{color:#2e4b63;font-size:12px}
+.chat-title:hover{background:#f3e4c8}
+.title-input{border-color:#b69058;color:var(--chat-ink);box-shadow:0 0 0 2px rgba(182,144,88,.16)}
+.chat-time,.empty-text,.loading-text{color:#8b9298;font-size:11px}
+.edit-icon,.delete-icon{color:#8b795f}
+.edit-icon:hover{color:#315771}
+.chat-main{flex:1;min-width:0;align-items:stretch}
+.workspace-wrapper{width:min(100%,1120px);max-width:1120px;height:100%;min-height:0;gap:14px;padding:clamp(22px,2.5vw,37px) clamp(18px,3vw,42px) 24px;box-sizing:border-box}
+.page-header{align-items:flex-start;margin:0;gap:6px;text-align:left}
+.title-badge{padding:0;border:0;border-radius:0;background:none;color:#9a7644;font-size:10px;letter-spacing:.15em}
+.title-badge .app-icon{color:#b08a53}
+.gradient-text{color:var(--chat-ink);font-family:'Noto Serif SC','Source Han Serif SC',serif;font-size:clamp(26px,2.6vw,37px);font-weight:800;letter-spacing:.02em;line-height:1.25}
+.subtitle{color:#587084;font-size:12px;line-height:1.6}
+.highlight-number{color:#aa7f45}
+.profile-hint{margin:0;padding:9px 12px;border-color:#dcc79f;border-radius:7px;background:#faf2e2;color:#6e532d;font-size:12px}
+.profile-hint-link{color:#365a72}
+.profile-hint-close{color:#93724b}
+.chat-container{flex:1;height:auto;min-height:0;border:1px solid #d8c8ac;border-radius:10px;background:rgba(255,253,248,.97);box-shadow:0 14px 32px rgba(28,48,66,.08)}
+.message-container{padding:28px 31px;gap:19px}
+.welcome-screen{display:flex;flex:1;flex-direction:column;align-items:center;justify-content:center;max-width:460px;margin:auto;color:#62798b}
+.welcome-mark{display:grid;place-items:center;width:74px;height:74px;margin-bottom:17px;border:1px solid #c9a46c;border-radius:50%;background:#f7edd9;color:#9b7540;box-shadow:0 0 0 8px rgba(238,222,191,.38)}
+.welcome-screen h3{margin:0 0 8px;color:var(--chat-ink);font-family:'Noto Serif SC',serif;font-size:21px}
+.welcome-screen p{margin:0;font-size:12px;line-height:1.8}
+.avatar{border:1px solid #d2b37c;border-radius:50%;background:#173a55;color:#f4dfb8}
+.is-user .avatar{border-color:#29536a;background:#2d637b;color:#fff8e9}
+.message-bubble{padding:12px 16px;border-radius:8px;font-size:13px;line-height:1.8}
+.is-user .message-bubble{background:#234b67;color:#fffaf0}
+.is-ai .message-bubble{border-color:#e3d7c4;background:#faf5e9;color:#29465d}
+:deep(.markdown-body){font-family:'Noto Sans SC','Microsoft YaHei',system-ui,sans-serif;font-size:13px}
+:deep(.md-bold),:deep(.md-h2),:deep(.md-h3){color:#173a55}
+:deep(.md-h2){border-bottom-color:#dfd1bb}
+:deep(.md-h4),:deep(.md-bullet),:deep(.md-num){color:#a47b43}
+:deep(.md-inline-code){background:#eee3cf;color:#6d512e}
+:deep(.md-pre){background:#18354e}
+.blinking-cursor{color:#b88d52}
+.input-area{padding:13px 21px 17px;border-top-color:#e6d9c4;background:#fffdf8}
+.input-box{border-color:#d7c7aa;border-radius:8px;background:#fffdf8}
+.input-box:focus-within{border-color:#af8850;box-shadow:0 0 0 3px rgba(184,145,88,.13)}
+.tool-btn{color:#6d806f}
+.tool-btn:hover:not(:disabled){color:#a47b43;background:#f6eddd}
+textarea{color:#213d55;font-size:13px}
+textarea::placeholder{color:#9a9b99}
+.send-btn{height:40px;border:1px solid #ae854b;border-radius:6px;background:#f0dbb2;color:#173a55;font-size:12px;font-weight:700}
+.send-btn:hover:not(:disabled){background:#e8ca93}
+.send-btn:disabled{opacity:.55}
+.ai-status-hint{background:#f4ead7;color:#596d7b}
+.status-spinner{border-color:#d3c1a1;border-top-color:#ad8047}
+.agent-page :focus-visible{outline:2px solid #b78948;outline-offset:3px}
+@media(max-width:950px){.chat-sidebar{width:180px;flex-basis:180px;padding:20px 10px}.workspace-wrapper{padding:20px 16px}}
+@media(max-width:720px){.agent-page{flex-direction:column}.chat-sidebar{width:100%;height:auto;max-height:96px;flex:0 0 auto;flex-direction:row;align-items:center;gap:10px;padding:10px 12px;border-right:0;border-bottom:1px solid #d9cab2}.new-chat-btn{width:auto;flex:0 0 auto;padding:9px 11px;font-size:11px}.chat-list{display:flex;align-items:center;gap:6px;min-width:0;margin:0;overflow-x:auto;overflow-y:hidden}.list-title,.chat-list .empty-text,.chat-list .loading-text{display:none}.chat-item{min-width:125px;max-width:160px;flex:0 0 auto;margin:0}.chat-main{min-height:0}.workspace-wrapper{height:100%;min-height:0;gap:9px;padding:13px 11px 11px}.gradient-text{font-size:22px}.subtitle{font-size:11px}.chat-container{min-height:0}.message-container{padding:16px 12px}.message-wrapper{max-width:96%;gap:7px}.message-bubble{padding:10px 12px;font-size:12px}.input-area{padding:9px}.welcome-mark{width:58px;height:58px}.welcome-screen h3{font-size:16px}.welcome-screen p{font-size:11px}}
+@media(prefers-reduced-motion:reduce){.blinking-cursor,.typing-indicator span,.status-spinner{animation:none!important}.agent-page *{scroll-behavior:auto!important}}
 </style>
