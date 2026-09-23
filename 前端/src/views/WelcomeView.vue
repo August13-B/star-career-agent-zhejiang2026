@@ -17,7 +17,7 @@
       <h2>从多智能体测评，到 3–5 年成长路径</h2>
       <p class="cover-description">基于你的兴趣、能力与经历，结合职业趋势与岗位要求，<br class="cover-desktop-break" />把职业探索绘成一张可以持续调整的成长航图。</p>
       <button class="cover-login-button" type="button" @click="enterJourney">
-        {{ isLoggedIn ? '进入我的航图' : '登录，开启职业旅程' }}
+        {{ isLoggedIn ? '开始联合测评' : '登录，开启职业旅程' }}
         <span aria-hidden="true">→</span>
       </button>
       <p class="cover-login-hint">{{ isLoggedIn ? '继续探索你的专属成长路径' : '登录后开启联合测评、职业星图与成长计划' }}</p>
@@ -45,7 +45,7 @@ const isLoggedIn = ref(Boolean(localStorage.getItem('token')))
 const loginPanelOpen = ref(false)
 
 function enterJourney() {
-  if (isLoggedIn.value) router.push('/dashboard')
+  if (isLoggedIn.value) router.push('/multi-agent')
   else loginPanelOpen.value = true
 }
 </script>
