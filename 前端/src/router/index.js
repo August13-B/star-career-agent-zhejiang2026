@@ -10,10 +10,12 @@ import JobInfoAdmin from '../views/JobInfoAdmin.vue'
 import JobCompareView from '../views/JobCompareView.vue'
 import TutorDashboardView from '../views/TutorDashboardView.vue'
 import WelcomeView from '../views/WelcomeView.vue'
+import DashboardView from '../views/DashboardView.vue'
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
     { path: '/', name: 'welcome', component: WelcomeView, meta: { entryFlow: true } },
+    { path: '/dashboard', name: 'dashboard', component: DashboardView, meta: { entryFlow: true, requiresAuth: true } },
     { path: '/assistant', name: 'agent', component: AgentView, meta: { requiresAuth: true } },
     { path: '/graph', name: 'graph', component: GraphView, meta: { requiresAuth: true } },
     { path: '/login', name: 'login', component: LoginView, meta: { entryFlow: true } },

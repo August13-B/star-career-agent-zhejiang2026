@@ -1,5 +1,6 @@
 <template>
-  <div class="login-page">
+  <div class="login-page" :class="{ 'is-embedded': embedded }" :role="embedded ? 'dialog' : undefined" :aria-modal="embedded ? 'true' : undefined" :aria-labelledby="embedded ? 'entry-form-title' : undefined">
+    <div v-if="embedded" class="entry-drawer-backdrop" aria-hidden="true" @click="goBack"></div>
     
     <transition name="toast-fade">
       <div v-if="toast.show" class="custom-toast" :class="toast.type">
@@ -8,7 +9,7 @@
       </div>
     </transition>
 
-    <header class="entry-header">
+    <header v-if="!embedded" class="entry-header">
       <router-link class="entry-brand" to="/" aria-label="返回星职封面">
         <span class="entry-brand-mark"><AppIcon name="compass" :size="23" /></span>
         <span><strong>星职 <i>StarCareer</i></strong><small>AI 职业导航系统</small></span>
@@ -17,7 +18,7 @@
     </header>
 
     <div class="entry-login-layout">
-      <section class="login-story-panel">
+      <section v-if="!embedded" class="login-story-panel">
         <p class="login-story-kicker">人生如海 · 职业如星</p>
         <h1>沿着职业星图，<br />继续向前。</h1>
         <p class="login-story-copy">从联合测评到岗位选择，再到可以执行的成长路径，<br class="desktop-break" />你的每一步探索都可以在这里继续。</p>
@@ -38,7 +39,7 @@
       </button>
 
       <div class="form-header">
-        <h2 class="gradient-text">{{ isLogin ? '欢迎登录' : '创建新账号' }}</h2>
+        <h2 id="entry-form-title" class="gradient-text">{{ isLogin ? '欢迎登录' : '创建新账号' }}</h2>
         <p>{{ isLogin ? 'Agent 职业领航智能体' : (regStep === 1 ? 'Step 1: 验证联系方式' : 'Step 2: 完善个人与身份信息') }}</p>
       </div>
 
@@ -263,7 +264,7 @@
 </template>
 
 <script setup>
-import { ref, reactive } from 'vue'
+import { ref, reactive, onMounted, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import axios from 'axios'
 import { generateAesKeyAndIv, rsaEncrypt, aesEncrypt } from '../utils/crypto'
@@ -271,6 +272,8 @@ import AppIcon from '../components/AppIcon.vue'
 
 const router = useRouter()
 const route = useRoute()
+const props = defineProps({ embedded: { type: Boolean, default: false } })
+const emit = defineEmits(['close'])
 
 // 🌟 取消了 baseURL，让请求继续走 vite.config.js 的 Proxy 代理
 axios.defaults.withCredentials = true
@@ -308,7 +311,10 @@ const regForm = reactive({
   agree: false 
 })
 
-const goBack = () => router.push('/')
+const goBack = () => props.embedded ? emit('close') : router.push('/')
+const onKeydown = event => { if (event.key === 'Escape' && props.embedded) goBack() }
+onMounted(() => { if (props.embedded) window.addEventListener('keydown', onKeydown) })
+onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 
 const switchToRegister = () => {
   isLogin.value = false
@@ -374,7 +380,7 @@ const handleLogin = async () => {
       const pendingQuiz = localStorage.getItem('pendingAbilityQuiz')
       if (pendingQuiz) localStorage.removeItem('pendingAbilityQuiz')
       const requestedPath = typeof route.query.redirect === 'string' ? route.query.redirect : ''
-      const redirectPath = requestedPath.startsWith('/') && !requestedPath.startsWith('//') ? requestedPath : '/multi-agent'
+      const redirectPath = requestedPath.startsWith('/') && !requestedPath.startsWith('//') ? requestedPath : (props.embedded ? '/dashboard' : '/multi-agent')
       setTimeout(() => router.push(pendingQuiz ? '/profile?quiz=1' : redirectPath), 1000)
     } else {
       throw new Error(res.data.msg || res.data.message || '登录失败')
@@ -1098,4 +1104,14 @@ const resetPassword = async () => {
 @media (max-width: 900px) { .login-page { background-position: 60% center; } .entry-login-layout { padding-top: 110px; } }
 @media (max-width: 560px) { .entry-header { height: 69px; } .login-page { background-position: 58% center; } .entry-login-layout { padding-top: 94px; } .login-story-panel h1 { font-size: 38px; } .login-card { border-radius: 8px; } }
 @media (prefers-reduced-motion: reduce) { .login-story-panel,.login-card { animation: none; } }
+.login-page.is-embedded{position:fixed;z-index:1500;inset:0;display:flex;flex-direction:row;width:100vw;height:100dvh;min-height:0;align-items:stretch;justify-content:flex-end;overflow:hidden;background:transparent}
+.login-page.is-embedded::before{display:none}
+.entry-drawer-backdrop{position:absolute;inset:0;background:rgba(8,28,47,.46);backdrop-filter:blur(4px)}
+.login-page.is-embedded .entry-login-layout{z-index:2;display:block;width:min(520px,100%);height:100%;min-height:0;margin:0;padding:0}
+.login-page.is-embedded .login-card{width:100%;height:100%;max-width:none;max-height:none;margin:0;padding:clamp(42px,7vh,76px) clamp(25px,4vw,52px) 35px;border-radius:14px 0 0 14px;overflow:auto;background:rgba(255,253,247,.97);animation:entry-drawer-in .32s cubic-bezier(.2,.7,.2,1) both}
+.login-page.is-embedded .close-btn{display:flex;top:18px;right:19px}
+.login-page.is-embedded .form-header{margin-top:25px}
+@keyframes entry-drawer-in{from{opacity:.4;transform:translateX(55px)}to{opacity:1;transform:translateX(0)}}
+@media(max-width:560px){.login-page.is-embedded .login-card{border-radius:0;padding:53px 23px 26px}}
+@media(prefers-reduced-motion:reduce){.login-page.is-embedded .login-card{animation:none}}
 </style>
