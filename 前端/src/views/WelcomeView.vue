@@ -1,7 +1,14 @@
 <template>
   <main class="cover-page" aria-labelledby="cover-title">
     <img class="cover-art" :src="heroImage" alt="" fetchpriority="high" />
+    <div class="cover-cloud-layer" aria-hidden="true"></div>
     <div class="cover-readability" aria-hidden="true"></div>
+    <div class="cover-sparkles" aria-hidden="true">
+      <span class="cover-spark cover-spark--one"></span>
+      <span class="cover-spark cover-spark--two"></span>
+      <span class="cover-spark cover-spark--three"></span>
+      <span class="cover-spark cover-spark--four"></span>
+    </div>
 
     <header class="cover-header">
       <router-link class="cover-brand" to="/" aria-label="星职首页">
