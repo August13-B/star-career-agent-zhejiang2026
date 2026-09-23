@@ -21,7 +21,7 @@
           <div class="atlas-footer"><span>{{ graph.branches.length }} 条职业分支 · {{ skillCount }} 个能力节点</span><span>点击节点查看依据与行动</span></div>
           <p class="figure-note">连线表示测评关联，不代表晋升先后。每条分支展示至多 3 项能力，完整内容见下方详情。</p>
         </div>
-        <aside class="insight-panel"><span class="eyebrow">分支解读</span><h2>{{ active?.name || '你的测评摘要' }}</h2><p>{{ active?.reason || graph.summary }}</p><template v-if="active"><h3>推荐依据 · 测评原文</h3><blockquote>{{ active.evidence }}</blockquote><h3>需要补齐的能力</h3><ul><li v-for="(s,i) in active.skills" :key="i">{{ s }}</li></ul><h3>从这些行动开始</h3><ol><li v-for="(a,i) in active.actions" :key="i">{{ a }}</li></ol><router-link class="wb-button primary" :to="{path:'/',query:{prompt:consultPrompt}}">和智能体深入讨论 →</router-link></template><p v-else>点击星图或下方岗位按钮，查看推荐依据和下一步行动。</p><router-link class="wb-button" to="/growth">查看成长行动计划</router-link><small>AI 整理自联合测评，仅供职业探索参考，不代表录用或晋升承诺。</small></aside>
+        <aside class="insight-panel"><span class="eyebrow">分支解读</span><h2>{{ active?.name || '你的测评摘要' }}</h2><p>{{ active?.reason || graph.summary }}</p><template v-if="active"><h3>推荐依据 · 测评原文</h3><blockquote>{{ active.evidence }}</blockquote><h3>需要补齐的能力</h3><ul><li v-for="(s,i) in active.skills" :key="i">{{ s }}</li></ul><h3>从这些行动开始</h3><ol><li v-for="(a,i) in active.actions" :key="i">{{ a }}</li></ol><router-link class="wb-button primary" :to="{path:'/assistant',query:{prompt:consultPrompt}}">和智能体深入讨论 →</router-link></template><p v-else>点击星图或下方岗位按钮，查看推荐依据和下一步行动。</p><router-link class="wb-button" to="/growth">查看成长行动计划</router-link><small>AI 整理自联合测评，仅供职业探索参考，不代表录用或晋升承诺。</small></aside>
       </section>
       <section v-if="graph" class="branch-list" aria-label="职业分支列表"><button v-for="(branch,i) in graph.branches" :key="i" :class="[branch.kind,{selected:active===branch}]" :aria-pressed="active===branch" @click="selectBranch(i)"><span>{{ String(i+1).padStart(2,'0') }}</span>{{ branch.name }}<small>{{ kindLabel[branch.kind] }}</small></button></section>
     </template>
@@ -96,7 +96,7 @@ onMounted(loadReports)
 onUnmounted(()=>{++request;observer?.disconnect();chart.value?.dispose()})
 </script>
 <style scoped>
-.scientific-atlas{--wb-accent:#4773ca;--wb-border:#e0e4e9;background:#f7f8fa}
+.scientific-atlas{--wb-accent:#315d78;--wb-border:#ded5c8;background:#f7f4ed}
 .workbench-heading h1{font-size:30px;letter-spacing:0}
 .source-bar{display:flex;align-items:center;gap:18px;background:#fff;border:1px solid var(--wb-border);padding:16px 20px;border-radius:10px;margin:22px 0}
 .source-bar>div{flex:1;min-width:0}.source-bar label{display:block;font-size:11px;color:var(--wb-muted);margin-bottom:6px}
@@ -136,4 +136,10 @@ onUnmounted(()=>{++request;observer?.disconnect();chart.value?.dispose()})
 .wb-empty small{display:block;margin-top:22px;color:var(--wb-muted)}
 @media(min-width:1560px){.atlas-layout{grid-template-columns:minmax(840px,1fr) 300px}}
 @media(max-width:900px){.source-bar{flex-wrap:wrap}.source-bar>div{flex-basis:100%}.workbench-heading h1{font-size:26px}.atlas-toolbar{padding:20px}.atlas-legend{padding-left:20px}}
+.scientific-atlas .workbench-heading h1,.scientific-atlas .atlas-toolbar h2,.scientific-atlas .insight-panel h2{font-family:'Noto Serif SC','Source Han Serif SC',serif;color:#14314b}
+.scientific-atlas .source-bar,.scientific-atlas .atlas-panel,.scientific-atlas .insight-panel{border-color:#ded5c8;background:#fffdf8}
+.scientific-atlas .atlas-scroll{background:#fffdf8;border-top-color:#e4dac8}
+.scientific-atlas .column-labels{background:#faf6ee;border-bottom-color:#e4dac8}
+.scientific-atlas .wb-button.primary{border-color:#b89158;background:#f0dbb2;color:#19354c}
+.scientific-atlas .insight-panel blockquote{border-left-color:#b89158;background:#faf5e9}
 </style>

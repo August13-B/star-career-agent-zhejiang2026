@@ -664,4 +664,20 @@ onMounted(async () => {
 .report-page.career-workbench{padding:32px;background:#f7f9fc;height:100%;overflow:auto}.workspace{max-width:1240px;margin:auto}.page-header{margin-bottom:26px}.title-block h1{font-size:clamp(26px,2.6vw,36px);letter-spacing:-1px;color:#172337}.title-block h1 em{font-style:normal;color:#315fe9}.assessment-intro{display:grid;grid-template-columns:1fr 220px;gap:35px;margin:26px 0;background:#fff;border:1px solid #e0e7f0;border-radius:16px;padding:30px}.assessment-intro h2{font-size:25px;line-height:1.55;margin:14px 0}.assessment-intro p{font-size:13px;color:#69788e;line-height:1.8;max-width:490px}.assessment-intro a{font-size:13px;color:#315fe9;text-decoration:none}.assessment-facts{background:#14233b;color:#b7c9e6;padding:22px;border-radius:12px;display:flex;flex-direction:column;justify-content:center;font-size:11px;line-height:1.8}.assessment-facts strong{font-size:50px;line-height:1.2;font-weight:500;color:#fff}.assessment-facts hr{border:0;border-top:1px solid #344760;width:100%;margin:18px 0}.input-panel{border:1px solid #e0e7f0;background:white;border-radius:14px;padding:22px;margin:24px 0}.agents{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.agent-card{border:1px solid #e0e7f0;border-radius:14px;box-shadow:none;background:#fff}.agent-head{padding:20px}.agent-index{background:#edf3ff;color:#315fe9;border-radius:8px}.agent-card.running{border-color:#7597f5}.agent-placeholder{padding:0 20px 24px;color:#8390a3;font-size:12px}.btn.primary{background:#315fe9;border-color:#315fe9;color:#fff;min-height:44px;border-radius:10px}.agent-card.is-expanded{grid-column:1/-1}.result-bar{margin:24px 0;padding:20px;border:1px solid #b7d7cb;background:#eff8f4;border-radius:14px}
 .agent-card{padding:0 18px;min-height:148px}.agent-card.waiting{height:148px}.agent-head{padding:18px 0}.agent-placeholder{padding:12px 0}.header-actions{flex-wrap:wrap}.page-header{flex-wrap:wrap}
 @media(max-width:1000px){.agents{grid-template-columns:1fr}.assessment-intro{grid-template-columns:1fr}.assessment-facts{display:none}.report-page.career-workbench{padding:18px}.page-header{flex-wrap:wrap}.header-actions{flex-wrap:wrap}}
+.report-page.career-workbench{background:#f7f4ed;color:#17334d;font-family:'Noto Sans SC','Microsoft YaHei',sans-serif}
+.title-block h1,.assessment-intro h2{font-family:'Noto Serif SC','Source Han Serif SC',serif;color:#14314b}
+.title-block h1 em{color:#aa8049}
+.assessment-intro,.input-panel,.agent-card,.result-bar{border-color:#ded4c3;background:#fffdf8}
+.assessment-facts{background:#102b46;color:#e2d2b4}
+.assessment-facts strong{color:#f4dfb8}
+.assessment-intro a,.expand-btn{color:#315d78}
+.input-area{border-color:#ded4c3;background:#fffdf8}
+.input-area:focus{border-color:#b89158;box-shadow:0 0 0 3px rgba(184,145,88,.12)}
+.agent-card.running{border-color:#bd985e;box-shadow:0 0 0 3px rgba(184,145,88,.11)}
+.agent-index{background:#f6ebd6;color:#8d6533}
+.agent-meta h3{color:#17334d}
+.btn.primary{border-color:#b89158;background:#f0dbb2;color:#19354c}
+.btn.primary:hover:not(:disabled){background:#e8ca93}
+.btn.ghost{border-color:#ded4c3;background:#fffdf8;color:#31536d}
+.result-bar{background:#f7f3e8}
 </style>
