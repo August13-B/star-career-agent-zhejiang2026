@@ -67,14 +67,31 @@ const edges = [
 ]
 let chart
 let observer
+let twinkleTimer
+let stopMotionWatch = () => {}
 onMounted(() => {
   chart = echarts.init(constellationEl.value, null, { renderer: 'canvas' })
+  const motionQuery = window.matchMedia('(prefers-reduced-motion: reduce)')
   const nodes = points.map(([x,y], index) => ({ id: `star-${index}`, x, y, symbolSize: [6,13,21,33,34,43].includes(index) ? 12 : index % 5 === 0 ? 8 : 5, itemStyle: { color: index % 4 === 0 ? '#f4dfb1' : '#c2985f', borderColor: '#fffaf0', borderWidth: 1, shadowBlur: index % 5 === 0 ? 11 : 6, shadowColor: '#a6783b' } }))
   nodes.push({ id:'bound-start',x:0,y:0,symbolSize:0,itemStyle:{opacity:0} },{ id:'bound-end',x:720,y:500,symbolSize:0,itemStyle:{opacity:0} })
   const links = edges.map(([from,to], index) => ({ source:`star-${from}`, target:`star-${to}`, lineStyle:{opacity:index%5===0?.72:.46,width:index%5===0?1.6:1.15} }))
-  chart.setOption({ animationDuration:1100, animationEasing:'cubicOut', series:[{ type:'graph',layout:'none',roam:false,silent:true,left:0,top:0,right:0,bottom:0,data:nodes,links,lineStyle:{color:'#987b56',width:1.15,opacity:.5},label:{show:false} }] })
+  chart.setOption({ animation:!motionQuery.matches, animationDuration:1100, animationDurationUpdate:900, animationEasing:'cubicOut', animationEasingUpdate:'cubicInOut', series:[{ id:'star-map',type:'graph',layout:'none',roam:false,silent:true,left:0,top:0,right:0,bottom:0,data:nodes,links,lineStyle:{color:'#987b56',width:1.15,opacity:.5},label:{show:false} }] })
+  const twinklePoints = [6, 18, 27, 33, 43]
+  let twinkleFrame = 0
+  const twinkle = () => {
+    if (document.hidden || motionQuery.matches) return
+    const litPoint = twinklePoints[twinkleFrame++ % twinklePoints.length]
+    chart.setOption({series:[{id:'star-map',data:nodes.map((node,index) => index === litPoint ? { ...node, symbolSize:node.symbolSize + 3, itemStyle:{...node.itemStyle,color:'#fff2c5',shadowBlur:22,shadowColor:'#eebd67'} } : node)}]})
+  }
+  const onMotionChange = () => {
+    chart.setOption({animation:!motionQuery.matches,series:[{id:'star-map',data:nodes}]})
+    if (!motionQuery.matches) twinkle()
+  }
+  motionQuery.addEventListener('change', onMotionChange)
+  stopMotionWatch = () => motionQuery.removeEventListener('change', onMotionChange)
+  twinkleTimer = window.setInterval(twinkle, 1700)
   observer = new ResizeObserver(() => chart?.resize())
   observer.observe(constellationEl.value)
 })
-onBeforeUnmount(() => { observer?.disconnect(); chart?.dispose() })
+onBeforeUnmount(() => { window.clearInterval(twinkleTimer); stopMotionWatch(); observer?.disconnect(); chart?.dispose() })
 </script>
