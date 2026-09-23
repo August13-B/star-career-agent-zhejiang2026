@@ -8,6 +8,26 @@
       </div>
     </transition>
 
+    <header class="entry-header">
+      <router-link class="entry-brand" to="/" aria-label="返回星职封面">
+        <span class="entry-brand-mark"><AppIcon name="compass" :size="23" /></span>
+        <span><strong>星职 <i>StarCareer</i></strong><small>AI 职业导航系统</small></span>
+      </router-link>
+      <router-link class="entry-back" to="/">← 返回封面</router-link>
+    </header>
+
+    <div class="entry-login-layout">
+      <section class="login-story-panel">
+        <p class="login-story-kicker">人生如海 · 职业如星</p>
+        <h1>沿着职业星图，<br />继续向前。</h1>
+        <p class="login-story-copy">从联合测评到岗位选择，再到可以执行的成长路径，<br class="desktop-break" />你的每一步探索都可以在这里继续。</p>
+        <div class="login-story-features">
+          <div><span>01</span><strong>多智能体测评</strong></div>
+          <div><span>02</span><strong>职业星图</strong></div>
+          <div><span>03</span><strong>成长计划</strong></div>
+        </div>
+      </section>
+
     <div class="login-card">
       
       <button class="close-btn" @click="goBack" title="返回主页">
@@ -142,6 +162,7 @@
 
       </transition>
     </div>
+    </div>
 
     <transition name="modal-fade">
       <div class="modal-overlay" v-if="forgotPasswordVisible" @click.self="closeForgotPassword">
@@ -243,11 +264,13 @@
 
 <script setup>
 import { ref, reactive } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import axios from 'axios'
 import { generateAesKeyAndIv, rsaEncrypt, aesEncrypt } from '../utils/crypto'
+import AppIcon from '../components/AppIcon.vue'
 
 const router = useRouter()
+const route = useRoute()
 
 // 🌟 取消了 baseURL，让请求继续走 vite.config.js 的 Proxy 代理
 axios.defaults.withCredentials = true
@@ -350,7 +373,9 @@ const handleLogin = async () => {
       // 注册后首次登录：直接进入个人中心并自动弹出「六维能力初步测评」
       const pendingQuiz = localStorage.getItem('pendingAbilityQuiz')
       if (pendingQuiz) localStorage.removeItem('pendingAbilityQuiz')
-      setTimeout(() => router.push(pendingQuiz ? '/profile?quiz=1' : '/'), 1000)
+      const requestedPath = typeof route.query.redirect === 'string' ? route.query.redirect : ''
+      const redirectPath = requestedPath.startsWith('/') && !requestedPath.startsWith('//') ? requestedPath : '/multi-agent'
+      setTimeout(() => router.push(pendingQuiz ? '/profile?quiz=1' : redirectPath), 1000)
     } else {
       throw new Error(res.data.msg || res.data.message || '登录失败')
     }
@@ -702,7 +727,7 @@ const resetPassword = async () => {
 .toast-fade-leave-to { opacity: 0; transform: translate(-50%, -20px); }
 
 /* 主体样式 */
-.login-page { width: 100vw; height: 100vh; background-image: url('/your-image-name.png'); background-size: cover; background-position: center; background-repeat: no-repeat; display: flex; justify-content: center; align-items: center; position: absolute; top: 0; left: 0; z-index: 1000; overflow: hidden; }
+.login-page { width: 100vw; height: 100vh; background-image: none; background-size: cover; background-position: center; background-repeat: no-repeat; display: flex; justify-content: center; align-items: center; position: absolute; top: 0; left: 0; z-index: 1000; overflow: hidden; }
 .login-page::before { content: ""; position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(240, 246, 255, 0.3); backdrop-filter: blur(5px); z-index: 1; }
 .login-card { position: relative; z-index: 2; width: 100%; max-width: 440px; min-height: 580px; background: rgba(255, 255, 255, 0.92); backdrop-filter: blur(20px); border: 1px solid rgba(255, 255, 255, 0.8); border-radius: 20px; padding: 40px; box-shadow: 0 25px 50px rgba(0, 0, 0, 0.1); animation: fadeInUp 0.5s cubic-bezier(0.25, 0.8, 0.25, 1); display: flex; flex-direction: column; overflow: hidden; }
 .close-btn { position: absolute; top: 15px; right: 15px; background: transparent; border: none; color: #94A3B8; cursor: pointer; padding: 8px; border-radius: 50%; display: flex; align-items: center; justify-content: center; transition: all 0.3s ease; z-index: 10; }
@@ -940,4 +965,137 @@ const resetPassword = async () => {
 .modal-fade-leave-to .modal-content {
   transform: scale(0.95) translateY(20px);
 }
+
+/* Entry flow — keep the existing authentication logic, refresh only its presentation. */
+.login-page {
+  position: relative;
+  top: auto;
+  left: auto;
+  z-index: auto;
+  display: flex;
+  width: 100%;
+  min-height: 100vh;
+  height: auto;
+  align-items: center;
+  justify-content: flex-start;
+  flex-direction: column;
+  overflow: hidden auto;
+  background-color: #f4f5f4;
+  background-image: url('../assets/images/career-dawn-hero.png');
+  background-size: cover;
+  background-position: center;
+}
+.login-page::before {
+  background: linear-gradient(95deg, rgba(248, 249, 247, .68), rgba(248, 249, 247, .46) 47%, rgba(17, 39, 71, .13));
+  backdrop-filter: none;
+}
+.entry-header {
+  position: absolute;
+  z-index: 3;
+  top: 0;
+  left: 0;
+  display: flex;
+  width: 100%;
+  height: 98px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 clamp(24px, 7vw, 100px);
+  box-sizing: border-box;
+}
+.entry-brand { display: inline-flex; align-items: center; gap: 12px; color: #111d34; text-decoration: none; }
+.entry-brand-mark { display: grid; width: 40px; height: 40px; place-items: center; border-radius: 13px; color: #fff; background: linear-gradient(145deg, #4e87f1, #285cc6); box-shadow: 0 9px 22px rgba(50,103,212,.23); font-size: 20px; }
+.entry-brand > span:last-child { display: flex; flex-direction: column; gap: 2px; }
+.entry-brand strong { font-size: 16px; }
+.entry-brand strong i { margin-left: 3px; color: #52627c; font-size: 13px; font-style: normal; }
+.entry-brand small { color: #68748a; font-size: 9px; letter-spacing: .13em; }
+.entry-back { color: #244f9b; text-decoration: none; font-size: 13px; font-weight: 700; }
+.entry-login-layout { position: relative; z-index: 2; display: grid; width: min(1240px, calc(100% - 64px)); min-height: 100vh; grid-template-columns: minmax(0, 1fr) minmax(440px, 500px); align-items: center; gap: clamp(38px, 7vw, 105px); margin: 0 auto; padding: 112px 0 60px; box-sizing: border-box; }
+.login-story-panel { max-width: 610px; padding: 0 0 18px 4px; animation: login-story-in .75s cubic-bezier(.2,.7,.2,1) both; }
+.login-story-kicker { margin: 0 0 25px; color: #315b9e; font-size: 11px; font-weight: 800; letter-spacing: .14em; }
+.login-story-kicker span { padding: 0 7px; color: #95a2b4; }
+.login-story-panel h1 { margin: 0; color: #111d34; font-size: clamp(42px, 4.2vw, 59px); font-weight: 760; letter-spacing: -.06em; line-height: 1.32; }
+.login-story-copy { margin: 24px 0 0; color: #4e5c72; font-size: 14px; line-height: 1.95; }
+.login-story-features { display: flex; gap: 12px; margin-top: 42px; }
+.login-story-features div { display: flex; min-width: 130px; flex-direction: column; gap: 13px; padding: 15px 16px; border: 1px solid rgba(255,255,255,.65); border-radius: 14px; background: rgba(255,255,255,.54); backdrop-filter: blur(12px); }
+.login-story-features span { color: #4277d4; font-size: 10px; font-weight: 800; letter-spacing: .1em; }
+.login-story-features strong { color: #273750; font-size: 12px; font-weight: 700; white-space: nowrap; }
+.login-card { z-index: 2; width: 100%; max-width: 500px; min-height: 0; max-height: calc(100vh - 150px); padding: 43px 44px 38px; border: 1px solid rgba(255,255,255,.9); border-radius: 24px; background: rgba(255,255,255,.95); box-shadow: 0 30px 85px rgba(16,33,62,.19), 0 3px 10px rgba(16,33,62,.04); box-sizing: border-box; overflow-y: auto; animation: login-card-in .8s .08s cubic-bezier(.2,.7,.2,1) both; }
+.close-btn { display: none; }
+.form-header { margin: 8px 0 30px; text-align: left; }
+.gradient-text { margin-bottom: 9px; background: none; color: #111d34; -webkit-text-fill-color: currentColor; font-size: 29px; letter-spacing: -.045em; }
+.form-header p { color: #758198; font-size: 13px; font-weight: 500; letter-spacing: .01em; }
+.input-group { margin-bottom: 19px; }
+.input-group label { margin-bottom: 9px; color: #283750; font-size: 12px; font-weight: 700; }
+.input-group label span { color: #3e75d6; }
+.input-group input { min-height: 50px; padding: 13px 15px; border: 1px solid #e2e7ef; border-radius: 12px; background: #f8f9fb; font-size: 14px; }
+.input-group input:focus { border-color: #5a87df; box-shadow: 0 0 0 4px rgba(75,124,220,.11); }
+.form-actions { margin-bottom: 22px; font-size: 12px; }
+.submit-btn { min-height: 53px; border-radius: 13px; background: linear-gradient(130deg, #4b82ee, #285dca); box-shadow: 0 11px 24px rgba(40,93,202,.22); font-size: 14px; letter-spacing: .04em; }
+.submit-btn:hover:not(:disabled) { background: linear-gradient(130deg, #3973e3, #214fae); }
+.register-btn { background: linear-gradient(130deg, #4b82ee, #285dca); }
+.register-btn:hover:not(:disabled) { background: linear-gradient(130deg, #3973e3, #214fae); }
+.divider,.social-login { display: none; }
+.register-hint { margin-top: 24px; font-size: 12px; }
+.register-link { color: #326bd4; }
+.custom-toast { position: fixed; top: 23px; }
+@keyframes login-story-in { from { opacity: 0; transform: translateY(15px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes login-card-in { from { opacity: 0; transform: translateY(18px) scale(.99); } to { opacity: 1; transform: translateY(0) scale(1); } }
+@media (max-width: 900px) {
+  .entry-login-layout { width: min(560px, calc(100% - 40px)); grid-template-columns: 1fr; gap: 26px; padding: 126px 0 44px; }
+  .login-story-panel { padding: 0 6px; }
+  .login-story-panel h1 { font-size: clamp(34px, 7vw, 48px); }
+  .login-story-copy { font-size: 13px; }
+  .login-story-features { display: none; }
+  .login-card { max-width: none; max-height: none; padding: 35px 32px; }
+}
+@media (max-width: 560px) {
+  .entry-header { height: 78px; padding: 0 20px; }
+  .entry-brand-mark { width: 36px; height: 36px; border-radius: 12px; }
+  .entry-back { font-size: 12px; }
+  .entry-login-layout { width: calc(100% - 32px); gap: 17px; padding: 105px 0 24px; }
+  .login-story-panel { padding: 0 4px; }
+  .login-story-kicker { margin-bottom: 13px; font-size: 9px; }
+  .login-story-panel h1 { font-size: 34px; }
+  .login-story-copy { margin-top: 12px; font-size: 11px; }
+  .desktop-break { display: none; }
+  .login-card { padding: 27px 23px 24px; border-radius: 19px; }
+  .form-header { margin: 4px 0 21px; }
+  .gradient-text { font-size: 25px; }
+  .form-actions { font-size: 11px; }
+}
+/* 与职业地图首页共享材质与色彩，认证逻辑保持原样。 */
+.login-page { background-color: #f8f4e9; background-image: url('../assets/images/career-dawn-hero.png'); background-size: cover; background-position: center; }
+.login-page::before { background: rgba(255, 252, 245, .16); }
+.entry-header { height: 78px; border-bottom: 1px solid rgba(212, 197, 168, .45); background: rgba(255, 253, 248, .72); }
+.entry-brand { color: #17334e; }
+.entry-brand-mark { border: 1px solid #c29c61; border-radius: 50%; color: #efd5a1; background: #102d48; box-shadow: 0 5px 14px rgba(13, 42, 68, .15); }
+.entry-brand strong { font-family: 'Noto Serif SC', serif; font-size: 20px; }
+.entry-brand strong i { color: #54697b; font-family: 'Noto Sans SC', sans-serif; }
+.entry-back { color: #355a73; }
+.entry-login-layout { padding-top: 95px; }
+.login-story-kicker { color: #9d7946; font-size: 12px; letter-spacing: .25em; }
+.login-story-panel h1 { color: #102c47; font-family: 'Noto Serif SC', 'Source Han Serif SC', serif; font-size: clamp(42px, 4.4vw, 63px); font-weight: 800; letter-spacing: .02em; }
+.login-story-copy { color: #566c7c; }
+.login-story-features div { border: 1px solid #dfd3be; border-radius: 7px; background: rgba(255, 252, 245, .83); backdrop-filter: blur(3px); }
+.login-story-features span { color: #aa844e; }
+.login-story-features strong { color: #1c3a55; }
+.login-card { border: 1px solid #d9c9ab; border-radius: 9px; background: rgba(255, 253, 247, .96); box-shadow: 0 22px 55px rgba(22, 44, 65, .13); }
+.gradient-text { color: #102c47; font-family: 'Noto Serif SC', 'Source Han Serif SC', serif; font-weight: 800; -webkit-text-fill-color: #102c47; }
+.form-header p { color: #788797; }
+.input-group label { color: #254158; }
+.input-group label span { color: #b78d50; }
+.input-group input { border-color: #ded6c8; border-radius: 7px; background: #fcfaf5; }
+.input-group input:focus { border-color: #ad8d5c; box-shadow: 0 0 0 3px rgba(184, 141, 78, .13); }
+.submit-btn,.register-btn { border: 1px solid #b89158; border-radius: 7px; color: #17334d; background: #f0dbb2; box-shadow: 0 6px 15px rgba(140, 104, 53, .12); }
+.submit-btn:hover:not(:disabled),.register-btn:hover:not(:disabled) { color: #112a43; background: #e9c98f; box-shadow: 0 9px 20px rgba(140, 104, 53, .18); }
+.send-code-btn { border-color: #d3bd96; border-radius: 7px; color: #6f552e; background: #faf2e2; }
+.send-code-btn:hover:not(:disabled) { border-color: #bf9d66; background: #f3e3c5; }
+.forgot-link,.register-link { color: #315d78; }
+.radio-label { border-color: #ded6c8; background: #fcfaf5; }
+.radio-label:hover { border-color: #b89158; background: #fbf4e7; }
+.radio-label input[type="radio"] { accent-color: #a47a44; }
+.login-page :focus-visible { outline: 2px solid #b78948; outline-offset: 2px; }
+@media (max-width: 900px) { .login-page { background-position: 60% center; } .entry-login-layout { padding-top: 110px; } }
+@media (max-width: 560px) { .entry-header { height: 69px; } .login-page { background-position: 58% center; } .entry-login-layout { padding-top: 94px; } .login-story-panel h1 { font-size: 38px; } .login-card { border-radius: 8px; } }
+@media (prefers-reduced-motion: reduce) { .login-story-panel,.login-card { animation: none; } }
 </style>
