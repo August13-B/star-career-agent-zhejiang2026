@@ -46,7 +46,15 @@
             <div class="atlas-panel-head"><div><p class="atlas-section-index">EXPLORE / 01</p><h2 id="atlas-map-title">我的职业星图</h2><p>从测评结果出发，探索方向之间的联系</p></div><div class="atlas-tab-group" aria-label="星图视图"><button type="button" :class="{ active: viewMode === 'graph' }" @click="viewMode = 'graph'">图谱视图</button><button type="button" :class="{ active: viewMode === 'path' }" @click="viewMode = 'path'">路径视图</button></div></div>
             <template v-if="viewMode === 'graph'">
               <div class="atlas-demo-label">方向示意 · 完成联合测评后生成你的专属星图</div>
-              <div ref="graphEl" class="atlas-graph" role="img" aria-label="示意职业星图，包含前端开发、产品设计、数据分析和 AI 应用四个方向"></div>
+              <div class="atlas-map-stage">
+                <div ref="graphEl" class="atlas-graph" role="img" aria-label="示意职业星图，四个方向由密集星点相互连接"></div>
+                <button class="atlas-map-center" type="button" title="开启联合测评，绘制专属星图" @click="goToAssessment"><strong>以你为中心</strong><small>探索职业的更多可能</small></button>
+                <button v-for="(branch, index) in branches" :key="branch.id" class="atlas-role-node" :class="[`atlas-role-node--${branch.id}`, { 'is-active': activeBranchIndex === index }]" type="button" :aria-pressed="activeBranchIndex === index" @click="activeBranchIndex = index"><span class="atlas-role-orb"><AppIcon :name="branch.icon" :size="23" /></span><span class="atlas-role-copy"><strong>{{ branch.name }}</strong><small>{{ branch.tagline }}</small></span></button>
+                <button v-for="(branch, index) in branches" :key="`${branch.id}-card`" class="atlas-role-card" :class="[`atlas-role-card--${branch.id}`, { 'is-active': activeBranchIndex === index }]" type="button" :aria-label="`探索${branch.name}方向`" @click="activeBranchIndex = index"><span class="atlas-role-card-kicker">探索方向 / 0{{ index + 1 }}</span><span v-for="skill in branch.skills" :key="skill" class="atlas-role-skill"><i aria-hidden="true"></i>{{ skill }}</span><span class="atlas-role-card-link">查看方向 <span aria-hidden="true">→</span></span></button>
+                <span v-for="label in constellationLabels" :key="label.text" class="atlas-constellation-label" :style="{ left: label.x, top: label.y }" aria-hidden="true">{{ label.text }}</span>
+                <div class="atlas-map-ornament" aria-hidden="true"><AppIcon name="compass" :size="39" /></div>
+                <span class="atlas-map-motto">Where Talents Meet a Bigger Tomorrow</span>
+              </div>
               <div class="atlas-branch-detail"><span class="atlas-branch-symbol"><AppIcon :name="selectedBranch.icon" :size="22" /></span><div><small>当前探索方向</small><strong>{{ selectedBranch.name }}</strong><p>{{ selectedBranch.summary }}</p></div><router-link to="/graph" class="atlas-inline-link">查看真实星图 →</router-link></div>
             </template>
             <div v-else class="atlas-path-view"><p>职业路径会在联合测评后，根据你的画像与目标岗位生成，并随成长反馈调整。</p><div v-for="(phase, index) in pathPreview" :key="phase.year" class="atlas-path-step"><span>{{ String(index + 1).padStart(2, '0') }}</span><div><strong>{{ phase.year }}</strong><p>{{ phase.action }}</p></div></div><router-link to="/multi-agent" class="atlas-primary-button atlas-path-cta">生成我的成长路径 <span>→</span></router-link></div>
@@ -82,7 +90,6 @@ const radarEl = ref(null)
 let graphChart
 let radarChart
 let resizeObserver
-let compactGraph = false
 
 const workflow = [
   { title: '感知与测评', description: '兴趣 · 能力 · 经历' },
@@ -92,10 +99,34 @@ const workflow = [
   { title: '反馈与成长', description: '跟踪效果 · 动态调整' }
 ]
 const branches = [
-  { id: 'frontend', name: '前端开发', summary: '面向可感知的数字体验，连接技术实现与用户需求。', icon: 'cpu', x: 110, y: 110, color: '#244e71', skills: ['界面实现', '工程能力'] },
-  { id: 'product', name: '产品设计', summary: '洞察用户与业务问题，把想法变成可验证的方案。', icon: 'briefcase', x: 500, y: 105, color: '#315a76', skills: ['需求分析', '用户研究'] },
-  { id: 'data', name: '数据分析', summary: '从数据中发现规律，为业务决策提供可靠依据。', icon: 'trendUp', x: 120, y: 360, color: '#57718a', skills: ['数据处理', '业务洞察'] },
-  { id: 'ai', name: 'AI 应用', summary: '把 AI 能力融入真实场景，设计有效的人机协作。', icon: 'sparkle', x: 500, y: 360, color: '#345469', skills: ['AI 工具', '场景落地'] }
+  { id: 'frontend', name: '前端开发', tagline: '创造可感知的数字世界', summary: '面向可感知的数字体验，连接技术实现与用户需求。', icon: 'cpu', skills: ['界面实现', '工程能力'] },
+  { id: 'product', name: '产品设计', tagline: '连接用户与未来', summary: '洞察用户与业务问题，把想法变成可验证的方案。', icon: 'briefcase', skills: ['需求分析', '用户研究'] },
+  { id: 'data', name: '数据分析', tagline: '用数据看见真实的世界', summary: '从数据中发现规律，为业务决策提供可靠依据。', icon: 'trendUp', skills: ['数据处理', '业务洞察'] },
+  { id: 'ai', name: 'AI 应用', tagline: '与智能共创新可能', summary: '把 AI 能力融入真实场景，设计有效的人机协作。', icon: 'sparkle', skills: ['AI 工具', '场景落地'] }
+]
+const constellationLabels = [
+  { text: '用户体验', x: '43%', y: '6%' }, { text: '商业思维', x: '46%', y: '11%' }, { text: '创意表达', x: '49%', y: '16%' },
+  { text: '编程能力', x: '3%', y: '43%' }, { text: '工程能力', x: '7%', y: '48%' }, { text: '项目经验', x: '11%', y: '53%' },
+  { text: '产品思维', x: '84%', y: '43%' }, { text: '用户洞察', x: '82%', y: '48%' }, { text: '设计能力', x: '86%', y: '53%' },
+  { text: '统计分析', x: '35%', y: '84%' }, { text: '业务理解', x: '39%', y: '89%' },
+  { text: '提示工程', x: '63%', y: '84%' }, { text: '跨学科融合', x: '66%', y: '89%' }
+]
+const constellationPoints = [
+  [85, 92], [137, 76], [188, 99], [229, 128], [270, 157], [313, 188], [359, 250], [177, 174],
+  [243, 210], [109, 239], [167, 276], [221, 307], [273, 350], [330, 304], [78, 349], [146, 374],
+  [213, 405], [293, 425], [390, 405], [447, 354], [523, 350], [572, 399], [641, 371], [474, 289],
+  [543, 260], [616, 283], [467, 185], [522, 91], [606, 102], [429, 115], [384, 157], [356, 84],
+  [280, 73], [310, 261], [419, 251], [413, 325], [195, 221], [471, 75], [645, 179], [78, 185],
+  [255, 275], [492, 220], [575, 171], [352, 361], [580, 319], [125, 151], [226, 67], [496, 410]
+]
+const constellationLinks = [
+  [0, 1], [1, 2], [2, 3], [3, 4], [4, 5], [5, 6], [0, 7], [7, 8], [8, 5], [7, 36], [36, 8],
+  [39, 45], [45, 7], [9, 10], [10, 36], [10, 11], [11, 12], [12, 13], [13, 6], [14, 15], [15, 11],
+  [15, 16], [16, 17], [17, 12], [17, 43], [43, 18], [18, 19], [19, 20], [20, 21], [21, 22],
+  [20, 44], [44, 25], [25, 38], [23, 24], [24, 25], [23, 19], [23, 34], [34, 6], [34, 35],
+  [35, 19], [26, 41], [41, 24], [26, 30], [30, 6], [27, 28], [28, 42], [42, 26], [29, 30],
+  [29, 37], [37, 27], [31, 32], [32, 4], [31, 30], [40, 11], [40, 33], [33, 6], [46, 2],
+  [46, 32], [47, 18], [47, 21], [4, 33], [8, 40], [12, 43], [13, 35], [5, 30], [30, 41]
 ]
 const selectedBranch = computed(() => branches[activeBranchIndex.value])
 const pathPreview = [
@@ -109,23 +140,12 @@ function goToAssessment() { router.push(isLoggedIn.value ? '/multi-agent' : { na
 
 function renderGraph() {
   if (!graphEl.value || viewMode.value !== 'graph') return
-  compactGraph = graphEl.value.clientWidth < 600
   graphChart?.dispose()
   graphChart = echarts.init(graphEl.value, null, { renderer: 'canvas' })
-  const nodes = [{ id: 'self', name: '以你为中心', x: 305, y: 235, symbolSize: 96, itemStyle: { color: '#f5e8c8', borderColor: '#bd9756', borderWidth: 2, shadowBlur: 18, shadowColor: 'rgba(190,151,86,.3)' }, label: { color: '#142b45', fontSize: 14, fontWeight: 700, position: 'inside' } }]
-  const links = []
-  branches.forEach((branch, index) => {
-    nodes.push({ id: branch.id, name: branch.name, x: branch.x, y: compactGraph ? (branch.y < 235 ? 20 : 450) : branch.y, symbolSize: index === activeBranchIndex.value ? 78 : 70, itemStyle: { color: branch.color, borderColor: '#d8b77c', borderWidth: index === activeBranchIndex.value ? 3 : 1, shadowBlur: 10, shadowColor: 'rgba(14,42,68,.18)' }, label: { color: '#fff', fontSize: 12, fontWeight: 700, position: 'inside' } })
-    links.push({ source: 'self', target: branch.id })
-    if (!compactGraph) branch.skills.forEach((skill, skillIndex) => {
-      const sign = branch.x < 305 ? -1 : 1
-      const id = `${branch.id}-${skillIndex}`
-      nodes.push({ id, name: skill, x: branch.x + sign * (skillIndex === 0 ? 88 : 68), y: branch.y + (skillIndex === 0 ? -38 : 46), symbolSize: 9, itemStyle: { color: '#c5a36b', borderColor: '#fff', borderWidth: 2 }, label: { show: true, position: sign < 0 ? 'right' : 'left', color: '#4e6278', fontSize: 10, distance: 7 } })
-      links.push({ source: branch.id, target: id, lineStyle: { opacity: .38, width: 1 } })
-    })
-  })
-  graphChart.setOption({ animationDuration: 700, tooltip: { trigger: 'item', formatter: params => params.dataType === 'node' ? params.data.name : '', backgroundColor: '#fffaf0', borderColor: '#dbc8aa', textStyle: { color: '#1c354d' } }, series: [{ type: 'graph', layout: 'none', roam: false, left: compactGraph ? 52 : 42, top: compactGraph ? 45 : 30, right: compactGraph ? 52 : 55, bottom: compactGraph ? 45 : 18, data: nodes, links, lineStyle: { color: '#b2a486', width: 1.5, curveness: .06, opacity: .8 }, emphasis: { focus: 'adjacency', lineStyle: { width: 2.4 } }, label: { show: true }, edgeSymbol: ['none', 'none'] }] })
-  graphChart.on('click', params => { const index = branches.findIndex(branch => branch.id === params.data?.id); if (index >= 0) activeBranchIndex.value = index })
+  const nodes = constellationPoints.map(([x, y], index) => ({ id: `star-${index}`, x, y, symbolSize: [6, 13, 21, 33, 34, 43].includes(index) ? 12 : index % 5 === 0 ? 8 : 5, itemStyle: { color: index % 4 === 0 ? '#fffdf0' : '#ffe4aa', borderColor: '#fffef2', borderWidth: 1, shadowBlur: index % 5 === 0 ? 21 : 13, shadowColor: '#ffe0a2' } }))
+  nodes.push({ id: 'bound-start', x: 0, y: 0, symbolSize: 0, itemStyle: { opacity: 0 } }, { id: 'bound-end', x: 720, y: 500, symbolSize: 0, itemStyle: { opacity: 0 } })
+  const links = constellationLinks.map(([from, to], index) => ({ source: `star-${from}`, target: `star-${to}`, lineStyle: { opacity: index % 5 === 0 ? .98 : .77, width: index % 5 === 0 ? 1.9 : 1.35 } }))
+  graphChart.setOption({ animationDuration: 1100, animationEasing: 'cubicOut', series: [{ type: 'graph', layout: 'none', roam: false, silent: true, left: 0, top: 0, right: 0, bottom: 0, data: nodes, links, lineStyle: { color: '#fff0c6', width: 1.3, opacity: .8, shadowBlur: 5, shadowColor: '#ffe4b2' }, label: { show: false }, edgeSymbol: ['none', 'none'] }] })
 }
 
 function renderRadar() {
@@ -135,8 +155,7 @@ function renderRadar() {
   radarChart.setOption({ radar: { center: ['50%', '52%'], radius: '57%', splitNumber: 3, shape: 'polygon', axisName: { color: '#4a5f73', fontSize: 10 }, splitLine: { lineStyle: { color: '#d7d8d4' } }, splitArea: { areaStyle: { color: ['#fbfaf5', '#f4f2eb'] } }, axisLine: { lineStyle: { color: '#c7bda8' } }, indicator: [{ name: '学习力', max: 100 }, { name: '表达力', max: 100 }, { name: '协作力', max: 100 }, { name: '分析力', max: 100 }, { name: '执行力', max: 100 }, { name: '创新力', max: 100 }] }, series: [{ type: 'radar', data: [{ value: [76, 66, 72, 70, 82, 74], name: '演示画像', areaStyle: { color: 'rgba(65,103,132,.2)' }, lineStyle: { color: '#345d7a', width: 2 }, itemStyle: { color: '#345d7a' }, symbolSize: 4 }] }] })
 }
 
-watch(activeBranchIndex, renderGraph)
 watch(viewMode, async mode => { if (mode === 'graph') { await nextTick(); renderGraph(); if (graphEl.value) resizeObserver?.observe(graphEl.value) } })
-onMounted(() => { renderGraph(); renderRadar(); resizeObserver = new ResizeObserver(() => { if (graphEl.value && viewMode.value === 'graph' && (graphEl.value.clientWidth < 600) !== compactGraph) renderGraph(); else graphChart?.resize(); radarChart?.resize() }); if (graphEl.value) resizeObserver.observe(graphEl.value); if (radarEl.value) resizeObserver.observe(radarEl.value) })
+onMounted(() => { renderGraph(); renderRadar(); resizeObserver = new ResizeObserver(() => { graphChart?.resize(); radarChart?.resize() }); if (graphEl.value) resizeObserver.observe(graphEl.value); if (radarEl.value) resizeObserver.observe(radarEl.value) })
 onBeforeUnmount(() => { resizeObserver?.disconnect(); graphChart?.dispose(); radarChart?.dispose() })
 </script>
