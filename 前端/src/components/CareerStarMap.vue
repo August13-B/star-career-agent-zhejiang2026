@@ -69,10 +69,10 @@ let chart
 let observer
 onMounted(() => {
   chart = echarts.init(constellationEl.value, null, { renderer: 'canvas' })
-  const nodes = points.map(([x,y], index) => ({ id: `star-${index}`, x, y, symbolSize: [6,13,21,33,34,43].includes(index) ? 12 : index % 5 === 0 ? 8 : 5, itemStyle: { color: index % 4 === 0 ? '#fffdf0' : '#ffe4aa', borderColor: '#fffef2', borderWidth: 1, shadowBlur: index % 5 === 0 ? 21 : 13, shadowColor: '#ffe0a2' } }))
+  const nodes = points.map(([x,y], index) => ({ id: `star-${index}`, x, y, symbolSize: [6,13,21,33,34,43].includes(index) ? 12 : index % 5 === 0 ? 8 : 5, itemStyle: { color: index % 4 === 0 ? '#f4dfb1' : '#c2985f', borderColor: '#fffaf0', borderWidth: 1, shadowBlur: index % 5 === 0 ? 11 : 6, shadowColor: '#a6783b' } }))
   nodes.push({ id:'bound-start',x:0,y:0,symbolSize:0,itemStyle:{opacity:0} },{ id:'bound-end',x:720,y:500,symbolSize:0,itemStyle:{opacity:0} })
-  const links = edges.map(([from,to], index) => ({ source:`star-${from}`, target:`star-${to}`, lineStyle:{opacity:index%5===0?.98:.77,width:index%5===0?1.9:1.35} }))
-  chart.setOption({ animationDuration:1100, animationEasing:'cubicOut', series:[{ type:'graph',layout:'none',roam:false,silent:true,left:0,top:0,right:0,bottom:0,data:nodes,links,lineStyle:{color:'#fff0c6',width:1.3,opacity:.8,shadowBlur:5,shadowColor:'#ffe4b2'},label:{show:false} }] })
+  const links = edges.map(([from,to], index) => ({ source:`star-${from}`, target:`star-${to}`, lineStyle:{opacity:index%5===0?.72:.46,width:index%5===0?1.6:1.15} }))
+  chart.setOption({ animationDuration:1100, animationEasing:'cubicOut', series:[{ type:'graph',layout:'none',roam:false,silent:true,left:0,top:0,right:0,bottom:0,data:nodes,links,lineStyle:{color:'#987b56',width:1.15,opacity:.5},label:{show:false} }] })
   observer = new ResizeObserver(() => chart?.resize())
   observer.observe(constellationEl.value)
 })

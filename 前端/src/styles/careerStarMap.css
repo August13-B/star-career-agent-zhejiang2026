@@ -1,6 +1,6 @@
 .star-map-stage{position:relative;isolation:isolate;width:100%;aspect-ratio:1476/1066;min-height:390px;overflow:hidden;background:#ebe5d8 url('../assets/images/atlas-map-bg-v2.png') center/cover no-repeat;font-family:'Noto Sans SC','Microsoft YaHei',system-ui,sans-serif;color:#142d46}
-.star-map-stage::before{position:absolute;inset:0;z-index:-1;content:'';background:linear-gradient(180deg,transparent 34%,rgba(19,49,78,.06) 55%,rgba(14,43,72,.16) 100%);pointer-events:none}
-.star-map-constellation{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+.star-map-stage::before{position:absolute;inset:0;z-index:0;content:'';background:rgba(250,247,240,.78);pointer-events:none}
+.star-map-constellation{position:absolute;z-index:1;inset:0;width:100%;height:100%;pointer-events:none}
 .star-map-center{position:absolute;z-index:2;left:50%;top:43%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;width:clamp(105px,21%,166px);aspect-ratio:1;padding:20px;border:0;color:#143550;background:transparent url('../assets/images/atlas-center-star.png') center/contain no-repeat;transform:translate(-50%,-50%);font:inherit;text-align:center;cursor:pointer;transition:transform .25s,filter .25s}
 .star-map-center:hover{transform:translate(-50%,-50%) scale(1.06);filter:drop-shadow(0 0 10px rgba(255,216,128,.6))}
 .star-map-center strong{max-width:90%;font-family:'Noto Serif SC',serif;font-size:clamp(9px,.9vw,13px);line-height:1.2;overflow-wrap:anywhere}.star-map-center small{color:#816d52;font-size:clamp(6px,.6vw,8px);line-height:1.2}
