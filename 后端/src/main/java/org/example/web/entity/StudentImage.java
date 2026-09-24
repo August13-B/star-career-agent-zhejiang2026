@@ -26,6 +26,7 @@ public class StudentImage {
     /**
      * 图片存储路径
      */
+    @com.fasterxml.jackson.annotation.JsonIgnore
     private String filePath;
 
     /**

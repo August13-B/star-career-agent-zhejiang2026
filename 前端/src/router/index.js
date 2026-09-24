@@ -9,6 +9,7 @@ import JobInfoAdmin from '../views/JobInfoAdmin.vue'
 // 🌟 2. 引入新增的 AI 岗位定位深度分析页面
 import JobCompareView from '../views/JobCompareView.vue'
 import TutorDashboardView from '../views/TutorDashboardView.vue'
+import API_CONFIG from '../config/api'
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
@@ -49,12 +50,37 @@ const router = createRouter({
       name: 'Growth',
       component: () => import('../views/GrowthView.vue')
     },
+    {
+      path: '/training',
+      name: 'TrainingLobby',
+      component: () => import('../views/TrainingView.vue')
+    },
+    {
+      path: '/training/:sessionId',
+      name: 'TrainingSession',
+      component: () => import('../views/TrainingView.vue')
+    },
     { 
       path: '/tutor-dashboard', 
       name: 'TutorDashboard', 
       component: TutorDashboardView 
     }
   ]
+})
+
+router.beforeEach(async (to) => {
+  const allowed = to.path === '/admin/job-info' ? [2] : to.path === '/tutor-dashboard' ? [2, 4] : null
+  if (!allowed) return true
+  const token = localStorage.getItem('token')
+  if (!token) return { path: '/login' }
+  try {
+    const response = await fetch(`${API_CONFIG.BASE_URL}/api/user/getUserInfo`, { headers: { Authorization: token } })
+    if (!response.ok) return { path: '/login' }
+    const result = await response.json()
+    return allowed.includes(Number(result.data?.userRole)) ? true : { path: '/profile' }
+  } catch {
+    return { path: '/login' }
+  }
 })
 
 export default router

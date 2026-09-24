@@ -141,7 +141,7 @@
         update <include refid="baseTable" />
         <set>
             <if test="userId != null">user_id = #{userId},</if>
-            <if test="version != null">version = #{version},</if>
+            version = version + 1,
             <if test="userName != null">user_name = #{userName},</if>
             <if test="gender != null">gender = #{gender},</if>
             <if test="phone != null">phone = #{phone},</if>

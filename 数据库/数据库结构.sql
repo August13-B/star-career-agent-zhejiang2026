@@ -921,3 +921,141 @@ CREATE TABLE `grow_task_record`  (
   INDEX `idx_record_user`(`user_id` ASC) USING BTREE,
   CONSTRAINT `fk_record_task` FOREIGN KEY (`task_id`) REFERENCES `grow_task` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE = InnoDB CHARACTER SET = utf8mb4 COLLATE = utf8mb4_0900_ai_ci COMMENT = '成长任务完成情况记录（时间线，多条）' ROW_FORMAT = DYNAMIC;
+
+
+-- 职场训练（与 migrations/010_training_interview.sql 保持一致）
+-- 本文件用于全量重建；已有数据库只执行 migrations/010_training_interview.sql。
+USE `youthpath`;
+
+DROP TABLE IF EXISTS training_growth_link;
+DROP TABLE IF EXISTS training_profile_application;
+DROP TABLE IF EXISTS training_artifact;
+DROP TABLE IF EXISTS training_session_config;
+DROP TABLE IF EXISTS training_evaluation;
+DROP TABLE IF EXISTS training_turn;
+DROP TABLE IF EXISTS training_run;
+DROP TABLE IF EXISTS training_session;
+
+CREATE TABLE IF NOT EXISTS training_session (
+  id bigint NOT NULL PRIMARY KEY,
+  user_id bigint NOT NULL,
+  template_id varchar(80) NOT NULL,
+  status varchar(24) NOT NULL DEFAULT 'active',
+  answered_count int NOT NULL DEFAULT 0,
+  version int NOT NULL DEFAULT 0,
+  draft mediumtext NOT NULL COMMENT 'AES-GCM 密文',
+  draft_version int NOT NULL DEFAULT 0,
+  client_request_id varchar(80) NOT NULL,
+  create_time datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  update_time datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  UNIQUE KEY uk_training_create(user_id,client_request_id),
+  KEY idx_training_user_time(user_id,create_time),
+  CONSTRAINT fk_training_user FOREIGN KEY(user_id) REFERENCES user(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE IF NOT EXISTS training_run (
+  id bigint NOT NULL PRIMARY KEY,
+  session_id bigint NOT NULL,
+  operation varchar(16) NOT NULL,
+  status varchar(16) NOT NULL DEFAULT 'queued',
+  attempt int NOT NULL DEFAULT 1,
+  client_request_id varchar(80) NOT NULL,
+  input_hash varchar(64) NOT NULL,
+  request_json mediumtext NOT NULL COMMENT '冻结请求的 AES-GCM 密文',
+  response_message_id bigint NULL,
+  error_code varchar(64) NULL,
+  error_message varchar(255) NULL,
+  raw_result mediumtext NULL COMMENT '平台原始结构化结果的 AES-GCM 密文',
+  create_time datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  update_time datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  UNIQUE KEY uk_training_request(session_id,client_request_id),
+  KEY idx_training_run_state(status,create_time),
+  CONSTRAINT fk_training_run_session FOREIGN KEY(session_id) REFERENCES training_session(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE IF NOT EXISTS training_turn (
+  id bigint NOT NULL PRIMARY KEY,
+  session_id bigint NOT NULL,
+  run_id bigint NULL,
+  role varchar(16) NOT NULL,
+  ordinal int NOT NULL,
+  content mediumtext NOT NULL COMMENT 'AES-GCM 密文',
+  status varchar(16) NOT NULL,
+  create_time datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  UNIQUE KEY uk_training_ordinal(session_id,ordinal),
+  CONSTRAINT fk_training_turn_session FOREIGN KEY(session_id) REFERENCES training_session(id),
+  CONSTRAINT fk_training_turn_run FOREIGN KEY(run_id) REFERENCES training_run(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE IF NOT EXISTS training_evaluation (
+  id bigint NOT NULL PRIMARY KEY,
+  session_id bigint NOT NULL,
+  run_id bigint NOT NULL,
+  status varchar(24) NOT NULL,
+  result_json mediumtext NOT NULL COMMENT '校验后结果的 AES-GCM 密文',
+  message varchar(255) NOT NULL,
+  create_time datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  UNIQUE KEY uk_training_evaluation(session_id),
+  CONSTRAINT fk_training_eval_session FOREIGN KEY(session_id) REFERENCES training_session(id),
+  CONSTRAINT fk_training_eval_run FOREIGN KEY(run_id) REFERENCES training_run(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+
+-- 三场景扩展（与 migrations/011_training_workplace.sql 保持一致）
+-- 三场景训练：模板快照、作品修订、画像应用及成长来源。只新增表，不清空已有记录。
+USE `youthpath`;
+CREATE TABLE IF NOT EXISTS training_session_config (
+  session_id bigint NOT NULL PRIMARY KEY,
+  template_snapshot json NOT NULL,
+  difficulty varchar(20) NOT NULL DEFAULT 'standard',
+  use_for_profile tinyint NOT NULL DEFAULT 0,
+  baseline_score_id bigint NULL,
+  baseline_profile_version int NULL,
+  artifact_draft mediumtext NOT NULL COMMENT 'AES-GCM 密文',
+  artifact_draft_version int NOT NULL DEFAULT 0,
+  selected_artifact_id bigint NULL,
+  CONSTRAINT fk_training_config_session FOREIGN KEY(session_id) REFERENCES training_session(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+CREATE TABLE IF NOT EXISTS training_artifact (
+  id bigint NOT NULL PRIMARY KEY,
+  session_id bigint NOT NULL,
+  revision int NOT NULL,
+  client_request_id varchar(80) NOT NULL,
+  input_hash varchar(64) NOT NULL,
+  content_json mediumtext NOT NULL COMMENT 'AES-GCM 密文；只追加修订',
+  create_time datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  UNIQUE KEY uk_training_artifact_revision(session_id,revision),
+  UNIQUE KEY uk_training_artifact_request(session_id,client_request_id),
+  CONSTRAINT fk_training_artifact_session FOREIGN KEY(session_id) REFERENCES training_session(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+CREATE TABLE IF NOT EXISTS training_profile_application (
+  session_id bigint NOT NULL PRIMARY KEY,
+  status varchar(48) NOT NULL,
+  policy_version varchar(40) NOT NULL DEFAULT 'latest_observation_v1',
+  attempt int NOT NULL DEFAULT 0,
+  before_scores mediumtext NULL COMMENT 'AES-GCM 密文',
+  after_scores mediumtext NULL COMMENT 'AES-GCM 密文',
+  profile_version int NULL,
+  score_history_id bigint NULL,
+  message varchar(255) NOT NULL,
+  update_time datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  CONSTRAINT fk_training_application_session FOREIGN KEY(session_id) REFERENCES training_session(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+CREATE TABLE IF NOT EXISTS training_growth_link (
+  session_id bigint NOT NULL PRIMARY KEY,
+  task_id bigint NOT NULL,
+  plan_id bigint NOT NULL,
+  suggestion_index int NOT NULL,
+  create_time datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  CONSTRAINT fk_training_growth_session FOREIGN KEY(session_id) REFERENCES training_session(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+-- Non-destructive: preserve all existing users and reports.
+CREATE TABLE IF NOT EXISTS career_report_job (
+  job_id varchar(128) NOT NULL,
+  user_id bigint NOT NULL,
+  create_time datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (job_id),
+  KEY idx_report_job_user (user_id),
+  CONSTRAINT fk_report_job_user FOREIGN KEY (user_id) REFERENCES user(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;

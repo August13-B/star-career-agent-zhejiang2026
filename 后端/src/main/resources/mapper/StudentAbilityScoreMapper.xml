@@ -153,7 +153,7 @@
 
     <!-- 7. 根据用户ID查询（自动过滤已删除数据） -->
     <select id="selectByUserId" resultMap="StudentAbilityScoreMap">
-        select * from <include refid="baseTable" /> where user_id = #{userId} and is_deleted = 0
+        select * from <include refid="baseTable" /> where user_id = #{userId} and is_deleted = 0 ORDER BY (score_type = 1) DESC, update_time DESC, id DESC
     </select>
 
     <!-- 8. 根据能力ID查询（自动过滤已删除数据） -->

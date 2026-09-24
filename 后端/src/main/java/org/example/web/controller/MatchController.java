@@ -31,6 +31,9 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/match")
 public class MatchController {
+    @org.springframework.beans.factory.annotation.Autowired
+    private org.example.web.security.AccessGuard access;
+
 
     @Autowired
     private MatchService matchService;
@@ -48,6 +51,8 @@ public class MatchController {
     public Result createMatchRecord(@RequestParam Long userId,
                                     @RequestParam Long jobId,
                                     @RequestParam(defaultValue = "1") Integer level) {
+        access.self(userId);
+
         try {
             // 调用calculateMatch方法，同时创建记录和触发AI计算
             Map<String, Object> result = matchService.calculateMatch(userId, jobId, level);
@@ -75,6 +80,8 @@ public class MatchController {
     public Result calculateMatch(@RequestParam Long userId,
                                  @RequestParam Long jobId,
                                  @RequestParam(defaultValue = "1") Integer level) {
+        access.self(userId);
+
         try {
             Map<String, Object> result = matchService.calculateMatch(userId, jobId, level);
             if (result != null) {
@@ -95,6 +102,8 @@ public class MatchController {
      */
     @GetMapping("/record/{id}")
     public Result getMatchRecord(@PathVariable Long id) {
+        access.owned("match_record", id);
+
         try {
             MatchRecord matchRecord = matchService.getMatchRecordById(id);
             if (matchRecord != null) {
@@ -115,6 +124,8 @@ public class MatchController {
      */
     @GetMapping("/user/{userId}")
     public Result getMatchRecordsByUser(@PathVariable Long userId) {
+        access.self(userId);
+
         try {
             List<MatchRecord> matchRecords = matchService.getMatchRecordsByUserId(userId);
             return Result.success("获取用户匹配记录成功", matchRecords);
@@ -131,6 +142,8 @@ public class MatchController {
      */
     @GetMapping("/job/{jobId}")
     public Result getMatchRecordsByJob(@PathVariable Long jobId) {
+        access.admin();
+
         try {
             List<MatchRecord> matchRecords = matchService.getMatchRecordsByJobId(jobId);
             return Result.success("获取岗位匹配记录成功", matchRecords);
@@ -149,6 +162,8 @@ public class MatchController {
      */
     @GetMapping("/report/{matchId}")
     public Result getMatchReport(@PathVariable Long matchId) {
+        access.optionalOwned("match_record", matchId);
+
         try {
             Map<String, Object> report = matchService.getMatchReport(matchId);
             if (report.containsKey("error")) {
@@ -170,6 +185,8 @@ public class MatchController {
     @PutMapping("/status/{id}")
     public Result updateMatchStatus(@PathVariable Long id,
                                     @RequestParam Integer matchStatus) {
+        access.owned("match_record", id);
+
         try {
             boolean success = matchService.updateMatchStatus(id, matchStatus);
             if (success) {
@@ -192,6 +209,8 @@ public class MatchController {
     @PutMapping("/result/{id}")
     public Result updateMatchResult(@PathVariable Long id,
                                     @RequestParam Integer matchResult) {
+        access.owned("match_record", id);
+
         try {
             boolean success = matchService.updateMatchResult(id, matchResult);
             if (success) {
@@ -213,6 +232,8 @@ public class MatchController {
      */
     @DeleteMapping("/record/{id}")
     public Result deleteMatchRecord(@PathVariable Long id) {
+        access.owned("match_record", id);
+
         try {
             boolean success = matchService.deleteMatchRecord(id);
             if (success) {
@@ -234,6 +255,8 @@ public class MatchController {
      */
     @GetMapping("/detail/{matchId}")
     public Result getMatchDetails(@PathVariable Long matchId) {
+        access.optionalOwned("match_record", matchId);
+
         try {
             List<MatchDetail> matchDetails = matchService.getMatchDetailsByMatchId(matchId);
             return Result.success("获取匹配详情成功", matchDetails);
@@ -254,6 +277,8 @@ public class MatchController {
     @PutMapping("/scores/{id}")
     public Result updateMatchScores(@PathVariable Long id,
                                     @RequestBody Map<String, BigDecimal> scores) {
+        access.owned("match_record", id);
+
         try {
             boolean success = matchService.updateMatchScores(id, scores);
             if (success) {
@@ -278,6 +303,8 @@ public class MatchController {
     @PostMapping("/batch")
     public Result batchMatch(@RequestParam List<Long> userIds,
                              @RequestParam List<Long> jobIds) {
+        access.admin();
+
         try {
             List<Map<String, Object>> results = matchService.batchMatch(userIds, jobIds);
             return Result.success("批量匹配请求已发送到AI服务器", results);
@@ -297,6 +324,8 @@ public class MatchController {
     @GetMapping("/user-job")
     public Result getMatchRecordByUserAndJob(@RequestParam Long userId,
                                              @RequestParam Long jobId) {
+        access.self(userId);
+
         try {
             MatchRecord matchRecord = matchService.getMatchRecordByUserAndJob(userId, jobId);
             if (matchRecord != null) {
@@ -323,6 +352,8 @@ public class MatchController {
     @PostMapping("/trigger-auto-match")
     public Result triggerAutoMatch(@RequestParam Long userId,
                                    @RequestParam Integer triggerType) {
+        access.self(userId);
+
         try {
             boolean success = matchService.triggerAutoMatch(userId, triggerType);
             if (success) {
@@ -347,6 +378,8 @@ public class MatchController {
     @GetMapping("/check-hard-threshold")
     public Result checkHardThreshold(@RequestParam Long userId,
                                      @RequestParam Long jobId) {
+        access.self(userId);
+
         try {
             boolean passed = matchService.checkHardThreshold(userId, jobId);
             if (passed) {
@@ -373,6 +406,8 @@ public class MatchController {
     public Result incrementalMatch(@RequestParam Long userId,
                                    @RequestParam Long jobId,
                                    @RequestParam String updatedDimension) {
+        access.self(userId);
+
         try {
             Map<String, Object> result = matchService.incrementalMatch(userId, jobId, updatedDimension);
             return Result.success("增量匹配请求已发送", result);
@@ -397,6 +432,8 @@ public class MatchController {
                                   @RequestParam(required = false) String startTime,
                                   @RequestParam(required = false) String endTime,
                                   @RequestParam(required = false) Integer matchResult) {
+        access.self(userId);
+
         try {
             List<MatchRecord> history = matchService.getMatchHistory(userId, jobId, startTime, endTime, matchResult);
             return Result.success("获取匹配历史成功", history);
@@ -425,6 +462,8 @@ public class MatchController {
                                             @RequestParam(required = false) String city,
                                             @RequestParam(required = false) BigDecimal minSalary,
                                             @RequestParam(required = false) BigDecimal maxSalary) {
+        access.self(userId);
+
         try {
             List<MatchRecord> results = matchService.getMatchResultsWithFilter(userId, sortBy, sortOrder, 
                                                                                 industry, city, minSalary, maxSalary);
@@ -444,6 +483,9 @@ public class MatchController {
     @PostMapping("/favorite")
     public Result favoriteMatch(@RequestParam Long userId,
                                 @RequestParam Long matchId) {
+        access.self(userId);
+        access.optionalOwned("match_record", matchId);
+
         try {
             boolean success = matchService.favoriteMatch(userId, matchId);
             if (success) {
@@ -466,6 +508,9 @@ public class MatchController {
     @DeleteMapping("/favorite")
     public Result unfavoriteMatch(@RequestParam Long userId,
                                   @RequestParam Long matchId) {
+        access.self(userId);
+        access.optionalOwned("match_record", matchId);
+
         try {
             boolean success = matchService.unfavoriteMatch(userId, matchId);
             if (success) {
@@ -488,6 +533,9 @@ public class MatchController {
     @PostMapping("/pin")
     public Result pinMatch(@RequestParam Long userId,
                            @RequestParam Long matchId) {
+        access.self(userId);
+        access.optionalOwned("match_record", matchId);
+
         try {
             boolean success = matchService.pinMatch(userId, matchId);
             if (success) {
@@ -510,6 +558,9 @@ public class MatchController {
     @DeleteMapping("/pin")
     public Result unpinMatch(@RequestParam Long userId,
                              @RequestParam Long matchId) {
+        access.self(userId);
+        access.optionalOwned("match_record", matchId);
+
         try {
             boolean success = matchService.unpinMatch(userId, matchId);
             if (success) {
@@ -530,6 +581,8 @@ public class MatchController {
      */
     @GetMapping("/favorites")
     public Result getFavoriteMatches(@RequestParam Long userId) {
+        access.self(userId);
+
         try {
             List<MatchRecord> favorites = matchService.getFavoriteMatches(userId);
             return Result.success("获取收藏匹配列表成功", favorites);
@@ -546,6 +599,8 @@ public class MatchController {
      */
     @GetMapping("/pinned")
     public Result getPinnedMatches(@RequestParam Long userId) {
+        access.self(userId);
+
         try {
             List<MatchRecord> pinned = matchService.getPinnedMatches(userId);
             return Result.success("获取置顶匹配列表成功", pinned);
@@ -562,6 +617,8 @@ public class MatchController {
      */
     @GetMapping("/full-detail/{matchId}")
     public Result getMatchFullDetail(@PathVariable Long matchId) {
+        access.optionalOwned("match_record", matchId);
+
         try {
             Map<String, Object> fullDetail = matchService.getMatchFullDetail(matchId);
             if (fullDetail.containsKey("error")) {
@@ -581,6 +638,8 @@ public class MatchController {
      */
     @PostMapping("/retry/{matchId}")
     public Result retryFailedMatch(@PathVariable Long matchId) {
+        access.optionalOwned("match_record", matchId);
+
         try {
             boolean success = matchService.retryFailedMatch(matchId);
             if (success) {
@@ -601,6 +660,8 @@ public class MatchController {
      */
     @PostMapping("/terminate/{matchId}")
     public Result terminateTimeoutMatch(@PathVariable Long matchId) {
+        access.optionalOwned("match_record", matchId);
+
         try {
             boolean success = matchService.terminateTimeoutMatch(matchId);
             if (success) {

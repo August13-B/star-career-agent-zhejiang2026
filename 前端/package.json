@@ -5,14 +5,14 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "test": "node --test src/utils/sse.test.js",
+    "test": "node --test src/utils/sse.test.js src/utils/trainingApi.test.js",
     "build": "vite build",
     "preview": "vite preview"
   },
   "dependencies": {
-    "axios": "^1.14.0",
+    "axios": "^1.20.0",
     "crypto-js": "^4.2.0",
-    "echarts": "^5.6.0",
+    "echarts": "^6.1.0",
     "jsencrypt": "^3.3.2",
     "vue": "^3.5.30",
     "vue-router": "^4.5.1"

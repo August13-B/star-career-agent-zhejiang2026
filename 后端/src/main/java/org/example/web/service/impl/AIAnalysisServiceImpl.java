@@ -33,6 +33,7 @@ public class AIAnalysisServiceImpl implements AIAnalysisService {
     /** A02：AI 能力统一走蚂蚁百宝箱（自研 AI 服务已退役） */
     private final org.example.web.service.TboxAgentService tboxAgentService;
     private final StudentAbilityScoreService studentAbilityScoreService;
+    private final org.example.web.service.training.AbilityScoreWrites scoreWrites;
 
     // 固定核心Prompt，用户的message会补充到这里
     private static final String AI_ANALYSIS_CORE_PROMPT = "请你根据提供的学生画像和能力维度信息，对学生的各项能力进行专业评分，严格按照以下要求输出：\n" +
@@ -56,7 +57,6 @@ public class AIAnalysisServiceImpl implements AIAnalysisService {
             "4. 用户补充需求（如有）请优先参考：";
 
     @Override
-    @Transactional(rollbackFor = Exception.class)
     public Result<List<StudentAbilityScore>> analyzeAndSaveAbilityScore(Long userId, String userMessage, Float temperature) {
         try {
             // 1. 入参合法性校验
@@ -171,28 +171,13 @@ public class AIAnalysisServiceImpl implements AIAnalysisService {
             abilityScore.setScoreType(1); // 1=AI自动分析
             logger.info("【AI能力分析】AI评分解析完成，总分：{}", abilityScore.getTotalScore());
 
-            // 9. 删除该用户现有的AI评分记录（scoreType = 1），避免重复
-            logger.info("【AI能力分析】开始删除用户现有的AI评分记录，userId：{}", userId);
-            List<StudentAbilityScore> existingScores = studentAbilityScoreService.selectByUserId(userId);
-            if (existingScores != null && !existingScores.isEmpty()) {
-                int deletedCount = 0;
-                for (StudentAbilityScore existingScore : existingScores) {
-                    if (existingScore.getScoreType() != null && existingScore.getScoreType() == 1) {
-                        studentAbilityScoreService.deleteById(existingScore.getId());
-                        deletedCount++;
-                        logger.info("【AI能力分析】删除现有AI评分记录，id：{}", existingScore.getId());
-                    }
-                }
-                logger.info("【AI能力分析】共删除{}条现有的AI评分记录", deletedCount);
-            }
-
-            // 10. 插入新的评分记录
-            int insertResult = studentAbilityScoreService.insert(abilityScore);
+            // 远程推理结束后才进入短事务，原子替换系统评分。
+            int insertResult = scoreWrites.replace(abilityScore);
             if (insertResult <= 0) {
                 logger.error("【AI能力分析】评分保存失败，userId：{}", userId);
                 throw new RuntimeException("评分保存失败");
             }
-            
+
             // 查询刚刚插入的记录
             List<StudentAbilityScore> savedScoreList = studentAbilityScoreService.selectByUserId(userId);
             logger.info("【AI能力分析】评分保存成功，userId：{}", userId);

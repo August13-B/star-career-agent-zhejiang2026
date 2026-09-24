@@ -93,12 +93,14 @@ public class JobInfoServiceImpl implements JobInfoService {
 
     @Override
     public IPage<JobInfo> pageQuery(long current, long size, String jobName) {
-        Page<JobInfo> page = new Page<>(current, size);
+        Page<JobInfo> page = new Page<>(Math.max(1, current), Math.max(1, Math.min(100, size)));
         LambdaQueryWrapper<JobInfo> wrapper = new LambdaQueryWrapper<>();
         if (StringUtils.hasText(jobName)) {
             wrapper.like(JobInfo::getJobName, jobName);
         }
         wrapper.orderByDesc(JobInfo::getCreateTime);
+        // 同一秒导入的岗位也有稳定顺序，翻页不会因时间戳相同而重复或遗漏。
+        wrapper.orderByDesc(JobInfo::getId);
         return jobInfoMapper.selectPage(page, wrapper);
     }
 

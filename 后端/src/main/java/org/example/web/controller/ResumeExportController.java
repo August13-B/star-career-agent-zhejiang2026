@@ -20,6 +20,9 @@ import java.util.Map;
 @RequestMapping("/resume")
 @RequiredArgsConstructor
 public class ResumeExportController {
+    @org.springframework.beans.factory.annotation.Autowired
+    private org.example.web.security.AccessGuard access;
+
 
     private static final Logger logger = LoggerFactory.getLogger(ResumeExportController.class);
 
@@ -32,6 +35,8 @@ public class ResumeExportController {
      */
     @GetMapping({"/export/{userId}", "/export/{userId}/"})
     public ResponseEntity<?> exportResume(@PathVariable Long userId) {
+        access.self(userId);
+
         try {
             File resumeFile = resumeExportService.exportResume(userId);
 
@@ -68,6 +73,8 @@ public class ResumeExportController {
      */
     @GetMapping("/info")
     public ResponseEntity<?> getResumeInfo() {
+        access.admin();
+
         try {
             Map<String, Object> info = new HashMap<>();
             info.put("resumeDir", resumeExportService.getResumeDir());

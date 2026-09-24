@@ -30,6 +30,11 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/career-report")
 public class CareerReportController {
+    @org.springframework.beans.factory.annotation.Autowired
+    private org.example.web.security.ReportJobRegistry reportJobs;
+    @org.springframework.beans.factory.annotation.Autowired
+    private org.example.web.security.AccessGuard access;
+
 
     @Autowired
     private org.example.web.service.TboxAgentService tboxAgentService;
@@ -67,6 +72,8 @@ public class CareerReportController {
     @org.springframework.web.bind.annotation.PostMapping("/start")
     @org.springframework.web.bind.annotation.CrossOrigin
     public Result<?> startReport(@RequestBody java.util.Map<String, Object> request) {
+        request.put("user_id", access.self(request.get("user_id")));
+
         Object uidRaw = request.get("user_id");
         if (uidRaw == null) {
             return Result.error("缺少 user_id 参数");
@@ -82,13 +89,14 @@ public class CareerReportController {
         String message = studentProfileContextService.build(userId, targetJob, userInput);
         try {
             String jobId = tboxAgentService.startReportJob(userId, message);
+            reportJobs.register(jobId, userId);
             java.util.Map<String, Object> data = new java.util.LinkedHashMap<>();
             data.put("jobId", jobId);
             data.put("userId", String.valueOf(userId));
             return Result.success("报告任务已创建", data);
         } catch (Exception e) {
             System.err.println("创建报告任务失败: " + e.getMessage());
-            return Result.error("创建报告任务失败：" + e.getMessage());
+            return Result.error("报告服务暂不可用，请稍后重试。");
         }
     }
 
@@ -98,6 +106,8 @@ public class CareerReportController {
     public Result<?> reportJobStatus(@org.springframework.web.bind.annotation.PathVariable String jobId,
                                      @org.springframework.web.bind.annotation.RequestParam(value = "offsets", required = false) String offsets,
                                      @org.springframework.web.bind.annotation.RequestHeader(value = "Authorization", required = false) String token) {
+        reportJobs.owned(jobId, access.current());
+
         try {
             String json = tboxAgentService.fetchReportJob(jobId, offsets);
             com.fasterxml.jackson.databind.JsonNode n = objectMapper.readTree(json);
@@ -158,7 +168,7 @@ public class CareerReportController {
             return Result.success(out);
         } catch (Exception e) {
             System.err.println("查询报告任务失败: " + e.getMessage());
-            return Result.error("查询报告任务失败：" + e.getMessage());
+            return Result.error("暂时无法获取报告进度，请稍后重试。");
         }
     }
 
@@ -348,6 +358,8 @@ public class CareerReportController {
     @org.springframework.web.bind.annotation.PostMapping("/jobs/{jobId}/cancel")
     @org.springframework.web.bind.annotation.CrossOrigin
     public Result<?> cancelReportJob(@org.springframework.web.bind.annotation.PathVariable String jobId) {
+        reportJobs.owned(jobId, access.current());
+
         try {
             String resp = tboxAgentService.cancelReportJob(jobId);
             java.util.Map<String, Object> out = new java.util.LinkedHashMap<>();
@@ -359,7 +371,7 @@ public class CareerReportController {
             return Result.success("已请求取消", out);
         } catch (Exception e) {
             System.err.println("取消报告任务失败: " + e.getMessage());
-            return Result.error("取消失败：" + e.getMessage());
+            return Result.error("暂时无法确认取消结果，请稍后重试。");
         }
     }
 
@@ -389,6 +401,7 @@ public class CareerReportController {
         if (ids.isEmpty()) {
             return Result.error("ids 格式错误");
         }
+        access.batch("career_report", ids);
         // 只允许删除当前用户自己的报告
         java.util.List<CareerReport> reports = careerReportMapper.selectByIds(ids);
         java.util.List<Long> ownIds = new java.util.ArrayList<>();
@@ -439,6 +452,8 @@ public class CareerReportController {
     public org.springframework.http.ResponseEntity<byte[]> exportReportPdf(
             @org.springframework.web.bind.annotation.PathVariable Long id,
             @org.springframework.web.bind.annotation.RequestParam(value = "mode", required = false, defaultValue = "report") String mode) {
+        access.owned("career_report", id);
+
         CareerReport report = careerReportMapper.selectById(id);
         if (report == null) {
             return org.springframework.http.ResponseEntity.notFound().build();
@@ -668,6 +683,9 @@ public class CareerReportController {
      */
     @PostMapping("/create")
     public Result createCareerReport(@RequestBody CareerReport careerReport) {
+        careerReport.setUserId(access.self(careerReport.getUserId()));
+        access.optionalOwned("match_record", careerReport.getMatchId());
+
         try {
             CareerReport createdReport = careerReportService.createCareerReport(careerReport);
             if (createdReport != null) {
@@ -688,6 +706,8 @@ public class CareerReportController {
      */
     @GetMapping("/{id}")
     public Result getCareerReport(@PathVariable Long id) {
+        access.owned("career_report", id);
+
         try {
             CareerReport report = careerReportService.getCareerReportById(id);
             if (report != null) {
@@ -708,6 +728,8 @@ public class CareerReportController {
      */
     @GetMapping("/user/{userId}")
     public Result getCareerReportsByUser(@PathVariable Long userId) {
+        access.self(userId);
+
         try {
             List<CareerReport> reports = careerReportService.getCareerReportsByUserId(userId);
             return Result.success("获取用户职业报告成功", reports);
@@ -724,6 +746,8 @@ public class CareerReportController {
      */
     @GetMapping("/match/{matchId}")
     public Result getCareerReportByMatch(@PathVariable Long matchId) {
+        access.optionalOwned("match_record", matchId);
+
         try {
             CareerReport report = careerReportService.getCareerReportByMatchId(matchId);
             if (report != null) {
@@ -750,6 +774,9 @@ public class CareerReportController {
     public Result generateCareerReport(@RequestParam Long userId,
                                        @RequestParam(required = false) Long matchId,
                                        @RequestParam Integer reportType) {
+        access.self(userId);
+        access.optionalOwned("match_record", matchId);
+
         try {
             Map<String, Object> result = careerReportService.generateCareerReport(userId, matchId, reportType);
             if (result != null && !result.containsKey("error")) {
@@ -770,6 +797,8 @@ public class CareerReportController {
      */
     @GetMapping("/status/{reportId}")
     public Result getReportGenerationStatus(@PathVariable Long reportId) {
+        access.optionalOwned("career_report", reportId);
+
         try {
             Map<String, Object> status = careerReportService.getReportGenerationStatus(reportId);
             if (status.containsKey("error")) {
@@ -793,6 +822,8 @@ public class CareerReportController {
     public Result updateReportContent(@PathVariable Long reportId,
                                       @RequestParam String reportContent,
                                       @RequestParam String changeReason) {
+        access.optionalOwned("career_report", reportId);
+
         try {
             CareerReport updatedReport = careerReportService.updateReportContent(reportId, reportContent, changeReason);
             if (updatedReport != null) {
@@ -815,6 +846,8 @@ public class CareerReportController {
     @PutMapping("/status/{reportId}")
     public Result updateReportStatus(@PathVariable Long reportId,
                                      @RequestParam Integer status) {
+        access.optionalOwned("career_report", reportId);
+
         try {
             boolean success = careerReportService.updateReportStatus(reportId, status);
             if (success) {
@@ -835,6 +868,8 @@ public class CareerReportController {
      */
     @DeleteMapping("/{id}")
     public Result deleteCareerReport(@PathVariable Long id) {
+        access.owned("career_report", id);
+
         try {
             boolean success = careerReportService.deleteCareerReport(id);
             if (success) {
@@ -855,6 +890,8 @@ public class CareerReportController {
      */
     @GetMapping("/history/{reportId}")
     public Result getReportHistory(@PathVariable Long reportId) {
+        access.optionalOwned("career_report", reportId);
+
         try {
             List<CareerReportHistory> history = careerReportService.getReportHistory(reportId);
             return Result.success("获取报告历史版本成功", history);
@@ -873,6 +910,8 @@ public class CareerReportController {
     @GetMapping("/history/{reportId}/version/{version}")
     public Result getReportByVersion(@PathVariable Long reportId,
                                      @PathVariable Integer version) {
+        access.optionalOwned("career_report", reportId);
+
         try {
             CareerReportHistory history = careerReportService.getReportByVersion(reportId, version);
             if (history != null) {
@@ -897,6 +936,8 @@ public class CareerReportController {
     public Result restoreReportToVersion(@PathVariable Long reportId,
                                          @RequestParam Integer version,
                                          @RequestParam String changeReason) {
+        access.optionalOwned("career_report", reportId);
+
         try {
             CareerReport restoredReport = careerReportService.restoreReportToVersion(reportId, version, changeReason);
             if (restoredReport != null) {
@@ -921,6 +962,8 @@ public class CareerReportController {
     public Result batchGenerateReports(@RequestParam List<Long> userIds,
                                        @RequestParam(required = false) List<Long> matchIds,
                                        @RequestParam Integer reportType) {
+        access.admin();
+
         try {
             List<CareerReport> reports = careerReportService.batchGenerateReports(userIds, matchIds, reportType);
             return Result.success("批量报告生成请求已发送", reports);
@@ -945,6 +988,9 @@ public class CareerReportController {
                                        @RequestParam(required = false) Long matchId,
                                        @RequestParam Integer reportType,
                                        @RequestParam(required = false) Long templateId) {
+        access.self(userId);
+        access.optionalOwned("match_record", matchId);
+
         try {
             Map<String, Object> result = careerReportService.generateReportByType(userId, matchId, reportType, templateId);
             return Result.success("高级报告生成请求已发送", result);
@@ -961,6 +1007,8 @@ public class CareerReportController {
      */
     @PostMapping("/retry/{reportId}")
     public Result retryReportGeneration(@PathVariable Long reportId) {
+        access.optionalOwned("career_report", reportId);
+
         try {
             boolean success = careerReportService.retryReportGeneration(reportId);
             if (success) {
@@ -985,6 +1033,8 @@ public class CareerReportController {
     public Result compareReportVersions(@PathVariable Long reportId,
                                         @RequestParam Integer version1,
                                         @RequestParam Integer version2) {
+        access.optionalOwned("career_report", reportId);
+
         try {
             Map<String, Object> comparison = careerReportService.compareReportVersions(reportId, version1, version2);
             if (comparison.containsKey("error")) {
@@ -1006,6 +1056,9 @@ public class CareerReportController {
     @GetMapping("/ability-ranking/{userId}")
     public Result generateAbilityRankingAnalysis(@PathVariable Long userId,
                                                  @RequestParam(required = false) Long reportId) {
+        access.self(userId);
+        access.optionalOwned("career_report", reportId);
+
         try {
             Map<String, Object> analysis = careerReportService.generateAbilityRankingAnalysis(userId, reportId);
             return Result.success("能力排名分析请求已发送", analysis);
@@ -1024,6 +1077,8 @@ public class CareerReportController {
     @GetMapping("/export/{reportId}")
     public Result exportReport(@PathVariable Long reportId,
                                @RequestParam String format) {
+        access.optionalOwned("career_report", reportId);
+
         try {
             Map<String, Object> exportInfo = careerReportService.exportReport(reportId, format);
             if (exportInfo.containsKey("error")) {
@@ -1047,6 +1102,8 @@ public class CareerReportController {
     public Result generateShareLink(@PathVariable Long reportId,
                                     @RequestParam Integer permissionLevel,
                                     @RequestParam(defaultValue = "0") Integer expireHours) {
+        access.optionalOwned("career_report", reportId);
+
         try {
             Map<String, Object> shareInfo = careerReportService.generateShareLink(reportId, permissionLevel, expireHours);
             if (shareInfo.containsKey("error")) {
@@ -1066,6 +1123,8 @@ public class CareerReportController {
      */
     @GetMapping("/share/validate")
     public Result validateShareLink(@RequestParam String shareToken) {
+        access.admin();
+
         try {
             Map<String, Object> validation = careerReportService.validateShareLink(shareToken);
             return Result.success("分享链接验证完成", validation);
@@ -1082,6 +1141,8 @@ public class CareerReportController {
      */
     @DeleteMapping("/share/revoke")
     public Result revokeShareLink(@RequestParam String shareToken) {
+        access.admin();
+
         try {
             boolean success = careerReportService.revokeShareLink(shareToken);
             if (success) {
@@ -1102,6 +1163,8 @@ public class CareerReportController {
      */
     @GetMapping("/share/{reportId}/all")
     public Result getReportShareLinks(@PathVariable Long reportId) {
+        access.optionalOwned("career_report", reportId);
+
         try {
             List<Map<String, Object>> shareLinks = careerReportService.getReportShareLinks(reportId);
             return Result.success("获取分享链接成功", shareLinks);
@@ -1122,6 +1185,8 @@ public class CareerReportController {
     public Result getUserReportsWithFilter(@PathVariable Long userId,
                                            @RequestParam(required = false) Integer reportType,
                                            @RequestParam(required = false) Integer status) {
+        access.self(userId);
+
         try {
             List<CareerReport> reports = careerReportService.getUserReportsWithFilter(userId, reportType, status);
             return Result.success("获取筛选后的报告列表成功", reports);
@@ -1138,6 +1203,8 @@ public class CareerReportController {
      */
     @PostMapping("/confirm/{reportId}")
     public Result confirmReport(@PathVariable Long reportId) {
+        access.optionalOwned("career_report", reportId);
+
         try {
             boolean success = careerReportService.confirmReport(reportId);
             if (success) {
@@ -1162,6 +1229,8 @@ public class CareerReportController {
     public Result submitReportFeedback(@PathVariable Long reportId,
                                        @RequestParam String feedback,
                                        @RequestParam Integer feedbackScore) {
+        access.optionalOwned("career_report", reportId);
+
         try {
             boolean success = careerReportService.submitReportFeedback(reportId, feedback, feedbackScore);
             if (success) {

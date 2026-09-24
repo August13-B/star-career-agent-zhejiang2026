@@ -29,12 +29,15 @@
         <div v-else-if="isDataEmpty" class="overlay-state empty-state">
           <span class="empty-icon">🛰️</span>
           <p>当前星系坐标未建立，空间折叠尚未展开</p>
-          <button @click="handleTriggerGeneration" class="cyber-btn" :disabled="isGenerating">
+          <p v-if="generationError" role="alert">{{ generationError }}</p>
+          <p v-if="!canGenerate">请由管理员从岗位管理页选择原始岗位，建立星图。</p>
+          <button v-if="canGenerate" @click="handleTriggerGeneration" class="cyber-btn" :disabled="isGenerating">
             {{ isGenerating ? '⚡ 星轨引擎充能中...' : '🚀 唤醒 AI 重构星图' }}
           </button>
         </div>
 
         <div v-show="!isLoading && !isDataEmpty" ref="chartRef" class="echarts-box"></div>
+        <p v-if="!isLoading && !isDataEmpty && !realGraphData.promotions?.length && !realGraphData.transfers?.length" class="graph-note">当前仅有岗位节点，尚无晋升或换岗路线数据。</p>
       </div>
 
       <transition name="panel-fade">
@@ -72,7 +75,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted, shallowRef, nextTick } from 'vue'
+import { ref, computed, onMounted, onUnmounted, shallowRef, nextTick } from 'vue'
 import * as echarts from 'echarts'
 import axios from 'axios'
 import { useRoute } from 'vue-router'
@@ -81,11 +84,15 @@ import API_CONFIG from '../config/api'
 const route = useRoute()
 const chartRef = ref(null)
 const chartInstance = shallowRef(null)
+let chartResizeObserver
 const activeNode = ref(null)
 
 const isLoading = ref(true)
 const isDataEmpty = ref(false)
 const isGenerating = ref(false)
+const generationError = ref('')
+const activeProfileId = ref(route.query.id || '232745912058150912')
+const canGenerate = computed(() => Boolean(route.query.jobInfoId) && localStorage.getItem('userRole') === '2')
 
 const realGraphData = ref({ center: null, promotions: [], transfers: [] })
 
@@ -113,7 +120,7 @@ const getStarStyle = () => {
 
 // ================= 🌟 获取星图数据 (带超级防崩盾) =================
 const fetchGraphData = async () => {
-  const profileId = route.query.id || '232745912058150912'
+  const profileId = activeProfileId.value
   try {
     isLoading.value = true; 
     isDataEmpty.value = false;
@@ -150,11 +157,20 @@ const fetchGraphData = async () => {
 }
 
 const handleTriggerGeneration = async () => {
-  const jobId = route.query.id || '232745912058150912'
+  const jobId = route.query.jobInfoId
+  if (!jobId || !canGenerate.value) return
   try {
     isGenerating.value = true
+    generationError.value = ''
     const res = await axios.post(`${baseURL}/api/analysis/job/${jobId}`, {}, { headers: getHeaders() })
-    if (res.data.code === 200 || res.data.code === 0) await fetchGraphData()
+    if (![200, 0].includes(res.data.code)) throw new Error('星图生成暂不可用，请稍后重试。')
+    const info = await axios.get(`${baseURL}/api/job-info/${jobId}`, { headers: getHeaders() })
+    const profileId = info.data.data?.jobId
+    if (!profileId) throw new Error('尚未建立岗位画像，请稍后重试。')
+    activeProfileId.value = String(profileId)
+    await fetchGraphData()
+  } catch {
+    generationError.value = '星图生成暂不可用；请确认管理员权限及 AI 平台状态。'
   } finally {
     isGenerating.value = false
   }
@@ -176,6 +192,7 @@ const buildGraphData = () => {
     name: centerName,
     category: '当前岗位',
     symbolSize: 95,
+    label: { position: 'bottom', width: 160, overflow: 'break' },
     itemStyle: { 
       color: new echarts.graphic.RadialGradient(0.3, 0.3, 1, [{ offset: 0, color: '#60A5FA' }, { offset: 1, color: '#1E3A8A' }]), 
       shadowBlur: 50, shadowColor: '#3B82F6', borderColor: '#BFDBFE', borderWidth: 2
@@ -258,6 +275,9 @@ const initChart = () => {
   if (chartInstance.value) chartInstance.value.dispose()
   
   chartInstance.value = echarts.init(chartRef.value)
+  chartResizeObserver?.disconnect()
+  chartResizeObserver = new ResizeObserver(() => chartInstance.value?.resize())
+  chartResizeObserver.observe(chartRef.value)
   const { nodes, links } = buildGraphData()
 
   const option = {
@@ -270,7 +290,7 @@ const initChart = () => {
       padding: [12, 18], borderRadius: 12, boxShadow: '0 10px 30px rgba(0,0,0,0.5)',
       formatter: (p) => {
         if (!p.data || p.data.category === '星尘') return '';
-        return `<div style="display:flex;align-items:center;gap:8px;"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${p.color}"></span>${p.name}</div>`;
+        return `<div>${echarts.format.encodeHTML(String(p.name || ''))}</div>`;
       } 
     },
     color: ['#3B82F6', '#10B981', '#A855F7'],
@@ -335,20 +355,22 @@ const initChart = () => {
   })
 }
 
+const handleResize = () => chartInstance.value?.resize()
 onMounted(() => {
   fetchGraphData()
-  window.addEventListener('resize', () => chartInstance.value?.resize())
+  window.addEventListener('resize', handleResize)
 })
 
 onUnmounted(() => {
-  window.removeEventListener('resize', () => chartInstance.value?.resize())
+  chartResizeObserver?.disconnect()
+  window.removeEventListener('resize', handleResize)
   if (chartInstance.value) chartInstance.value.dispose()
 })
 </script>
 
 <style scoped>
 /* 🌟 终极暗黑宇宙底层 */
-.graph-page.dark-universe { width: 100%; height: 100vh; display: flex; flex-direction: column; background: radial-gradient(ellipse at bottom, #589dec 0%, #394b9c 100%); padding: 30px; overflow: hidden; box-sizing: border-box; font-family: 'Inter', -apple-system, sans-serif; position: relative; }
+.graph-page.dark-universe { width: 100%; height: 100%; min-height: 0; display: flex; flex-direction: column; background: radial-gradient(ellipse at bottom, #589dec 0%, #394b9c 100%); padding: 24px; overflow: hidden; box-sizing: border-box; font-family: 'Inter', -apple-system, sans-serif; position: relative; }
 
 /* 🌟 满天繁星生成器 */
 .starfield { position: absolute; inset: 0; pointer-events: none; z-index: 0; overflow: hidden;}
@@ -365,10 +387,11 @@ onUnmounted(() => {
 .page-header { text-align: center; margin-bottom: 25px; z-index: 2; position: relative; }
 .neon-text { font-size: 2.2rem; font-weight: 900; color: #F8FAFC; margin: 0 0 8px 0; letter-spacing: 2px; text-shadow: 0 0 20px rgba(75, 128, 212, 0.8), 0 0 40px rgba(59, 130, 246, 0.4);}
 .subtitle { color: #94A3B8; margin: 0; font-size: 1.05rem; font-weight: 500; letter-spacing: 3px; text-transform: uppercase;}
-.graph-workspace { flex: 1; position: relative; display: flex; justify-content: center; z-index: 1;}
+.graph-workspace { flex: 1; min-height: 0; position: relative; display: flex; justify-content: center; z-index: 1;}
 /* 极客黑晶玻璃态主容器 */
 .chart-container.dark-glass { width: 100%; height: 100%; border-radius: 30px; position: relative; background: rgba(17, 47, 122, 0.4); backdrop-filter: blur(15px); overflow: hidden; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.05), 0 20px 50px rgba(0,0,0,0.5);}
-.echarts-box { width: 100%; height: 100%; min-height: 500px; }
+.echarts-box { width: 100%; height: 100%; min-height: 0; }
+.graph-note { position: absolute; top: 10px; left: 16px; right: 16px; color: #E2E8F0; text-align: center; font-size: 13px; pointer-events: none; }
 /* 加载状态与空状态（暗黑版） */
 .overlay-state { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 20px; background: rgba(2, 6, 23, 0.7); backdrop-filter: blur(10px); z-index: 5;}
 .quantum-loader { width: 60px; height: 60px; border-radius: 50%; border: 3px solid rgba(56, 189, 248, 0.1); border-top-color: #38BDF8; border-right-color: #818CF8; animation: spin 1s linear infinite; box-shadow: 0 0 30px rgba(56, 189, 248, 0.3); }
@@ -395,4 +418,10 @@ onUnmounted(() => {
 .close-btn:hover { background: rgba(255,255,255,0.05); color: #F8FAFC; border-color: rgba(255,255,255,0.2);}
 .panel-fade-enter-active, .panel-fade-leave-active { transition: all 0.5s cubic-bezier(0.2, 1, 0.3, 1); }
 .panel-fade-enter-from, .panel-fade-leave-to { opacity: 0; transform: translateX(30px) scale(0.95); filter: blur(5px); }
+@media (max-width: 700px) {
+  .graph-page.dark-universe { padding: 12px; }
+  .neon-text { font-size: 1.35rem; letter-spacing: 0; }
+  .subtitle { font-size: .85rem; letter-spacing: 0; }
+  .detail-panel.dark-glass { inset: 12px; width: auto; max-height: calc(100% - 24px); padding: 16px; box-sizing: border-box; overflow-y: auto; }
+}
 </style>

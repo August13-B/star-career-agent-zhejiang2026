@@ -20,6 +20,9 @@ import java.util.List;
 @RequestMapping("/ai/analysis")
 @RequiredArgsConstructor
 public class AIAnalysisController {
+    @org.springframework.beans.factory.annotation.Autowired
+    private org.example.web.security.AccessGuard access;
+
 
     private static final Logger logger = LoggerFactory.getLogger(AIAnalysisController.class);
     private final AIAnalysisService aiAnalysisService;
@@ -30,6 +33,8 @@ public class AIAnalysisController {
      */
     @PostMapping("/ability/score")
     public Result<List<StudentAbilityScore>> analyzeAbilityScore(@RequestBody @Valid AbilityAnalysisRequest request) {
+        access.self(request.getUserId());
+
         logger.info("【AI分析接口】收到请求，userId: {}, message: {}, temperature: {}", 
                 request.getUserId(), request.getMessage(), request.getTemperature());
         Result<List<StudentAbilityScore>> result = aiAnalysisService.analyzeAndSaveAbilityScore(

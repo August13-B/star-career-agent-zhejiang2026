@@ -22,6 +22,9 @@ import reactor.core.publisher.Flux;
 @RestController
 @RequestMapping("/ai-conversation")
 public class AiConversationController {
+    @org.springframework.beans.factory.annotation.Autowired
+    private org.example.web.security.AccessGuard access;
+
     @Autowired
     private AIConversationService aiConversationService;
 
@@ -40,6 +43,8 @@ public class AiConversationController {
     @GetMapping("/tbox-history/{conversationId}")
     @CrossOrigin
     public Result<?> getTboxHistory(@PathVariable Long conversationId) {
+        access.owned("ai_conversation", conversationId);
+
         String raw = tboxAgentService.fetchRawHistory(conversationId, 20);
         return Result.success("平台历史（format=raw）", raw);
     }
@@ -50,6 +55,8 @@ public class AiConversationController {
     @GetMapping("/history/{conversationId}")
     @CrossOrigin
     public Result<?> getConversationHistory(@PathVariable Long conversationId) {
+        access.owned("ai_conversation", conversationId);
+
         return aiConversationService.getConversationHistory(conversationId);
     }
 
@@ -59,6 +66,8 @@ public class AiConversationController {
     @PostMapping("/send")
     @CrossOrigin
     public Result<?> sendMessage(@RequestBody Map<String, Object> request) {
+        access.conversation(request);
+
         Long userId = request.get("user_id") instanceof Number
                 ? ((Number) request.get("user_id")).longValue()
                 : Long.parseLong(request.get("user_id").toString());
@@ -101,6 +110,8 @@ public class AiConversationController {
     @PostMapping(value = "/send-stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     @CrossOrigin
     public Flux<String> sendMessageStream(@RequestBody Map<String, Object> request) {
+        access.conversation(request);
+
         Long userId = request.get("user_id") instanceof Number
                 ? ((Number) request.get("user_id")).longValue()
                 : Long.parseLong(request.get("user_id").toString());
@@ -142,6 +153,8 @@ public class AiConversationController {
     @PostMapping("/send-with-image")
     @CrossOrigin
     public Result<?> sendMessageWithImage(@RequestBody Map<String, Object> request) {
+        access.conversation(request);
+
         Long userId = request.get("user_id") instanceof Number
                 ? ((Number) request.get("user_id")).longValue()
                 : Long.parseLong(request.get("user_id").toString());
@@ -187,6 +200,8 @@ public class AiConversationController {
     @PostMapping(value = "/send-with-image-stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     @CrossOrigin
     public Flux<String> sendMessageWithImageStream(@RequestBody Map<String, Object> request) {
+        access.conversation(request);
+
         Long userId = request.get("user_id") instanceof Number
                 ? ((Number) request.get("user_id")).longValue()
                 : Long.parseLong(request.get("user_id").toString());
@@ -231,6 +246,8 @@ public class AiConversationController {
     @PostMapping("/chat")
     @CrossOrigin
     public Result<?> chat(@RequestBody Map<String, Object> request) {
+        access.conversation(request);
+
         String message = (String) request.get("message");
         Double temperature = (Double) request.get("temperature");
         if (temperature == null) {
@@ -245,6 +262,8 @@ public class AiConversationController {
     @PostMapping(value = "/chat-stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     @CrossOrigin
     public Flux<String> chatStream(@RequestBody Map<String, Object> request) {
+        access.conversation(request);
+
         String message = (String) request.get("message");
         Double temperature = (Double) request.get("temperature");
         if (temperature == null) {
@@ -266,6 +285,8 @@ public class AiConversationController {
     @PostMapping("/chat-with-image")
     @CrossOrigin
     public Result<?> chatWithImage(@RequestBody Map<String, Object> request) {
+        access.conversation(request);
+
         String message = (String) request.get("message");
         Double temperature = (Double) request.get("temperature");
         if (temperature == null) {
@@ -281,6 +302,8 @@ public class AiConversationController {
     @PostMapping(value = "/chat-with-image-stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     @CrossOrigin
     public Flux<String> chatWithImageStream(@RequestBody Map<String, Object> request) {
+        access.conversation(request);
+
         String message = (String) request.get("message");
         Double temperature = (Double) request.get("temperature");
         if (temperature == null) {
@@ -296,6 +319,8 @@ public class AiConversationController {
     @PostMapping("/create")
     @CrossOrigin
     public Result<?> createConversation(@RequestBody Map<String, Object> request) {
+        access.conversation(request);
+
         Long userId = request.get("user_id") instanceof Number
                 ? ((Number) request.get("user_id")).longValue()
                 : Long.parseLong(request.get("user_id").toString());
@@ -316,6 +341,8 @@ public class AiConversationController {
     @GetMapping("/list/{userId}")
     @CrossOrigin
     public Result<?> getUserConversations(@PathVariable Long userId) {
+        access.self(userId);
+
         return aiConversationService.getUserConversations(userId);
     }
 
@@ -325,6 +352,8 @@ public class AiConversationController {
     @DeleteMapping("/end/{conversationId}")
     @CrossOrigin
     public Result<?> endConversation(@PathVariable Long conversationId) {
+        access.owned("ai_conversation", conversationId);
+
         return aiConversationService.endConversation(conversationId);
     }
 
@@ -335,6 +364,8 @@ public class AiConversationController {
     @PutMapping("/update-title")
     @CrossOrigin
     public Result<?> updateConversationTitle(@RequestBody Map<String, Object> request) {
+        access.conversation(request);
+
         // 参数解析
         Long userId;
         Object userIdObj = request.get("user_id");

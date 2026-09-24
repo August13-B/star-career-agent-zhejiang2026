@@ -16,6 +16,9 @@ import java.util.Map;
 @RequestMapping("/ability/score")
 @RequiredArgsConstructor
 public class StudentAbilityScoreController {
+    @org.springframework.beans.factory.annotation.Autowired
+    private org.example.web.security.AccessGuard access;
+
 
     private static final Logger logger = LoggerFactory.getLogger(StudentAbilityScoreController.class);
     private final StudentAbilityScoreService studentAbilityScoreService;
@@ -36,6 +39,8 @@ public class StudentAbilityScoreController {
      */
     @GetMapping("/all")
     public Map<String, Object> selectAll() {
+        access.admin();
+
         try {
             List<StudentAbilityScore> scores = studentAbilityScoreService.selectAll();
             logger.info("【评分接口】查询所有评分，返回数据：{}", scores);
@@ -51,6 +56,8 @@ public class StudentAbilityScoreController {
      */
     @PostMapping("/condition")
     public Map<String, Object> selectByCondition(@RequestBody StudentAbilityScore score) {
+        score.setUserId(access.self(score.getUserId()));
+
         try {
             List<StudentAbilityScore> scores = studentAbilityScoreService.selectByCondition(score);
             logger.info("【评分接口】条件查询，返回数据：{}", scores);
@@ -66,6 +73,9 @@ public class StudentAbilityScoreController {
      */
     @PostMapping("/insert")
     public Map<String, Object> insert(@RequestBody StudentAbilityScore score) {
+        score.setUserId(access.self(score.getUserId()));
+        access.optionalOwned("student_ability", score.getAbilityId());
+
         try {
             int insertResult = studentAbilityScoreService.insert(score);
             if (insertResult <= 0) {
@@ -86,6 +96,10 @@ public class StudentAbilityScoreController {
      */
     @PutMapping("/update")
     public Map<String, Object> update(@RequestBody StudentAbilityScore score) {
+        access.owned("student_ability_score", score.getId());
+        score.setUserId(access.self(score.getUserId()));
+        access.optionalOwned("student_ability", score.getAbilityId());
+
         try {
             int updateResult = studentAbilityScoreService.update(score);
             if (updateResult <= 0) {
@@ -114,6 +128,8 @@ public class StudentAbilityScoreController {
      */
     @GetMapping("/{id}")
     public Map<String, Object> selectById(@PathVariable Long id) {
+        access.owned("student_ability_score", id);
+
         try {
             List<StudentAbilityScore> score = studentAbilityScoreService.selectById(id);
             logger.info("【评分接口】根据ID查询，返回数据：{}", score);
@@ -131,6 +147,8 @@ public class StudentAbilityScoreController {
      */
     @DeleteMapping("/{id}")
     public Map<String, Object> deleteById(@PathVariable Long id) {
+        access.owned("student_ability_score", id);
+
         try {
             // 先查询出要删除的记录
             List<StudentAbilityScore> toDelete = studentAbilityScoreService.selectById(id);
@@ -156,6 +174,8 @@ public class StudentAbilityScoreController {
      */
     @PostMapping("/batchdelete")
     public Map<String, Object> batchDelete(@RequestBody List<Long> ids) {
+        access.batch("student_ability_score", ids);
+
         try {
             // 先查询出要删除的记录
             List<StudentAbilityScore> toDelete = studentAbilityScoreService.batchSelect(ids);
@@ -181,6 +201,7 @@ public class StudentAbilityScoreController {
      */
     @PostMapping("/batchselect")
     public Map<String, Object> batchSelect(@RequestBody List<Long> ids) {
+        access.batch("student_ability_score", ids);
         try {
             List<StudentAbilityScore> scores = studentAbilityScoreService.batchSelect(ids);
             logger.info("【评分接口】批量查询评分，返回数据：{}", scores);
@@ -198,6 +219,8 @@ public class StudentAbilityScoreController {
      */
     @GetMapping("/user/{userId}")
     public Map<String, Object> selectByUserId(@PathVariable Long userId) {
+        access.self(userId);
+
         try {
             List<StudentAbilityScore> scores = studentAbilityScoreService.selectByUserId(userId);
             logger.info("【评分接口】根据用户ID查询评分，返回数据：{}", scores);
@@ -215,6 +238,8 @@ public class StudentAbilityScoreController {
      */
     @GetMapping("/ability/{abilityId}")
     public Map<String, Object> selectByAbilityId(@PathVariable Long abilityId) {
+        access.owned("student_ability", abilityId);
+
         try {
             List<StudentAbilityScore> scores = studentAbilityScoreService.selectByAbilityId(abilityId);
             logger.info("【评分接口】根据能力ID查询评分，返回数据：{}", scores);

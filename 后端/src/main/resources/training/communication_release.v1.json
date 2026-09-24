@@ -1,0 +1,37 @@
+{
+  "id":"communication_release.v1", "scenario":"cross_role_communication", "title":"跨岗位沟通：周五上线协调", "rubricVersion":"communication_rubric.v1",
+  "description":"作为项目协调人，与产品、开发、测试澄清分歧，交付一份协作确认单。", "duration":"12–18 分钟",
+  "materials":[
+    "虚构案例：当前周三上午，校园报名系统计划周五18:00发布。你是项目协调人，无权单方面批准上线。",
+    "产品小周：希望本周增加报名导出。最低需求是导出姓名、报名时间两列；复杂筛选和图表可协商后延期。",
+    "开发小林：只剩2人日；最小导出预计1人日，复杂筛选和图表另需2人日；修复重复报名缺陷预计0.5人日。",
+    "测试小陈：有1个阻断缺陷（并发重复报名会重复写入）；修复后至少半天回归，未关闭不能放行。回归时间与开发人日分别计算。",
+    "各角色不得随意增加资源或改变截止时间；未一致的事项写为待确认，必要时向项目负责人升级。"
+  ],
+  "questions":[
+    "只扮演产品小周，要求本周全部上线，请协调人澄清必须交付范围和验收标准。",
+    "只扮演开发小林，依据刚才澄清说明2人日上限和固定工时，请协调人拆分范围和优先级。不得增加人手。",
+    "只扮演测试小陈，说明阻断缺陷和半天回归，请协调人给出验证、延期或回退方案。",
+    "只扮演产品小周，对方案提出一个合理异议，请协调人解释取舍并明确升级或待确认事项。不能伪造所有人已经同意。",
+    "只扮演测试小陈，追问负责人、时间、验收、回退条件和未决事项，提醒完善协作确认单。"
+  ],
+  "speakers":["产品 · 小周","开发 · 小林","测试 · 小陈","产品 · 小周","测试 · 小陈"],
+  "stageLabels":["澄清诉求","资源与范围","风险与验证","协商取舍","责任交接"],
+  "artifactTitle":"协作确认单",
+  "artifactFields":[
+    {"key":"scope","label":"交付范围与延期项","type":"textarea","required":true,"maxLength":3000},
+    {"key":"owners","label":"负责人及分工","type":"textarea","required":true,"maxLength":2500},
+    {"key":"deadline","label":"截止时间与排期","type":"textarea","required":true,"maxLength":2500},
+    {"key":"acceptance","label":"验收及放行条件","type":"textarea","required":true,"maxLength":3000},
+    {"key":"risks","label":"风险、回退与升级路径","type":"textarea","required":true,"maxLength":3000},
+    {"key":"openItems","label":"待确认事项（无则说明依据）","type":"textarea","required":true,"maxLength":2500}
+  ],
+  "weights":{"communication":35,"teamwork":30,"problem_solving":25,"learning":10},
+  "dimensionLabels":{"communication":"澄清与沟通","teamwork":"协作与责任","problem_solving":"取舍与风险处理","learning":"吸收反馈"},
+  "rubric":{
+    "communication":"0–39只下命令；40–59范围或验收含混；60–79澄清必须项并解释取舍；80–100核实双方理解并明确未决问题。",
+    "teamwork":"尊重三方约束，形成有负责人和时间的确认单；不以服从强势角色评分。",
+    "problem_solving":"在2人日、阻断缺陷、半天回归和周五截止约束下提出可验证方案；不鼓励跳过回归。",
+    "learning":"根据角色反馈修改最初方案并说明依据。"
+  }
+}

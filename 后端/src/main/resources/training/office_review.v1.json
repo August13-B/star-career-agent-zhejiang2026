@@ -1,0 +1,35 @@
+{
+  "id":"office_review.v1", "scenario":"ai_assisted_office", "title":"AI 辅助办公：活动复盘与核验", "rubricVersion":"office_rubric.v1",
+  "description":"给 AI 布置任务，对照材料检查练习稿，修订复盘摘要与待办清单。", "duration":"15–20 分钟",
+  "materials":[
+    "材料均为虚构。读者为活动运营负责人，交付物为简短复盘摘要及明确责任的待办清单。",
+    "校园公众号：访问1000人、意向120人、报名24人；社群：访问500人、意向80人、报名20人；短视频：访问2000人、意向100人、报名10人。",
+    "转化率口径为报名人数 / 意向人数。比较渠道时说明口径，不将样本相关性当成投放因果结论。",
+    "会议纪要：小林在周三18:00前汇总复盘，小陈核对数据。是否增加投放尚未决定，需要进一步讨论。"
+  ],
+  "practiceDraft":"待核验练习稿（预设材料，可能有错，并非本次 AI 实时输出）：本次总报名64人，总体报名/意向转化率21.3%，短视频渠道转化率最高。会议已批准增加投放。小林负责复盘，小陈核对数据。请核对前述四项主张的事实、计算和决策状态。",
+  "questions":[
+    "作为办公训练主持，请用户输入给AI的任务指令，包含读者、材料、目标、格式和不得编造的边界。此时不要生成初稿，不揭示练习稿答案。",
+    "作为AI办公助手，依据刚提交的任务指令和固定材料生成简短初稿（最多450字）。标为AI初稿，请用户独立核验固定待核验练习稿，不直接逐条揭示预设错误。",
+    "作为核验教练，针对用户的核验方法指出还需说明的来源或计算步骤，请用户解释修订、区分已决事项和建议，并完成作品区的复盘稿、待办与核验清单。最多180字，不代替用户提交。"
+  ],
+  "speakers":["办公训练主持","AI 办公助手","核验教练"], "stageLabels":["布置任务","核验初稿","修订与交付"],
+  "artifactTitle":"复盘交付稿与核验清单",
+  "artifactFields":[
+    {"key":"summary","label":"最终复盘摘要","type":"textarea","required":true,"maxLength":4000},
+    {"key":"actionItems","label":"待办清单（负责人、时间、验收）","type":"textarea","required":true,"maxLength":3000},
+    {"key":"totalRegistrations","label":"核验后的总报名人数","type":"text","required":true,"maxLength":20},
+    {"key":"overallConversion","label":"总体报名 / 意向转化率（%）","type":"text","required":true,"maxLength":20},
+    {"key":"bestChannel","label":"报名 / 意向转化率最高的渠道","type":"select","options":["校园公众号","社群","短视频"],"required":true,"maxLength":30},
+    {"key":"investmentDecision","label":"会议对增加投放的决定","type":"select","options":["已批准","未决定，需进一步讨论","已否决"],"required":true,"maxLength":50},
+    {"key":"verification","label":"核验依据（逐项说明计算、来源和修订）","type":"textarea","required":true,"maxLength":4000}
+  ],
+  "weights":{"professional":25,"problem_solving":30,"learning":25,"innovation":20},
+  "dimensionLabels":{"professional":"办公交付质量","problem_solving":"事实核验","learning":"反馈与修订","innovation":"人机协作方法"},
+  "rubric":{
+    "professional":"最终文稿与待办是否忠于材料、口径清楚，有负责人、时间和验收；流畅不能弥补事实错误。",
+    "problem_solving":"是否核对54人、18%、社群25%最高及投放未决定四项事实，并提供计算或纪要依据。",
+    "learning":"识别练习稿问题，说明依据并修订作品，不把AI初稿直接当最终稿。",
+    "innovation":"设计可复用提示词和核验流程，分配人机职责；不按购买工具或堆砌术语评分。"
+  }
+}

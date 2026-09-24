@@ -28,19 +28,14 @@ public class StudentImageServiceImpl implements StudentImageService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public StudentImage uploadImage(Long userId, String imageType, MultipartFile file) {
-        if (file == null || file.isEmpty()) {
-            throw new IllegalArgumentException("上传文件不能为空");
-        }
+        var validated = org.example.web.security.ImageUploadValidator.validate(file);
 
         // 获取上传目录绝对路径（配置类已确保目录存在，且末尾有文件分隔符）
         String uploadDir = fileUploadConfig.getUploadDir();
         logger.info("【图片服务】上传目录：{}", uploadDir);
 
         // 生成唯一文件名
-        String originalFilename = file.getOriginalFilename();
-        String extension = originalFilename != null && originalFilename.contains(".") 
-            ? originalFilename.substring(originalFilename.lastIndexOf(".")) 
-            : ".jpg";
+        String extension = validated.extension();
         String newFilename = UUID.randomUUID().toString() + extension;
         
         // 使用绝对路径保存文件
@@ -49,7 +44,7 @@ public class StudentImageServiceImpl implements StudentImageService {
 
         try {
             // 保存文件到本地
-            file.transferTo(new File(filePath));
+            java.nio.file.Files.write(java.nio.file.Path.of(filePath), validated.bytes());
 
             // 创建图片记录
             StudentImage image = new StudentImage();
@@ -66,7 +61,10 @@ public class StudentImageServiceImpl implements StudentImageService {
             logger.info("【图片服务】图片上传成功，用户ID：{}，文件路径：{}", userId, filePath);
             return image;
 
-        } catch (IOException e) {
+        } catch (IOException | RuntimeException e) {
+            // Remove only this upload if its database insert or file write failed.
+            try { java.nio.file.Files.deleteIfExists(java.nio.file.Path.of(filePath)); }
+            catch (IOException cleanupError) { e.addSuppressed(cleanupError); }
             logger.error("【图片服务】图片保存失败", e);
             throw new RuntimeException("图片保存失败", e);
         }

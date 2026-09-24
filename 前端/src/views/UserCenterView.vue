@@ -41,7 +41,7 @@
             <span>AI 综合诊断简报</span>
           </div>
           <div class="ai-comment">
-            <p>"你还没有进行过完整的职业诊断哦。多和我聊聊你的专业和兴趣，或者上传简历，我会为你生成专属的能力画像！"</p>
+            <p>"你还没有进行过完整的职业诊断哦。请先完善基本信息并完成能力测评，再生成职业报告。"</p>
           </div>
           <button class="re-assess-btn" @click="goToChat">立即去对话探索</button>
         </div>
@@ -225,26 +225,9 @@
         <div class="data-card">
           <div class="card-header">
             <h4>📄 简历附件库</h4>
-            <button class="upload-btn" @click="openUploadModal">+ 上传新简历</button>
+            <button class="upload-btn" disabled title="简历上传和解析服务尚未接入">上传解析待接入</button>
           </div>
-          <div class="resume-list">
-            <div v-if="resumeList.length === 0" class="resume-item" style="justify-content: center; color: #94A3B8; padding: 30px;">
-              暂未上传简历，上传后可供 AI 精准分析
-            </div>
-            <div v-else v-for="(item, index) in resumeList" :key="index" class="resume-item">
-              <div class="resume-info">
-                <span style="font-size: 1.5rem;">📄</span>
-                <div>
-                  <div class="resume-name">{{ item.fileName }}</div>
-                  <div class="resume-meta">{{ item.fileSize }} · 刚刚上传</div>
-                </div>
-              </div>
-              <div class="resume-actions">
-                <span class="action-text parse" @click="goToChat">去提问</span>
-                <span class="action-text delete" @click="deleteResume(index)">删除</span>
-              </div>
-            </div>
-          </div>
+          <p class="empty-inline">当前版本暂不支持上传解析简历。请在基本信息和能力测评中填写个人经历。</p>
         </div>
 
         <div class="data-card">
@@ -341,36 +324,7 @@
     <AbilityQuizModal v-model:visible="quizVis" :user-id="currentUserId" @saved="onQuizSaved" />
 
 
-    <transition name="modal-fade">
-      <div class="modal-overlay" v-if="upVis" @click.self="closeUploadModal">
-        <div class="modal-content">
-          <div class="modal-header">
-            <h3>上传新简历</h3>
-            <button class="close-modal-btn" @click="closeUploadModal">✕</button>
-          </div>
-          <div class="modal-body">
-            <input type="file" ref="fileInput" style="display: none" accept=".pdf,.doc,.docx" @change="handleFileChange" />
-            
-            <div class="upload-dropzone" @click="triggerFileInput" :class="{ 'has-file': selectedFile }">
-              <div v-if="!selectedFile">
-                <p class="upload-title">点击选择简历文件</p>
-                <p class="upload-hint">支持 PDF, Word 格式 (最大 10MB)</p>
-              </div>
-              <div v-else>
-                <p class="upload-title" style="color: #4A90E2;">✅ {{ selectedFile.name }}</p>
-                <p class="upload-hint">文件大小: {{ (selectedFile.size / 1024 / 1024).toFixed(2) }} MB</p>
-              </div>
-            </div>
-          </div>
-          <div class="modal-footer">
-            <button class="btn-cancel" @click="closeUploadModal">取消</button>
-            <button class="btn-confirm" @click="uploadResume" :disabled="!selectedFile || isUploading">
-              {{ isUploading ? 'AI 解析中...' : '开始上传并解析' }}
-            </button>
-          </div>
-        </div>
-      </div>
-    </transition>
+
 
     <transition name="modal-fade">
       <div class="modal-overlay" v-if="pwdVis" @click.self="pwdVis = false">
@@ -423,7 +377,7 @@ const route = useRoute()
 // 🚀 核心：三口并行，彻底理清后端模块！
 // ==========================================
 
-// 1. User 模块 API (负责：用户信息、改密码、传简历) -> 57332 端口
+// 1. User 模块 API（用户信息、修改密码，统一 /api 代理）
 const userApi = axios.create({
   baseURL: API_CONFIG.BASE_URL, 
   timeout: API_CONFIG.TIMEOUT
@@ -810,62 +764,6 @@ const exportReportPdf = async (r, mode = 'report') => {
     alert('导出失败，请确认已登录后重试')
   }
 }
-
-// ===== 简历上传 =====
-const upVis = ref(false)
-const fileInput = ref(null)
-const selectedFile = ref(null)
-const isUploading = ref(false)
-const resumeList = ref([])
-
-const openUploadModal = () => { selectedFile.value = null; upVis.value = true }
-const closeUploadModal = () => { if (!isUploading.value) upVis.value = false }
-const triggerFileInput = () => { if (fileInput.value) fileInput.value.click() }
-
-const handleFileChange = (e) => {
-  const file = e.target.files[0]
-  if (file) {
-    if (file.size > 10 * 1024 * 1024) return alert('文件不能超过 10MB 哦！')
-    selectedFile.value = file
-  }
-}
-
-const uploadResume = async () => {
-  if (!selectedFile.value) return
-  isUploading.value = true
-
-  const formData = new FormData()
-  formData.append('file', selectedFile.value)
-  formData.append('userId', currentUserId.value)
-
-  try {
-    const res = await userApi.post('/api/user/uploadResume', formData, {
-      headers: { 'Content-Type': 'multipart/form-data' }
-    })
-    
-    if (res.data.code === 10001 || res.data.code === 200 || res.data.code === 0) {
-      resumeList.value.push({ fileName: selectedFile.value.name, fileSize: (selectedFile.value.size / 1024 / 1024).toFixed(2) + ' MB' })
-      alert('简历解析完成！')
-      upVis.value = false
-    } else {
-      alert('上传失败：' + res.data.message)
-    }
-  } catch (error) {
-    setTimeout(() => {
-      resumeList.value.push({ fileName: selectedFile.value.name, fileSize: (selectedFile.value.size / 1024 / 1024).toFixed(2) + ' MB' })
-      alert('简历解析完成！（演示模式）')
-      upVis.value = false
-      isUploading.value = false
-      selectedFile.value = null
-    }, 800)
-  } finally {
-    if (!isUploading.value) return
-    isUploading.value = false
-    selectedFile.value = null
-    if (fileInput.value) fileInput.value.value = '' 
-  }
-}
-const deleteResume = (index) => { if(confirm('确认删除这份简历吗？')) resumeList.value.splice(index, 1) }
 
 // ===== 修改密码 =====
 const pwdVis = ref(false)
