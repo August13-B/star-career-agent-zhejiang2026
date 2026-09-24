@@ -4,7 +4,7 @@ import org.junit.jupiter.api.Test;
 import com.xingzhi.XingZhiApplication;
 import org.springframework.boot.test.context.SpringBootTest;
 
-@SpringBootTest(classes = XingZhiApplication.class)
+@SpringBootTest(classes = XingZhiApplication.class, properties = "training.worker.enabled=false")
 class SpringbootApplicationTests {
 
     @Test

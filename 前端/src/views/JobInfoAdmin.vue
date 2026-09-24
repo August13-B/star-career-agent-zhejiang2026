@@ -70,9 +70,8 @@
                   <button class="btn-ai-analyze" @click="goToCompare(item.id)">🤖 AI 测算</button>
                   <button 
                     class="btn-graph" 
-                    :class="{ 'disabled': !item.jobId }" 
-                    @click="goToGraph(item.jobId)"
-                    :title="!item.jobId ? '请先点击左侧 AI 测算，生成图谱节点' : '进入职业星图'"
+                    @click="goToGraph(item.jobId, item.id)"
+                    :title="!item.jobId ? '进入星图页面生成岗位画像' : '进入职业星图'"
                   >
                     🌌 查星图
                   </button>
@@ -305,12 +304,8 @@ const goToCompare = (jobId) => {
   router.push({ path: '/compare', query: { jobId: jobId } })
 }
 
-const goToGraph = (profileId) => {
-  if (!profileId) {
-    alert('🚫 暂无星图数据！请先点击左侧的 [🤖 AI 测算] 按钮，让 AI 为此岗位建立宇宙星图节点！')
-    return
-  }
-  router.push({ path: '/graph', query: { id: profileId } })
+const goToGraph = (profileId, jobInfoId) => {
+  router.push({ path: '/graph', query: { id: profileId || '0', jobInfoId } })
 }
 
 // ===== 岗位基础信息 API 调用逻辑 (带前端防爆卡机制) =====

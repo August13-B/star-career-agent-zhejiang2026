@@ -18,13 +18,9 @@ public class WebConfig implements WebMvcConfigurer{
         registry.addInterceptor(loginInterceptor).excludePathPatterns(
         // 用户/登录相关
         "/user/register", "/user/login", "/user/verify_code", "/user/sendmail",
-        "/user/deleteById", "/user/get_version",
+        "/user/get_version",
         "/user/forget_password_sendmail", "/user/forget_password",
-        "/new/get_info", "/new/get_info_miwen",
-        // 岗位知识库模块（原无鉴权，合并后保持开放）
-        "/job-*", "/job-*/**",
-        "/analysis/**",
-        "/job-score/**", "/job-score*",
+        // Knowledge GET/HEAD remains public; writes are checked by LoginInterceptor.
         // API 文档（Swagger）
         "/swagger-ui/**", "/swagger-ui.html", "/v3/api-docs/**", "/doc.html", "/webjars/**"
 );

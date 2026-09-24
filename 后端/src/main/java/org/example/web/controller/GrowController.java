@@ -27,6 +27,9 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/grow")
 public class GrowController {
+    @org.springframework.beans.factory.annotation.Autowired
+    private org.example.web.security.AccessGuard access;
+
 
     @Autowired
     private GrowPlanService growPlanService;
@@ -35,6 +38,8 @@ public class GrowController {
     @GetMapping("/plans")
     @CrossOrigin
     public Result<?> getPlans(@RequestParam Long userId) {
+        access.self(userId);
+
         return Result.success("获取成长计划成功", growPlanService.getPlansWithTasks(userId));
     }
 
@@ -47,6 +52,8 @@ public class GrowController {
     @PatchMapping("/tasks/{id}")
     @CrossOrigin
     public Result<?> updateTask(@PathVariable Long id, @RequestBody Map<String, Object> patch) {
+        access.task(id);
+
         boolean ok = growPlanService.updateTaskStatus(id, patch);
         return ok ? Result.success("任务状态更新成功") : Result.error("任务不存在或更新失败");
     }

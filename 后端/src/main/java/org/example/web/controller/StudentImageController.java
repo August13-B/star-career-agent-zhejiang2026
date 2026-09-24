@@ -16,6 +16,9 @@ import java.util.Map;
 @RequestMapping("/student/image")
 @RequiredArgsConstructor
 public class StudentImageController {
+    @org.springframework.beans.factory.annotation.Autowired
+    private org.example.web.security.AccessGuard access;
+
 
     private static final Logger logger = LoggerFactory.getLogger(StudentImageController.class);
 
@@ -33,6 +36,8 @@ public class StudentImageController {
             @RequestParam("userId") Long userId,
             @RequestParam(value = "imageType", required = false) String imageType,
             @RequestParam("file") MultipartFile file) {
+        access.self(userId);
+
         try {
             StudentImage image = studentImageService.uploadImage(userId, imageType, file);
             Map<String, Object> result = new HashMap<>();
@@ -64,6 +69,8 @@ public class StudentImageController {
      */
     @DeleteMapping("/delete/{id}")
     public Map<String, Object> deleteImage(@PathVariable("id") Long id) {
+        access.owned("student_image", id);
+
         try {
             studentImageService.deleteImage(id);
             Map<String, Object> result = new HashMap<>();
@@ -102,6 +109,8 @@ public class StudentImageController {
      */
     @GetMapping("/list/{userId}")
     public Map<String, Object> getImagesByUserId(@PathVariable("userId") Long userId) {
+        access.self(userId);
+
         try {
             List<StudentImage> images = studentImageService.getImagesByUserId(userId);
             Map<String, Object> result = new HashMap<>();

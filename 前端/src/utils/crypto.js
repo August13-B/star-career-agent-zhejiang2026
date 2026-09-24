@@ -1,11 +1,9 @@
 import CryptoJS from 'crypto-js'
 import JSEncrypt from 'jsencrypt'
 
-let RSA_PUBLIC_KEY = ''
-
-// 初始化获取后端RSA公钥
-
-  RSA_PUBLIC_KEY = "MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQCMgB9bRbJKG2acxLC1S6vCY0kTXZQWAD4VEdyGG9aS0W0z6T/g09/G4lKfyPRGNO1InT0qqph8X0rY38srKj0AhduHFTs2qQSqAvqZy/qp/8tuEiXYQgGXaUhVT0cMUBpb5jCkf8+yBliTX8RJgfUsWAbSYHIOykrbKI//AD03mwIDAQAB"
+// 本地公钥须与后端 RSA_PRIVATE_KEY 配对；未配置时沿用团队默认公钥。
+const RSA_PUBLIC_KEY = import.meta.env.VITE_RSA_PUBLIC_KEY?.trim() ||
+  'MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQCMgB9bRbJKG2acxLC1S6vCY0kTXZQWAD4VEdyGG9aS0W0z6T/g09/G4lKfyPRGNO1InT0qqph8X0rY38srKj0AhduHFTs2qQSqAvqZy/qp/8tuEiXYQgGXaUhVT0cMUBpb5jCkf8+yBliTX8RJgfUsWAbSYHIOykrbKI//AD03mwIDAQAB'
 
 // RSA加密
 export function rsaEncrypt(data) {

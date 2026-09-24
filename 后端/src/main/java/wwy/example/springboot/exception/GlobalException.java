@@ -8,6 +8,13 @@ import wwy.example.springboot.common.Result;
 @Slf4j
 @RestControllerAdvice
 public class GlobalException {
+    @ExceptionHandler(org.springframework.web.server.ResponseStatusException.class)
+    public org.springframework.http.ResponseEntity<java.util.Map<String,Object>> handleStatus(
+            org.springframework.web.server.ResponseStatusException e) {
+        int code = e.getStatusCode().value();
+        return org.springframework.http.ResponseEntity.status(code).body(java.util.Map.of(
+            "code", code, "message", e.getReason() == null ? "请求失败" : e.getReason()));
+    }
 
     @ExceptionHandler(UnauthorizedException.class)
     public Result<Void> handleUnauthorized(UnauthorizedException e) {

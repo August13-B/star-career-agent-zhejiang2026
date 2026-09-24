@@ -8,7 +8,7 @@
       <div class="dashboard-header fade-in-up" style="animation-delay: 0.1s">
         <div class="header-info">
           <h2 class="gradient-text">👨‍🏫 导师决策中枢大屏</h2>
-          <p>实时全息监控 2,400 名在校生职业演化路径与心理动态</p>
+          <p>界面演示：以下图表均为静态示例数据，尚未接入真实学生统计。</p>
         </div>
         
         <div class="stat-cards">
