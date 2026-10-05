@@ -5,7 +5,7 @@
         <div class="title-block">
           <span class="badge"><AppIcon name="trendUp" :size="13" /> 个人成长</span>
           <h1>我的 1 / 3 / 5 年规划</h1>
-          <p class="subtitle">来自职业报告的结构化目标；展开可添待办、记录完成情况、打勾完成</p>
+          <p class="subtitle">来自职业报告的 1 / 3 / 5 年目标（在「个人中心 → 查看报告」里点「一键导入个人成长」手动导入）；展开可添待办、记录完成情况、打勾完成</p>
         </div>
         <div class="header-actions">
           <button class="btn ghost" @click="showPlanForm = !showPlanForm">＋ 新建规划</button>
@@ -29,7 +29,7 @@
 
       <div v-else-if="plans.length === 0" class="empty-plan">
         <p>还没有成长规划</p>
-        <p class="empty-sub">去「多智能体中枢」生成一份职业报告，这里会自动出现 1/3/5 年目标与待办。</p>
+        <p class="empty-sub">去「多智能体中枢」生成一份职业报告，再到「个人中心 → 查看报告」点「一键导入个人成长」，1/3/5 年目标与待办就会出现在这里。</p>
         <router-link class="btn primary" to="/multi-agent">前往生成报告</router-link>
       </div>
 

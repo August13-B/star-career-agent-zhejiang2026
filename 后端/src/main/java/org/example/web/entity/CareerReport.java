@@ -89,6 +89,14 @@ public class CareerReport {
      */
     private Integer isDeleted;
 
+    /**
+     * 是否已导入「个人成长」。
+     *
+     * <p><b>透传字段，不落库</b>：由「报告列表」接口按 grow_plan.report_id 计算后下发，
+     * 供前端把导入按钮置为「✓ 已导入」。
+     */
+    private Boolean imported;
+
     // 手动添加getter和setter方法以解决Lombok编译问题
     public Long getId() {
         return id;
@@ -208,5 +216,13 @@ public class CareerReport {
 
     public void setIsDeleted(Integer isDeleted) {
         this.isDeleted = isDeleted;
+    }
+
+    public Boolean getImported() {
+        return imported;
+    }
+
+    public void setImported(Boolean imported) {
+        this.imported = imported;
     }
 }

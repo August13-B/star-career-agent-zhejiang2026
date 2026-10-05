@@ -543,7 +543,8 @@ public class CareerReportController {
             java.util.Map<String, Object> content = new java.util.LinkedHashMap<>();
             content.put("agents", agents);          // 6 段过程（已剔除结构化块）
             content.put("final", finalText);         // 最终报告（简介，用户可见）
-            content.put("goals", goals);             // 结构化 1/3/5 目标（仅后端用，不下发前端）
+            content.put("goals", goals);             // 结构化 1/3/5 目标（供「导入个人成长」消费；前端不展示）
+            content.put("targetJob", targetJob);     // 目标岗位（供「导入个人成长」消费）
             content.put("fullText", finalText);
 
             String reportName = (platformName != null && !platformName.isBlank())
@@ -573,14 +574,7 @@ public class CareerReportController {
             history.setCreateTime(java.time.LocalDateTime.now());
             careerReportHistoryMapper.insert(history);
             System.out.println("职业报告已落库, id=" + report.getId() + ", 智能体数=" + agents.size());
-            // 结构化 1/3/5 年目标 → grow_plan / grow_task（完成情况后续由 /api/grow 更新）
-            if (!goals.isEmpty()) {
-                try {
-                    growPlanService.saveGoalsFromReport(userId, report.getId(), targetJob, goals);
-                } catch (Exception ex) {
-                    System.err.println("写入成长计划失败（不影响报告落库）: " + ex.getMessage());
-                }
-            }
+            // 注：不再自动写入成长计划——改为用户在「查看报告」里手动一键导入（追加语义，见 importToGrowth）
             java.util.Map<String, Object> info = new java.util.LinkedHashMap<>();
             info.put("reportId", report.getId());
             info.put("reportName", report.getReportName());
@@ -710,10 +704,71 @@ public class CareerReportController {
     public Result getCareerReportsByUser(@PathVariable Long userId) {
         try {
             List<CareerReport> reports = careerReportService.getCareerReportsByUserId(userId);
+            // 标记「已导入个人成长」（供前端把导入按钮置为 ✓ 已导入）
+            try {
+                java.util.Set<Long> imported = growPlanService.importedReportIds(userId);
+                for (CareerReport r : reports) {
+                    r.setImported(imported.contains(r.getId()));
+                }
+            } catch (Exception ignore) {
+                // 标记失败不影响报告列表
+            }
             return Result.success("获取用户职业报告成功", reports);
         } catch (Exception e) {
             return Result.error("获取用户职业报告时发生错误: " + e.getMessage());
         }
+    }
+
+    /**
+     * 手动把某份报告的**结构化 1/3/5 年目标**导入「个人成长」（生成规划 + 待办）。
+     *
+     * <p>追加语义：不清理用户已有规划/待办；同一份报告只能导入一次（重复调用报错）。
+     *
+     * @return 导入统计 {@code {plans: 规划数, tasks: 待办数}}
+     */
+    @PostMapping("/{id}/import-to-growth")
+    @org.springframework.web.bind.annotation.CrossOrigin
+    public Result<?> importToGrowth(@PathVariable Long id,
+                                    @org.springframework.web.bind.annotation.RequestHeader(value = "Authorization", required = false) String token) {
+        Long userId;
+        try {
+            userId = Long.parseLong(String.valueOf(org.example.web.tool.JwtUtil.parseToken(token).get("id")));
+        } catch (Exception e) {
+            return Result.error("登录状态无效");
+        }
+        CareerReport report = careerReportMapper.selectById(id);
+        if (report == null || !userId.equals(report.getUserId())) {
+            return Result.error("报告不存在或无权访问");
+        }
+        if (growPlanService.isReportImported(userId, id)) {
+            return Result.error("该报告已导入过个人成长");
+        }
+        List<Map<String, Object>> goals = new java.util.ArrayList<>();
+        String targetJob = null;
+        try {
+            com.fasterxml.jackson.databind.JsonNode root = objectMapper.readTree(report.getReportContent());
+            targetJob = root.path("targetJob").asText(null);
+            for (com.fasterxml.jackson.databind.JsonNode gi : root.path("goals")) {
+                goals.add(objectMapper.convertValue(gi, java.util.Map.class));
+            }
+        } catch (Exception e) {
+            System.err.println("解析报告结构化目标失败: " + e.getMessage());
+        }
+        if (goals.isEmpty()) {
+            return Result.error("该报告没有可导入的结构化目标");
+        }
+        if (targetJob == null || targetJob.isBlank()) {
+            // 老数据未存 targetJob：回退到每个目标自带的 targetJob
+            for (Map<String, Object> g : goals) {
+                Object tj = g.get("targetJob");
+                if (tj != null && !String.valueOf(tj).isBlank()) {
+                    targetJob = String.valueOf(tj);
+                    break;
+                }
+            }
+        }
+        Map<String, Object> stat = growPlanService.importGoalsFromReport(userId, id, targetJob, goals);
+        return Result.success("已导入个人成长", stat);
     }
 
     /**
