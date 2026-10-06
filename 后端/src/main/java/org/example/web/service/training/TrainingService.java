@@ -21,7 +21,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class TrainingService {
     public record Queued(Long runId, int attempt) {}
     public record Canceled(Long runId) {}
-    public record Work(Long runId, Long sessionId, int attempt, String operation, String prompt) {}
+    public record Work(Long runId, Long sessionId, int attempt, String operation, String scenario, String prompt) {}
     private final TrainingMapper db;
     private final TrainingWorkspaceMapper workspace;
     private final JdbcTemplate jdbc;
@@ -227,7 +227,7 @@ public class TrainingService {
         if (!"queued".equals(run.getStatus()) || run.getAttempt() != attempt || !Set.of("active", "scoring").contains(session.getStatus())) return null;
         run.setStatus("running"); db.updateRun(run);
         if (run.getResponseMessageId() != null) db.turnStatus(run.getResponseMessageId(), "generating");
-        return new Work(runId, session.getId(), attempt, run.getOperation(), cipher.decrypt(run.getRequestJson()));
+        return new Work(runId, session.getId(), attempt, run.getOperation(), definition(session).scenario(), cipher.decrypt(run.getRequestJson()));
     }
 
     @Transactional
