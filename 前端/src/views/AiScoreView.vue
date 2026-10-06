@@ -1,466 +1,381 @@
 <template>
-  <div class="innovative-score-page">
-    <div class="mesh-background" aria-hidden="true"></div>
-
-    <div class="page-container">
-      <div class="page-header">
-        <div class="assessment-heading">
-          <div class="title-badge"><span class="pulse-dot"></span> 职业旅程 / 能力补充</div>
-          <h1 class="gradient-text">能力补充测评</h1>
-          <p class="header-description">以个人画像为起点，看见能力优势与下一步成长方向。</p>
-        </div>
-        <router-link class="back-to-graph" :to="{ path: '/graph', query: { target } }">返回职业星图 <span aria-hidden="true">↗</span></router-link>
+  <div class="assess-page">
+    <header class="page-head">
+      <div>
+        <p class="eyebrow">职业旅程 / 能力补充</p>
+        <h1>能力补充测评</h1>
+        <p class="sub">
+          AI 出题 → 你作答 → 按回答追问 → 六维评分。硬实力四项来自「基本情况」，与本页软实力六维合成
+          <strong>10 维能力画像</strong>。
+        </p>
       </div>
-      <div class="assessment-flow"><CareerNextSteps :target="target" /><router-link class="full-assessment-link" to="/multi-agent">完整测评从多智能体联合测评开始 →</router-link></div>
-      <p class="assessment-disclaimer">测评结合已保存的画像与能力描述，仅供职业探索参考，不代表录用概率或正式考试成绩。</p>
+      <router-link class="link" to="/profile">返回个人中心</router-link>
+    </header>
 
-      <div class="holographic-layout">
-        
-        <div class="control-glass-panel">
-          <div class="panel-deco-line"></div>
-          <h3 class="panel-title">
-            <AppIcon name="radar" :size="21" /> 输入测评重点
-          </h3>
-          
-          <div class="input-group">
-            <label>分析指令 / 测算重点</label>
-            <div class="textarea-wrapper">
-              <textarea 
-                v-model="analyzeMessage" 
-                placeholder="例如：重点分析该学生的编程能力和项目实践能力，偏向互联网后端开发方向..."
-              ></textarea>
-              <div class="focus-border"></div>
-            </div>
-          </div>
+    <p v-if="error" class="notice error" role="alert">{{ error }}</p>
 
-          <p>测评会使用个人中心已保存的画像与能力描述；请先补全实际经历。结果会供后续智能体咨询与职业报告参考。</p>
-          <p v-if="historyError" role="alert">{{ historyError }}</p>
+    <!-- ① 加载中 -->
+    <p v-if="loading" class="notice">正在读取测评状态…</p>
 
-          <button 
-            class="start-btn" 
-            @click="startAnalysis" 
-            :disabled="isAnalyzing || !analyzeMessage.trim()"
-            :class="{ 'is-loading': isAnalyzing }"
-          >
-            <span v-if="!isAnalyzing" class="btn-text">开始能力测评 <span aria-hidden="true">→</span></span>
-            <span v-else class="btn-text">
-              <div class="cyber-dots"><span></span><span></span><span></span></div>
-              深度测算中...
-            </span>
-            <div class="btn-glow"></div>
+    <template v-else>
+      <!-- ② 前置：未填基本情况 -->
+      <section v-if="!profileReady" class="card">
+        <h2>先填「基本情况」</h2>
+        <p class="muted">
+          测评需要先有硬实力基础（学历 / 实习 / 专业技能 / 证书）。填完立刻开始，六维软素质由本页 AI 问答产出。
+        </p>
+        <div class="hard-preview" v-if="hardText && hardText.education">
+          <span v-for="(value, key) in hardText" :key="key">{{ value }}</span>
+        </div>
+        <button class="btn primary" @click="showBasic = true">填写基本情况</button>
+      </section>
+
+      <!-- ③ 有进行中的会话：断点续答 -->
+      <section v-else-if="!session && activeSessionId" class="card">
+        <h2>上次测评还没做完</h2>
+        <p class="muted">已作答 {{ inProgressAnswered }} 题，可以继续；草稿已保存。</p>
+        <div class="row">
+          <button class="btn primary" :disabled="busy" @click="resume">{{ busy ? '载入中…' : '继续上次测评' }}</button>
+          <button class="btn ghost" :disabled="busy" @click="start">重新开始一份</button>
+        </div>
+      </section>
+
+      <!-- ④ 开始 -->
+      <section v-else-if="!session" class="card">
+        <h2>开始测评</h2>
+        <ul class="facts">
+          <li>客观题 <b>{{ state.objectiveTarget }}</b> 道（每道 <b>{{ state.objectiveSeconds }}</b> 秒）</li>
+          <li>主观题 <b>{{ state.subjectiveTarget }}</b> 道（每道 <b>{{ Math.round(state.subjectiveSeconds / 60) }}</b> 分钟，回答笼统时会被追问，同题最多 2 轮）</li>
+          <li>超时会自动跳到下一题；中途可关闭页面，下次继续（草稿与作答已保存）</li>
+        </ul>
+        <div class="scores-mini" v-if="scores.total">
+          <span>当前画像总分 <b>{{ scores.total }}</b></span>
+          <span class="muted">（硬实力 30% + 软实力 70%；软实力六维将由本次测评更新）</span>
+        </div>
+        <button class="btn primary" :disabled="busy" @click="start">{{ busy ? '正在出题…' : '开始测评' }}</button>
+      </section>
+
+      <!-- ⑤ 答题中 -->
+      <section v-else-if="session.status === 'active' && session.current" class="card">
+        <div class="q-head">
+          <span class="pill">第 {{ session.current.questionNo }} / {{ total }} 题</span>
+          <span class="pill neutral">{{ kindText(session.current.kind) }}</span>
+          <span class="pill neutral">{{ dimensionText(session.current.dimension) }}</span>
+          <span v-if="session.current.followUp" class="pill warn">追问</span>
+          <span class="countdown" :class="{ danger: remaining <= 10 }">剩余 {{ format(remaining) }}</span>
+        </div>
+        <progress :value="session.current.questionNo - 1" :max="total"></progress>
+        <p class="question">{{ stripMarkdown(session.current.question) }}</p>
+
+        <div v-if="session.current.kind === 'objective'" class="options">
+          <button v-for="option in session.current.options" :key="option.index" class="option"
+                  :disabled="busy" @click="submit(option.index, null)">
+            <b>{{ String.fromCharCode(65 + option.index) }}</b>
+            <span>{{ option.text }}</span>
           </button>
-
-          <transition name="slide-up">
-            <div v-if="scoreData" class="insight-box">
-              <div class="insight-header">
-                <AppIcon name="sparkle" :size="18" />
-                <span>AI 测算综述</span>
-              </div>
-              <div class="insight-content">
-                <p>{{ decryptedComment || scoreData.scoreComment }}</p>
-              </div>
-            </div>
-          </transition>
         </div>
-
-        <div class="radar-glass-panel">
-          <div class="radar-panel-label"><span>图 02 · 能力雷达</span><small>基于个人画像与测评描述</small></div>
-          
-          <div v-if="!scoreData && !isAnalyzing" class="empty-state">
-            <div class="holo-ring"></div>
-            <p>输入指令，唤醒能力雷达矩阵</p>
+        <template v-else>
+          <textarea v-model="draft" rows="5" maxlength="2000" :disabled="busy"
+                    placeholder="请给出具体做法、依据和结果（越具体越容易被评分）"
+                    @input="scheduleDraft"></textarea>
+          <div class="q-foot">
+            <span class="muted small">草稿自动保存 · {{ draft.length }}/2000</span>
+            <button class="btn primary" :disabled="busy || !draft.trim()" @click="submit(null, draft)">
+              {{ busy ? '提交中…' : '提交回答' }}
+            </button>
           </div>
+        </template>
+        <p v-if="busy" class="notice" role="status">AI 正在出下一题 / 评分，请稍候…</p>
+      </section>
 
-          <div v-if="isAnalyzing" class="scanning-state">
-            <div class="radar-scanner">
-              <div class="sweep"></div>
-              <div class="grid-circle"></div>
-              <div class="grid-circle inner"></div>
-            </div>
-            <p class="scanning-text">正在结合个人画像与目标方向分析能力，请稍候</p>
+      <!-- ⑥ 结果 -->
+      <section v-else class="card">
+        <h2>{{ session.evaluation?.status === 'review_required' ? '测评已完成（评分待复核）' : '测评结果' }}</h2>
+        <p v-if="session.evaluation?.status === 'review_required'" class="notice error">
+          {{ session.evaluation.message }}；作答已保存，可稍后重试。
+        </p>
+        <template v-if="session.evaluation?.result">
+          <div class="score-total">
+            <strong>{{ Number(session.scores?.total || 0).toFixed(0) }}</strong>
+            <span class="muted">/ 100 画像总分（硬 30% + 软 70%）</span>
           </div>
-
-          <div v-show="scoreData && !isAnalyzing" class="chart-wrapper">
-            <div class="score-hero">
-              <svg viewBox="0 0 100 100" class="score-circle">
-                <circle cx="50" cy="50" r="45" class="bg-circle"></circle>
-                <circle cx="50" cy="50" r="45" class="progress-circle" :stroke-dasharray="`${(scoreData?.totalScore || 0) * 2.82}, 300`"></circle>
-              </svg>
-              <div class="score-info">
-                <span class="score-label">综合战力</span>
-                <span class="score-value">{{ scoreData?.totalScore || 0 }}</span>
+          <div class="dim-grid">
+            <div v-for="row in dimensionRows" :key="row.key" class="dim">
+              <div class="dim-head">
+                <span>{{ row.label }}</span>
+                <b>{{ row.value }}</b>
+                <em v-if="row.source === 'hard'">来自基本情况</em>
+                <em v-else>本次测评</em>
               </div>
+              <progress :value="row.value" max="100"></progress>
             </div>
-            
-            <div ref="radarChartRef" class="radar-chart"></div>
           </div>
-
+          <p class="comment">{{ stripMarkdown(session.evaluation.result.comment || '') }}</p>
+          <template v-if="session.evaluation.result.evidence?.length">
+            <h3>评分依据（可核对原话）</h3>
+            <ul class="evidence">
+              <li v-for="(item, index) in session.evaluation.result.evidence" :key="index">
+                <b>{{ dimensionText(item.dimension) }}</b>：{{ stripMarkdown(item.quote || '') }}
+                <span class="muted small">（证据 {{ item.evidenceId }}）</span>
+              </li>
+            </ul>
+          </template>
+          <template v-if="session.evaluation.result.suggestions?.length">
+            <h3>下一步怎么练</h3>
+            <ol class="suggestions">
+              <li v-for="(tip, index) in session.evaluation.result.suggestions" :key="index">{{ stripMarkdown(tip) }}</li>
+            </ol>
+          </template>
+          <p v-if="session.evaluation.objective" class="muted small">
+            客观题维度分（后端按选项分值复算，供核对）：{{ objectiveText }}
+          </p>
+        </template>
+        <div class="row">
+          <button class="btn primary" @click="start">再测一次</button>
+          <router-link class="btn ghost" to="/profile">查看个人画像</router-link>
         </div>
-      </div>
-    </div>
+      </section>
+
+      <!-- 历史 -->
+      <section class="card" v-if="history.length">
+        <div class="row between">
+          <h2>测评记录</h2>
+          <button class="btn ghost sm" @click="loadHistory">刷新</button>
+        </div>
+        <div v-for="item in history" :key="item.sessionId" class="history-row" @click="openSession(item.sessionId)">
+          <span>{{ formatTime(item.createdAt) }}</span>
+          <span class="muted">{{ statusText(item.status) }} · 已答 {{ item.answeredCount }}/{{ item.questionTotal }}</span>
+          <span class="link">查看</span>
+        </div>
+      </section>
+    </template>
+
+    <AbilityBasicModal v-model:visible="showBasic" :user-id="null" @saved="onBasicSaved" />
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted, shallowRef, nextTick } from 'vue'
-import * as echarts from 'echarts'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import axios from 'axios'
 import API_CONFIG from '../config/api'
-import { useRoute } from 'vue-router'
-import CareerNextSteps from '../components/CareerNextSteps.vue'
-import AppIcon from '../components/AppIcon.vue'
-const route = useRoute()
-const target = typeof route.query.target === 'string' ? route.query.target.slice(0, 200) : ''
+import AbilityBasicModal from '../components/AbilityBasicModal.vue'
+import { stripMarkdown } from '../utils/text'
 
-const baseURL = API_CONFIG.BASE_URL
+const DIMENSIONS = [
+  ['education', '学历背景', 'hard'], ['internship', '实习经历', 'hard'],
+  ['professional', '专业技能', 'hard'], ['certificate', '证书资质', 'hard'],
+  ['communication', '沟通能力', 'soft'], ['teamwork', '团队协作', 'soft'],
+  ['problem_solving', '问题解决', 'soft'], ['innovation', '创新能力', 'soft'],
+  ['learning', '学习能力', 'soft'], ['pressure', '抗压能力', 'soft']
+]
 
-const analyzeMessage = ref(`请结合我的个人画像和能力描述，分析${target || '我的职业意向'}所需能力，指出已有优势、证据不足之处及下一步行动。`)
-const temperature = ref(0.1)
-const isAnalyzing = ref(false)
-const scoreData = ref(null)
-const historyError = ref('')
-const decryptedComment = ref('')
+const state = ref({}), session = ref(null), history = ref([])
+const loading = ref(true), busy = ref(false), error = ref('')
+const draft = ref(''), showBasic = ref(false), remaining = ref(0)
+let tick = null, draftTimer = null
 
-const radarChartRef = ref(null)
-const chartInstance = shallowRef(null)
-
-const getHeaders = () => {
+const headers = () => {
   const token = localStorage.getItem('token') || ''
-  return { 'Authorization': token.startsWith('Bearer ') ? token : `Bearer ${token}` }
+  return { Authorization: token.startsWith('Bearer ') ? token : `Bearer ${token}` }
+}
+const api = axios.create({ baseURL: `${API_CONFIG.BASE_URL}/api/assessment`, timeout: 180000 })
+api.interceptors.request.use(config => { config.headers = { ...config.headers, ...headers() }; return config })
+
+const profileReady = computed(() => !!state.value.profileReady)
+const hardText = computed(() => state.value.hardText || {})
+const scores = computed(() => state.value.scores || {})
+const total = computed(() => (state.value.objectiveTarget || 10) + (state.value.subjectiveTarget || 4))
+const activeSessionId = computed(() => (history.value.find(item => item.status === 'active') || {}).sessionId || '')
+const inProgressAnswered = computed(() => (history.value.find(item => item.status === 'active') || {}).answeredCount || 0)
+const dimensionRows = computed(() => DIMENSIONS.map(([key, label, source]) => ({
+  key, label, source, value: Number((session.value?.scores || {})[key] || 0)
+})))
+const objectiveText = computed(() => Object.entries(session.value?.evaluation?.objective || {})
+  .map(([key, value]) => `${dimensionText(key)} ${value}`).join(' · '))
+
+const dimensionText = key => (DIMENSIONS.find(item => item[0] === key) || [, key])[1]
+const kindText = kind => (kind === 'objective' ? '客观题' : '主观题')
+const statusText = status => ({ active: '进行中', completed: '已完成', review_required: '评分待复核' }[status] || status)
+const format = seconds => `${Math.floor(seconds / 60)}:${String(Math.max(0, seconds % 60)).padStart(2, '0')}`
+const formatTime = value => (value ? String(value).replace('T', ' ').slice(0, 16) : '')
+
+async function loadState() {
+  try {
+    const res = await api.get('/state')
+    state.value = res.data?.data || {}
+  } catch (e) {
+    error.value = e.response?.data?.message || '读取测评状态失败，请稍后重试'
+  }
 }
 
-const startAnalysis = async () => {
-  if (!analyzeMessage.value.trim()) return
-  const userId = localStorage.getItem('userId') || ''
-  if (!/^\d+$/.test(userId) || userId === '0') {
-    alert('登录状态已失效，请重新登录后再测算')
-    return
-  }
-  
-  isAnalyzing.value = true
-  historyError.value = ''
-
+async function loadHistory() {
   try {
-    const payload = {
-      // 64 位雪花 ID 必须保持字符串，Number() 会丢精度
-      userId: userId,
-      message: analyzeMessage.value.trim(),
-      temperature: temperature.value
-    }
-    const res = await axios.post(`${baseURL}/api/ai/analysis/ability/score`, payload, { headers: getHeaders() })
+    const res = await api.get('/sessions', { params: { offset: 0, limit: 10 } })
+    history.value = res.data?.data?.items || []
+  } catch (e) { /* 历史读取失败不影响主流程 */ }
+}
 
-    if (res.data.code === 10001 || res.data.code === 200 || res.data.code === 0) {
-      const data = Array.isArray(res.data.data) ? res.data.data[0] : res.data.data
-      if (!data || data.totalScore == null) throw new Error('测评结果不完整，请重试')
-      scoreData.value = data
-      
-      // ... 前面的代码 ...
-      decryptedComment.value = String(data.scoreComment || '')
-
-      await nextTick()
-      // 🌟 修复 ECharts 缩骨功：延迟 150 毫秒，等 CSS 和 Flexbox 把盒子完全撑开后再画图！
-      setTimeout(() => {
-        renderRadarChart()
-        // 画完之后强行再触发一次重绘，确保万无一失
-        chartInstance.value?.resize()
-      }, 150)
-      
-    } else {
-      alert('测算失败：' + (res.data.message || '未知错误'))
+async function start() {
+  if (busy.value) return
+  busy.value = true
+  error.value = ''
+  try {
+    const res = await api.post('/sessions', { clientRequestId: crypto.randomUUID() })
+    applySession(res.data?.data)
+  } catch (e) {
+    const body = e.response?.data || {}
+    error.value = body.message || '开始测评失败，请稍后重试'
+    if (body.data?.errorCode === 'PROFILE_REQUIRED') {
+      state.value = { ...state.value, profileReady: false }
     }
-  } catch (error) {
-    alert('网络或服务异常，请检查后端服务。')
   } finally {
-    isAnalyzing.value = false
+    busy.value = false
   }
 }
 
-// 🌌 创新点 4：重新定制的高科技风格 ECharts 参数
-const renderRadarChart = () => {
-  if (!radarChartRef.value || !scoreData.value) return
-  if (chartInstance.value) chartInstance.value.dispose()
-  
-  chartInstance.value = echarts.init(radarChartRef.value)
-  const d = scoreData.value
-
-  const option = {
-    backgroundColor: 'transparent',
-    tooltip: {
-      trigger: 'item',
-      backgroundColor: 'rgba(255, 252, 244, 0.97)',
-      borderColor: '#d4bd91',
-      textStyle: { color: '#173a55', fontWeight: 'bold' },
-      padding: [15, 20],
-      borderRadius: 12,
-      boxShadow: '0 10px 30px rgba(0,0,0,0.1)'
-    },
-    radar: {
-      indicator: [
-        { name: '教育背景', max: 100 },
-        { name: '实习经验', max: 100 },
-        { name: '专业技能', max: 100 },
-        { name: '解决问题', max: 100 },
-        { name: '学习能力', max: 100 },
-        { name: '创新能力', max: 100 },
-        { name: '抗压能力', max: 100 },
-        { name: '团队协作', max: 100 },
-        { name: '沟通表达', max: 100 },
-        { name: '证书资质', max: 100 }
-      ],
-      shape: 'polygon',
-      radius: window.innerWidth <= 720 ? '52%' : '68%',
-      splitNumber: 5,
-      axisName: {
-        color: '#3d5a70',
-        fontSize: window.innerWidth <= 720 ? 10 : 13,
-        fontWeight: 800,
-        padding: window.innerWidth <= 720 ? [2, 2] : [5, 10]
-      },
-      splitLine: {
-        lineStyle: { color: ['rgba(46, 84, 109, 0.12)', 'rgba(46, 84, 109, 0.2)', 'rgba(46, 84, 109, 0.34)'].reverse() }
-      },
-      splitArea: { 
-        show: true,
-        areaStyle: { color: ['rgba(255,252,244,0.56)', 'rgba(233,226,211,0.36)'] }
-      },
-      axisLine: { lineStyle: { color: 'rgba(46, 84, 109, 0.34)' } }
-    },
-    series: [
-      {
-        name: '能力矩阵',
-        type: 'radar',
-        data: [
-          {
-            value: [
-              d.educationScore, d.internshipScore, d.professionalScore, 
-              d.problemSolvingScore, d.learningScore, d.innovationScore, 
-              d.pressureScore, d.teamworkScore, d.communicationScore, d.certificateScore
-            ],
-            name: '当前评估值',
-            symbol: 'circle',
-            symbolSize: 8,
-            itemStyle: {
-              color: '#bd945a',
-              borderColor: '#FFFFFF',
-              borderWidth: 2,
-              shadowBlur: 10,
-              shadowColor: '#d7b67e'
-            },
-            areaStyle: {
-              color: new echarts.graphic.RadialGradient(0.5, 0.5, 1, [
-                { offset: 0, color: 'rgba(206, 165, 98, 0.16)' },
-                { offset: 1, color: 'rgba(22, 66, 95, 0.52)' }
-              ])
-            },
-            lineStyle: { width: 3, color: '#b78d51', shadowBlur: 10, shadowColor: 'rgba(183,141,81,0.48)' }
-          }
-        ]
-      }
-    ],
-    animationEasing: 'elasticOut',
-    animationDuration: 2000,
-  }
-
-  chartInstance.value.setOption(option)
-}
-
-const resizeChart = () => {
-  if (!chartInstance.value) return
-  const compact = window.innerWidth <= 720
-  chartInstance.value.setOption({
-    radar: {
-      radius: compact ? '52%' : '68%',
-      axisName: { fontSize: compact ? 10 : 13, padding: compact ? [2, 2] : [5, 10] }
-    }
-  })
-  chartInstance.value.resize()
-}
-onMounted(async () => {
-  window.addEventListener('resize', resizeChart)
-  const userId = localStorage.getItem('userId') || ''
-  if (!/^\d+$/.test(userId)) return
+async function resume() {
+  if (!activeSessionId.value) return
+  busy.value = true
   try {
-    const res = await axios.get(`${baseURL}/api/ability/score/user/${userId}`, { headers: getHeaders() })
-    if (res.data.code !== 200) throw new Error(res.data.message || '读取测评失败')
-    const scores = Array.isArray(res.data.data) ? res.data.data : []
-    scoreData.value = [...scores].sort((a, b) => String(b.updateTime || b.createTime || '').localeCompare(String(a.updateTime || a.createTime || '')))[0] || null
-    decryptedComment.value = scoreData.value?.scoreComment || ''
-    await nextTick()
-    if (scoreData.value) renderRadarChart()
-  } catch (e) { historyError.value = '历史测评读取失败，请检查登录状态后重试。' }
+    const res = await api.get(`/sessions/${activeSessionId.value}`)
+    applySession(res.data?.data)
+  } catch (e) {
+    error.value = e.response?.data?.message || '载入上次测评失败'
+  } finally {
+    busy.value = false
+  }
+}
+
+async function openSession(sessionId) {
+  busy.value = true
+  try {
+    const res = await api.get(`/sessions/${sessionId}`)
+    applySession(res.data?.data)
+  } catch (e) {
+    error.value = e.response?.data?.message || '载入测评记录失败'
+  } finally {
+    busy.value = false
+  }
+}
+
+function applySession(data) {
+  if (!data) return
+  session.value = data
+  draft.value = data.draft || ''
+  startTimer()
+  if (data.status !== 'active') {
+    stopTimer()
+    loadState()
+    loadHistory()
+  }
+}
+
+function startTimer() {
+  stopTimer()
+  remaining.value = Number(session.value?.current?.remainingSeconds || 0)
+  if (session.value?.status !== 'active' || !session.value?.current) return
+  tick = setInterval(() => {
+    remaining.value = Math.max(0, remaining.value - 1)
+    if (remaining.value === 0) {
+      clearInterval(tick)
+      submit(null, null) // 超时自动跳下一题（服务端已判定超时）
+    }
+  }, 1000)
+}
+
+function stopTimer() {
+  if (tick) clearInterval(tick)
+  tick = null
+}
+
+async function submit(chosen, answer) {
+  if (busy.value || !session.value?.current) return
+  busy.value = true
+  error.value = ''
+  try {
+    const res = await api.post(`/sessions/${session.value.sessionId}/turns`, {
+      chosen, answer, expectedVersion: session.value.version
+    })
+    applySession(res.data?.data)
+  } catch (e) {
+    error.value = e.response?.data?.message || '提交失败，请重试'
+  } finally {
+    busy.value = false
+  }
+}
+
+function scheduleDraft() {
+  clearTimeout(draftTimer)
+  draftTimer = setTimeout(async () => {
+    try {
+      await api.put(`/sessions/${session.value.sessionId}/draft`, {
+        content: draft.value, expectedVersion: session.value.draftVersion
+      })
+      session.value.draftVersion += 1
+    } catch (e) { /* 草稿冲突：下次快照会带回最新值 */ }
+  }, 700)
+}
+
+async function onBasicSaved() {
+  await Promise.all([loadState(), loadHistory()])
+}
+
+onMounted(async () => {
+  await Promise.all([loadState(), loadHistory()])
+  loading.value = false
 })
-onUnmounted(() => {
-  window.removeEventListener('resize', resizeChart)
-  if (chartInstance.value) chartInstance.value.dispose()
-})
+
+onUnmounted(stopTimer)
 </script>
 
 <style scoped>
-/* ================= 🌌 流体全息拟态风 ================= */
-.innovative-score-page { position: relative; width: 100vw; height: 100vh; display: flex; justify-content: center; align-items: center; background: #F8FAFC; overflow: hidden; font-family: 'Inter', -apple-system, sans-serif;}
-
-/* 流体背景 */
-.mesh-background { position: absolute; inset: 0; z-index: 0; overflow: hidden; }
-.color-blob { position: absolute; filter: blur(120px); border-radius: 50%; animation: float 20s infinite ease-in-out alternate; opacity: 0.5; }
-.blob-1 { width: 800px; height: 800px; background: #93C5FD; top: -200px; left: -100px; animation-delay: 0s; }
-.blob-2 { width: 700px; height: 700px; background: #C4B5FD; bottom: -100px; right: -100px; animation-delay: -5s; }
-.blob-3 { width: 600px; height: 600px; background: #A7F3D0; top: 40%; left: 40%; animation-delay: -10s; }
-.grid-overlay { position: absolute; inset: 0; background-image: linear-gradient(rgba(255,255,255,0.4) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.4) 1px, transparent 1px); background-size: 30px 30px; opacity: 0.5; }
-@keyframes float { 0% { transform: translate(0, 0) scale(1); } 100% { transform: translate(50px, 50px) scale(1.1); } }
-
-/* 主容器 */
-.page-container { position: relative; z-index: 1; width: 100%; max-width: 1300px; height: 90vh; display: flex; flex-direction: column; padding: 0 20px; }
-
-/* 头部 */
-.page-header { text-align: center; margin-bottom: 30px; display: flex; flex-direction: column; align-items: center; gap: 10px; }
-.title-badge { display: inline-flex; align-items: center; gap: 8px; padding: 6px 18px; background: rgba(255, 255, 255, 0.6); backdrop-filter: blur(10px); color: #3B82F6; border-radius: 30px; font-size: 0.9rem; font-weight: 700; border: 1px solid rgba(255, 255, 255, 0.8); box-shadow: 0 4px 15px rgba(0,0,0,0.03); }
-.pulse-dot { width: 8px; height: 8px; background: #10B981; border-radius: 50%; box-shadow: 0 0 10px #10B981; animation: pulse 2s infinite; }
-@keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); } 70% { box-shadow: 0 0 0 10px rgba(16, 185, 129, 0); } 100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); } }
-.gradient-text { font-size: 2.4rem; margin: 0; font-weight: 900; letter-spacing: 1px; background: linear-gradient(135deg, #1E293B 0%, #3B82F6 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; filter: drop-shadow(0 4px 10px rgba(59, 130, 246, 0.2)); }
-
-/* 悬浮错落布局 */
-.holographic-layout { display: flex; gap: 30px; flex: 1; min-height: 0; }
-
-/* 玻璃态面板基类 */
-.control-glass-panel, .radar-glass-panel { background: rgba(255, 255, 255, 0.55); backdrop-filter: blur(25px); -webkit-backdrop-filter: blur(25px); border: 1px solid rgba(255, 255, 255, 0.8); box-shadow: 0 25px 50px rgba(0,0,0,0.05), inset 0 0 0 1px rgba(255,255,255,0.5); border-radius: 30px; padding: 35px; display: flex; flex-direction: column; position: relative; overflow: hidden; }
-
-/* 左侧控制台 */
-.control-glass-panel { width: 400px; flex-shrink: 0; z-index: 2; }
-.panel-deco-line { position: absolute; top: 40px; left: 0; width: 4px; height: 40px; background: linear-gradient(to bottom, #3B82F6, #8B5CF6); border-radius: 0 4px 4px 0; }
-.panel-title { margin: 0 0 30px 0; font-size: 1.3rem; font-weight: 800; color: #1E293B; display: flex; align-items: center; gap: 10px; }
-
-.input-group { margin-bottom: 25px; display: flex; flex-direction: column; gap: 12px; }
-.input-group label { font-size: 0.95rem; font-weight: 700; color: #475569; display: flex; justify-content: space-between; }
-.temp-val { color: #3B82F6; font-family: monospace; font-size: 1.1rem; }
-
-.textarea-wrapper { position: relative; background: rgba(255, 255, 255, 0.8); border-radius: 16px; transition: 0.3s; box-shadow: inset 0 2px 5px rgba(0,0,0,0.02); }
-.textarea-wrapper textarea { width: 100%; border: none; background: transparent; outline: none; resize: none; font-size: 0.95rem; color: #334155; padding: 18px; line-height: 1.6; height: 130px; box-sizing: border-box; }
-.focus-border { position: absolute; inset: 0; border: 2px solid transparent; border-radius: 16px; pointer-events: none; transition: 0.3s; }
-.textarea-wrapper:focus-within .focus-border { border-color: #3B82F6; box-shadow: 0 0 15px rgba(59, 130, 246, 0.2); }
-
-.hologram-slider { -webkit-appearance: none; width: 100%; height: 8px; background: rgba(59, 130, 246, 0.15); border-radius: 4px; outline: none; }
-.hologram-slider::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 20px; height: 20px; border-radius: 50%; background: #3B82F6; cursor: pointer; box-shadow: 0 0 10px rgba(59, 130, 246, 0.5); border: 2px solid #FFF; }
-.slider-labels { display: flex; justify-content: space-between; font-size: 0.8rem; color: #64748B; font-weight: 600; }
-
-/* 炫酷按钮 */
-.start-btn { position: relative; padding: 18px; background: #1E293B; color: white; border: none; border-radius: 16px; cursor: pointer; overflow: hidden; transition: 0.3s; box-shadow: 0 10px 20px rgba(30, 41, 59, 0.2); margin-top: 10px;}
-.start-btn:hover:not(:disabled) { transform: translateY(-3px); box-shadow: 0 15px 30px rgba(30, 41, 59, 0.3); }
-.start-btn:disabled { opacity: 0.7; cursor: not-allowed; }
-.btn-text { position: relative; z-index: 1; font-size: 1.1rem; font-weight: 800; display: flex; align-items: center; justify-content: center; gap: 10px; }
-.btn-glow { position: absolute; top: -50%; left: -50%; width: 200%; height: 200%; background: radial-gradient(circle, rgba(59,130,246,0.4) 0%, transparent 70%); opacity: 0; transition: 0.3s; }
-.start-btn:hover:not(:disabled) .btn-glow { opacity: 1; animation: rotateGlow 3s linear infinite; }
-@keyframes rotateGlow { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-
-/* 洞察报告框 */
-.insight-box { margin-top: 25px; padding: 20px; background: linear-gradient(135deg, rgba(255,255,255,0.9), rgba(248,250,252,0.9)); border: 1px solid rgba(255,255,255,1); border-radius: 16px; box-shadow: 0 10px 25px rgba(0,0,0,0.05); }
-.insight-header { display: flex; align-items: center; gap: 8px; color: #3B82F6; font-weight: 800; margin-bottom: 12px; font-size: 1.05rem; }
-.insight-content p { margin: 0; color: #475569; font-size: 0.95rem; line-height: 1.7; }
-
-/* 右侧雷达面板 */
-.radar-glass-panel { flex: 1; display: flex; justify-content: center; align-items: center; }
-
-/* 空状态波纹 */
-.empty-state { display: flex; flex-direction: column; align-items: center; gap: 20px; color: #94A3B8; font-weight: 700; font-size: 1.1rem; }
-.holo-ring { width: 120px; height: 120px; border: 2px dashed rgba(148, 163, 184, 0.4); border-radius: 50%; animation: spin 10s linear infinite; position: relative; }
-.holo-ring::after { content: ''; position: absolute; inset: 10px; border: 2px solid rgba(148, 163, 184, 0.2); border-radius: 50%; animation: spin 5s linear infinite reverse; }
-
-/* 炫酷神盾局扫描动画 */
-.scanning-state { display: flex; flex-direction: column; align-items: center; gap: 30px; }
-.radar-scanner { width: 150px; height: 150px; position: relative; border-radius: 50%; background: rgba(59, 130, 246, 0.05); border: 1px solid rgba(59, 130, 246, 0.2); box-shadow: 0 0 30px rgba(59, 130, 246, 0.1); overflow: hidden; }
-.grid-circle { position: absolute; inset: 0; border: 1px solid rgba(59, 130, 246, 0.3); border-radius: 50%; }
-.grid-circle.inner { inset: 30px; }
-.sweep { position: absolute; top: 0; left: 50%; width: 50%; height: 50%; background: linear-gradient(90deg, transparent, rgba(59, 130, 246, 0.8)); transform-origin: bottom left; animation: radarSweep 2s linear infinite; }
-@keyframes radarSweep { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-.scanning-text { color: #3B82F6; font-weight: 800; font-size: 1.2rem; letter-spacing: 2px; text-shadow: 0 0 10px rgba(59, 130, 246, 0.3); }
-
-/* 图表与总分悬浮 */
-.chart-wrapper { width: 100%; height: 100%; position: relative; display: flex; align-items: center; justify-content: center; }
-.radar-chart { width: 100%; height: 100%; min-height: 550px; }
-
-/* 创新：环形总分展示 */
-.score-hero { position: absolute; top: 20px; right: 20px; width: 120px; height: 120px; z-index: 10; display: flex; justify-content: center; align-items: center; background: rgba(255, 255, 255, 0.8); border-radius: 50%; box-shadow: 0 15px 35px rgba(0,0,0,0.08), inset 0 0 0 1px #FFF; backdrop-filter: blur(10px); }
-.score-circle { position: absolute; width: 100%; height: 100%; transform: rotate(-90deg); }
-.bg-circle { fill: none; stroke: rgba(226, 232, 240, 0.5); stroke-width: 6; }
-.progress-circle { fill: none; stroke: #3B82F6; stroke-width: 6; stroke-linecap: round; transition: stroke-dasharray 1.5s ease-out; }
-.score-info { text-align: center; display: flex; flex-direction: column; }
-.score-label { font-size: 0.75rem; color: #64748B; font-weight: 800; text-transform: uppercase; margin-bottom: -5px;}
-.score-value { font-size: 2.5rem; font-weight: 900; color: #1E293B; }
-
-/* 动画类 */
-.slide-up-enter-active, .slide-up-leave-active { transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1); }
-.slide-up-enter-from, .slide-up-leave-to { opacity: 0; transform: translateY(20px) scale(0.95); }
-.cyber-dots span { display: inline-block; width: 6px; height: 6px; background: #3B82F6; border-radius: 50%; margin: 0 2px; animation: bounce 1.4s infinite ease-in-out; }
-.cyber-dots span:nth-child(1) { animation-delay: -0.32s; }
-.cyber-dots span:nth-child(2) { animation-delay: -0.16s; }
-.innovative-score-page { width:100%; height:100%; min-height:0; overflow:auto; align-items:flex-start; }
-.page-container { height:auto; min-height:90vh; box-sizing:border-box; padding:24px; }
-.control-glass-panel { box-sizing:border-box; overflow:auto; }
-@media (max-width: 1100px) {
-  .holographic-layout { flex-direction:column; }
-  .control-glass-panel { width:100%; }
-  .radar-glass-panel { min-height:480px; padding:12px; }
-  .radar-chart { min-height:480px; }
-  .gradient-text { font-size:1.7rem; }
-}
-
-/* 山海星图主题：保留雷达、扫描与分数动画，只统一界面材质和层级。 */
-.innovative-score-page{--score-ink:#14314b;--score-muted:#596f80;--score-gold:#bb955d;display:block;width:100%;height:auto;min-height:100%;overflow:visible;background:#f7f4ed;color:var(--score-ink);font-family:'Noto Sans SC','Microsoft YaHei',system-ui,sans-serif}
-.mesh-background{position:fixed;inset:0;background:url('../assets/images/atlas-map-bg-v2.png') center 42%/cover no-repeat;opacity:.16;pointer-events:none}
-.color-blob,.grid-overlay{display:none}
-.page-container{width:min(100%,1380px);max-width:1380px;min-height:100%;height:auto;margin:0 auto;padding:clamp(26px,3.2vw,48px) clamp(22px,3vw,46px) 46px;box-sizing:border-box}
-.page-header{display:flex;flex-direction:row;align-items:flex-end;justify-content:space-between;gap:20px;margin:0 0 20px;text-align:left}
-.assessment-heading{min-width:0}
-.title-badge{padding:0;border:0;border-radius:0;background:none;box-shadow:none;backdrop-filter:none;color:#9b7847;font-size:11px;letter-spacing:.18em}
-.pulse-dot{width:7px;height:7px;background:#b89158;box-shadow:0 0 0 3px rgba(184,145,88,.15)}
-.gradient-text{margin:11px 0 6px;background:none;color:var(--score-ink);-webkit-text-fill-color:currentColor;filter:none;font-family:'Noto Serif SC','Source Han Serif SC',serif;font-size:clamp(30px,3vw,44px);font-weight:800;letter-spacing:.02em;line-height:1.25}
-.header-description{margin:0;color:var(--score-muted);font-size:13px;line-height:1.7}
-.back-to-graph{display:inline-flex;align-items:center;gap:14px;padding:10px 14px;border:1px solid #cdb88f;border-radius:7px;background:rgba(255,252,245,.84);color:#31516a;font-size:12px;font-weight:700;text-decoration:none;white-space:nowrap}
-.back-to-graph:hover{background:#f2e4ca}
-.assessment-flow{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px;padding:0 0 7px}
-.assessment-flow :deep(.career-next){flex:1;min-width:0}
-.full-assessment-link{color:#86663a;font-size:12px;text-decoration:none;white-space:nowrap}
-.full-assessment-link:hover{text-decoration:underline}
-.assessment-disclaimer{margin:3px 0 22px;color:#718090;font-size:11px;line-height:1.7}
-.holographic-layout{display:grid;grid-template-columns:minmax(310px,370px) minmax(0,1fr);align-items:stretch;gap:18px;min-height:580px}
-.control-glass-panel,.radar-glass-panel{width:auto;min-width:0;padding:27px;border:1px solid #ded3c0;border-radius:10px;background:rgba(255,253,247,.94);box-shadow:0 12px 35px rgba(24,49,70,.06);backdrop-filter:none}
-.control-glass-panel{overflow:visible}
-.panel-deco-line{top:26px;width:3px;height:35px;background:#bc965d}
-.panel-title{margin-bottom:23px;color:var(--score-ink);font-family:'Noto Serif SC',serif;font-size:19px;gap:9px}
-.panel-title .app-icon{color:#ac8048}
-.input-group{gap:8px;margin-bottom:18px}
-.input-group label{color:#36536a;font-size:12px}
-.textarea-wrapper{border:1px solid #dccfbb;border-radius:8px;background:#fffdf8;box-shadow:none}
-.textarea-wrapper textarea{height:152px;padding:14px;color:#233f56;font-family:inherit;font-size:13px;line-height:1.75}
-.focus-border{border-radius:8px}
-.textarea-wrapper:focus-within .focus-border{border-color:#aa854e;box-shadow:0 0 0 3px rgba(184,145,88,.12)}
-.control-glass-panel>p{color:var(--score-muted);font-size:12px;line-height:1.75}
-.start-btn{min-height:48px;margin-top:16px;padding:11px 15px;border:1px solid #aa8249;border-radius:7px;background:#173a55;box-shadow:0 8px 18px rgba(17,47,73,.16)}
-.start-btn:hover:not(:disabled){background:#244b66;box-shadow:0 12px 23px rgba(17,47,73,.21)}
-.btn-text{font-size:13px;letter-spacing:.08em}
-.btn-glow{background:radial-gradient(circle,rgba(234,200,142,.3),transparent 70%)}
-.insight-box{margin-top:25px;padding:18px;border:1px solid #dfd0b5;border-radius:8px;background:#faf3e7;box-shadow:none}
-.insight-header{color:#8b6737;font-size:13px}
-.insight-content p{color:#3e5567;font-size:12px}
-.radar-glass-panel{position:relative;min-height:580px;padding:54px 17px 17px;justify-content:center}
-.radar-panel-label{position:absolute;z-index:2;top:20px;left:25px;right:25px;display:flex;justify-content:space-between;gap:12px;color:#8b714b;font-size:11px;font-weight:700;letter-spacing:.08em}
-.radar-panel-label small{color:#87949b;font-size:10px;font-weight:400;letter-spacing:0}
-.empty-state{gap:21px;color:#61778a;font-size:13px}
-.holo-ring{width:116px;height:116px;border-color:#c7a66f}
-.holo-ring::after{border-color:rgba(32,72,101,.34)}
-.radar-scanner{background:#f4eddf;border-color:#c5a66f;box-shadow:0 0 30px rgba(190,150,88,.18)}
-.grid-circle{border-color:rgba(176,133,76,.45)}
-.sweep{background:linear-gradient(90deg,transparent,rgba(190,150,88,.72))}
-.scanning-text{color:#345771;font-size:13px;letter-spacing:.08em;text-align:center;text-shadow:none}
-.chart-wrapper{min-height:500px}
-.radar-chart{min-height:500px}
-.score-hero{top:16px;right:15px;width:104px;height:104px;border:1px solid #d9bf8f;background:rgba(255,252,244,.96);box-shadow:0 9px 22px rgba(30,51,66,.12)}
-.bg-circle{stroke:#e6d9c2}
-.progress-circle{stroke:#bd945a}
-.score-label{color:#7d6c52;font-size:10px}
-.score-value{color:var(--score-ink);font-family:'Noto Serif SC',serif;font-size:31px}
-.cyber-dots span{background:#e8be7b}
-.innovative-score-page :focus-visible{outline:2px solid #b78948;outline-offset:3px}
-@media(max-width:1100px){.holographic-layout{grid-template-columns:1fr}.control-glass-panel{width:100%}.radar-glass-panel{min-height:510px}.radar-chart{min-height:440px}.chart-wrapper{min-height:440px}}
-@media(max-width:720px){.page-container{padding:24px 16px 32px}.page-header{align-items:flex-start}.back-to-graph{font-size:11px;padding:9px}.assessment-flow :deep(.career-next){flex-basis:100%}.full-assessment-link{white-space:normal}.assessment-disclaimer{margin-bottom:16px}.holographic-layout{gap:14px}.control-glass-panel,.radar-glass-panel{padding:22px 18px}.radar-glass-panel{min-height:460px;padding-top:52px}.radar-panel-label{top:18px;left:18px;right:18px}.radar-panel-label small{display:none}.chart-wrapper{min-height:410px;flex-direction:column;justify-content:flex-start}.radar-chart{height:350px;min-height:350px}.score-hero{position:relative;top:auto;right:auto;align-self:flex-end;width:80px;height:80px;margin-bottom:-10px}.score-value{font-size:25px}}
-@media(prefers-reduced-motion:reduce){.color-blob,.pulse-dot,.holo-ring,.holo-ring::after,.sweep,.cyber-dots span{animation:none!important}.slide-up-enter-active,.slide-up-leave-active,.progress-circle{transition:none!important}}
+.assess-page { max-width: 1080px; margin: 0 auto; padding: 28px 24px 60px; color: #1E293B; }
+.page-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 20px; }
+.eyebrow { margin: 0 0 6px; font-size: 12px; letter-spacing: 2px; color: #64748B; }
+h1 { margin: 0 0 8px; font-size: 26px; }
+.sub { margin: 0; color: #64748B; font-size: 0.9rem; line-height: 1.7; max-width: 720px; }
+.link { color: #2563EB; text-decoration: none; font-size: 0.9rem; }
+.card { background: #fff; border: 1px solid #E2E8F0; border-radius: 16px; padding: 22px; margin-bottom: 18px; box-shadow: 0 4px 18px rgba(51,65,85,.04); }
+.card h2 { margin: 0 0 12px; font-size: 1.05rem; }
+.muted { color: #64748B; }
+.small { font-size: 12px; }
+.notice { background: #EFF6FF; border: 1px solid #DBEAFE; border-radius: 10px; padding: 12px; font-size: 13px; line-height: 1.7; }
+.notice.error { background: #FFF4F2; border-color: #FBD2C8; color: #9F3020; }
+.btn { font: inherit; border: 0; border-radius: 9px; padding: 10px 18px; cursor: pointer; text-decoration: none; display: inline-block; }
+.btn.primary { background: #2563EB; color: #fff; }
+.btn.primary:disabled { background: #E2E8F0; color: #94A3B8; cursor: not-allowed; }
+.btn.ghost { background: #EFF6FF; color: #1D4ED8; }
+.btn.sm { padding: 6px 12px; font-size: 0.85rem; }
+.row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.row.between { justify-content: space-between; }
+.facts { margin: 0 0 14px 18px; color: #475569; font-size: 0.9rem; line-height: 1.9; }
+.scores-mini { display: flex; gap: 10px; align-items: baseline; margin-bottom: 14px; font-size: 0.9rem; }
+.hard-preview { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 16px; }
+.hard-preview span { background: #F1F5F9; border-radius: 8px; padding: 6px 10px; font-size: 12px; color: #475569; }
+.q-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+.pill { background: #E9F5F0; color: #157856; border-radius: 20px; padding: 5px 10px; font-size: 12px; }
+.pill.neutral { background: #F1F5F9; color: #64748B; }
+.pill.warn { background: #FFF7ED; color: #B45309; }
+.countdown { margin-left: auto; font-weight: 700; font-variant-numeric: tabular-nums; color: #1D4ED8; }
+.countdown.danger { color: #B91C1C; }
+progress { display: block; width: 100%; height: 9px; accent-color: #3B82F6; border: 0; margin-bottom: 14px; }
+.question { font-size: 1rem; line-height: 1.9; white-space: pre-wrap; }
+.options { display: flex; flex-direction: column; gap: 10px; }
+.option { display: flex; gap: 10px; align-items: flex-start; text-align: left; background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 12px; padding: 14px; font: inherit; cursor: pointer; line-height: 1.7; }
+.option:hover { border-color: #93C5FD; background: #F0F7FF; }
+.option b { color: #2563EB; }
+textarea { font: inherit; width: 100%; box-sizing: border-box; padding: 12px; border: 1px solid #CBD5E1; border-radius: 10px; line-height: 1.7; }
+.q-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 10px; }
+.score-total { display: flex; align-items: baseline; gap: 10px; margin-bottom: 16px; }
+.score-total strong { font-size: 44px; color: #2563EB; }
+.dim-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 22px; }
+.dim-head { display: flex; align-items: baseline; gap: 8px; font-size: 0.9rem; }
+.dim-head b { margin-left: auto; color: #1D4ED8; }
+.dim-head em { font-style: normal; font-size: 11px; color: #94A3B8; }
+.dim progress { margin: 6px 0 0; }
+.comment { margin: 18px 0; line-height: 1.9; color: #334155; }
+.evidence, .suggestions { margin: 0 0 16px 18px; padding: 0; line-height: 1.9; color: #334155; font-size: 0.9rem; }
+.history-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 0; border-top: 1px solid #F1F5F9; cursor: pointer; font-size: 0.9rem; }
+.history-row:hover { color: #1D4ED8; }
+@media (max-width: 720px) { .dim-grid { grid-template-columns: 1fr; } .page-head { flex-direction: column; } }
 </style>

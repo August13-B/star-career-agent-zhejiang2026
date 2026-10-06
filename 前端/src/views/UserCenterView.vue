@@ -164,13 +164,13 @@
         <div class="data-card">
           <div class="card-header">
             <h4>💪 我的核心能力模型</h4>
-            <button class="text-btn" @click="openAbilityModal">编辑能力数据</button>
+            <button class="text-btn" @click="openAbilityModal">编辑基本情况</button>
           </div>
           
           <div v-if="!myAbility.id && !hasScore" class="empty-ability">
             <span class="empty-icon">📊</span>
             <p>暂未录入能力数据，完善后可大幅提升匹配精度</p>
-            <button class="outline-btn" @click="openAbilityModal">立即测评</button>
+            <button class="outline-btn" @click="openAbilityModal">填写基本情况</button>
           </div>
           
           <div v-else class="ability-grid">
@@ -217,7 +217,9 @@
                 </div>
               </template>
               <div v-else class="empty-inline">
-                还没有六维测评结果，点右上角「编辑能力数据」开始测评（约 10 题）
+                还没有六维测评结果：去
+                <router-link class="text-btn" to="/ai-score">能力补充测评</router-link>
+                由 AI 出题评分（硬实力四项已来自「基本情况」）
               </div>
             </div>
           </div>
@@ -364,8 +366,8 @@
       </div>
     </transition>
 
-    <!-- 核心能力模型：两步测评（基本情况 → 六维情境题 → 自动评分） -->
-    <AbilityQuizModal v-model:visible="quizVis" :user-id="currentUserId" @saved="onQuizSaved" />
+    <!-- 核心能力模型：个人中心只填「基本情况」（专业与硬实力）；六维软素质去能力补充测评 -->
+    <AbilityBasicModal v-model:visible="quizVis" :user-id="currentUserId" @saved="onQuizSaved" />
 
 
 
@@ -409,7 +411,7 @@
 <script setup>
 import { ref, onMounted, computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import AbilityQuizModal from '../components/AbilityQuizModal.vue'
+import AbilityBasicModal from '../components/AbilityBasicModal.vue'
 import axios from 'axios'
 import API_CONFIG from '../config/api'
 import { generateAesKeyAndIv, rsaEncrypt, aesEncrypt } from '../utils/crypto'
@@ -631,7 +633,7 @@ const saveJobIntent = async () => {
   } catch (err) { console.error(err); handleSaveError(err?.response?.data?.message || err.message) } finally { isSavingIntent.value = false }
 }
 
-// ===== 🚀 核心能力模型：六维问卷测评（注册后初步评价；AI 测评会参考并覆盖） =====
+// ===== 🚀 核心能力模型：个人中心只保存「基本情况」（硬实力四项）；软实力六维由 /ai-score 能力补充测评产出 =====
 const quizVis = ref(false)
 const openAbilityModal = () => { quizVis.value = true }
 const onQuizSaved = async () => { await Promise.all([fetchMyAbility(), fetchMyScore()]) }
