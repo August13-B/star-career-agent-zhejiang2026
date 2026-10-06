@@ -9,8 +9,8 @@ import org.example.web.entity.training.TrainingData.*;
 public interface TrainingWorkspaceMapper {
     @Select("SELECT * FROM training_session_config WHERE session_id=#{id}") Config config(Long id);
     @Insert("""
-        INSERT INTO training_session_config(session_id,template_snapshot,difficulty,use_for_profile,baseline_score_id,baseline_profile_version,artifact_draft)
-        VALUES(#{sessionId},#{templateSnapshot},#{difficulty},#{useForProfile},#{baselineScoreId},#{baselineProfileVersion},#{artifactDraft})
+        INSERT INTO training_session_config(session_id,template_snapshot,difficulty,use_for_profile,baseline_score_id,baseline_profile_version,artifact_draft,job_id,job_snapshot)
+        VALUES(#{sessionId},#{templateSnapshot},#{difficulty},#{useForProfile},#{baselineScoreId},#{baselineProfileVersion},#{artifactDraft},#{jobId},#{jobSnapshot})
         """) void insertConfig(Config value);
     @Update("UPDATE training_session_config SET artifact_draft=#{content},artifact_draft_version=artifact_draft_version+1 WHERE session_id=#{id} AND artifact_draft_version=#{version}")
     int draft(@Param("id") Long id,@Param("content") String content,@Param("version") int version);

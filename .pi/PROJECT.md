@@ -1,6 +1,6 @@
 # 星职 · 项目说明与已知坑（Agent 用）
 
-> 上次更新：2026-09-19 ｜ 更新时间阈值：7 天（每会话必读的基础内容）
+> 上次更新：2026-10-06 ｜ 更新时间阈值：7 天（每会话必读的基础内容）
 
 ## 1. 项目定位
 
@@ -86,11 +86,31 @@ python manage.py free-port backend
 17. **登录方式**：前端统一发 `login_way=auto`，后端按 **邮箱 → 账号 → 昵称** 依次查找；
     手机号已从**登录方式**移除（注册/画像仍保留手机号）。`user.nickname` 有唯一索引（迁移 **009**），
     注册接口会先校验昵称是否已被使用（唯一索引兜底并发）。
+18. **职场训练（三场景）已全链路落地**（PR #90/#92/#93/#94/#96）：
+    - 三场景模板 `后端/src/main/resources/training/*.json`：模拟面试 6 阶段/5min、跨岗位沟通 5 阶段/8min、AI 辅助办公 3 阶段/10min；
+      每场景 **4 个维度**（键名 = `student_ability_score` 字段名；标尺与画像一致：0–100 整数、**基线 60**）
+    - **平台侧是「三个训练接口」**（同一个百宝箱应用内新增，**不是三个应用**）：`POST /api/training/{interview|communication|office}`，
+      入参 `{mode: ask|evaluate, prompt, scenario}` → ask 返回 `{"reply":…}`、evaluate 返回 `{"training_evaluation":…}`；
+      后端 `TboxScenarioGateway` 按场景路由，**三个路径留空则自动回退旧「会话+WS」链路**；契约见 `百宝箱/接口清单与接入说明.md` §十、§十一
+    - **评分硬校验**（`TrainingScoreValidator`）：维度必须等于本场景 4 维、0–100 整数、`evidence[].evidenceId` 必须取自
+      后端冻结证据目录（`TrainingEvidenceCatalog`，形如 `A3E12`）、evidence 项**只能有 `dimension`+`evidenceId`** 两字段、
+      含交付物场景至少一条 artifact 证据；不合规 → `review_required`（不展示分数、不更新画像）。**总分由后端按权重重算**
+    - **画像闭环**（`TrainingOutcomeService`）：只覆盖本次考到的 4 维（其余维度不动）、乐观并发（训练期间基线/画像变动则跳过）、
+      写 `student_ability_score_history` + `student_profile_history`（version+1）
+    - **岗位绑定**（迁移 **013**）：模拟面试不再写死岗位，改为「职业意向 → 全库岗位搜索」选岗位（`GET /api/training/targets`），
+      岗位快照冻结进 `training_session_config`；题目用 `{{job}}`/`{{skills}}` 占位符渲染；
+      **意向与报告目标岗位都没有 → 提示先去完善（不兜底推荐、不允许手填）**；评分口径不变，但要求「对照岗位要求说差距」
+    - **前端**：`TrainingView.vue`（工作台：进度/交付物/证据定位/限时倒计时）、`utils/text.js`（去 Markdown 按纯文本展示）、
+      `utils/draftSync.js`（草稿同步，防旧快照回写）；语音输入用浏览器原生 Web Speech API
+      —— 部署时 nginx 必须 `Permissions-Policy … microphone=(self)`（已修正），且需 HTTPS 或 localhost。
 
 ## 5. 当前阻塞（平台侧）
 
-- 百宝箱**模型网关未开通**：WS 返回 `RUN_ERROR: Not Open`，需在平台开通并重新发布。
-- 应用**系统提示词**需写入《系统提示词·变更指令》，6 个智能体段才会完整输出。
+- ✅ **模型网关已开通**：对话（WS）、职业报告（异步任务）、职场训练（三接口）三条链路均已实测跑通。
+- ⚠️ `job_skill_requirement` / `job_hard_requirement` / `job_soft_requirement` 三张**岗位要求表仍为空**：
+  「按能力画像 vs 岗位 10 维要求算相似度」暂未启用；需先跑 `JobAIAnalysisService` 补数据，
+  否则岗位推荐只能靠「岗位名关键词」（意向搜索）。
+- 应用**系统提示词**改动后需**重新发布**才生效（含三个训练接口）。
 
 ## 6. 参考文档
 

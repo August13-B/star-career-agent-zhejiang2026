@@ -17,6 +17,10 @@ public final class TrainingData {
         private String artifactDraft;
         private Integer artifactDraftVersion;
         private Long selectedArtifactId;
+        /** 训练绑定的岗位（job_info.id，可空；模拟面试按意向岗位出题） */
+        private Long jobId;
+        /** 岗位快照 JSON（冻结；模板占位符与评分对照用） */
+        private String jobSnapshot;
     }
     @Data public static class Artifact {
         private Long id;

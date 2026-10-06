@@ -1014,6 +1014,8 @@ CREATE TABLE IF NOT EXISTS training_session_config (
   artifact_draft mediumtext NOT NULL COMMENT 'AES-GCM 密文',
   artifact_draft_version int NOT NULL DEFAULT 0,
   selected_artifact_id bigint NULL,
+  job_id bigint NULL COMMENT '训练绑定的岗位（job_info.id，可空）',
+  job_snapshot json NULL COMMENT '岗位快照（冻结；出题占位符与评分对照用）',
   CONSTRAINT fk_training_config_session FOREIGN KEY(session_id) REFERENCES training_session(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 CREATE TABLE IF NOT EXISTS training_artifact (
