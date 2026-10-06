@@ -106,6 +106,12 @@ tbox:
   report-poll-seconds: ${TBOX_REPORT_POLL_SECONDS:4}    # 报告异步任务轮询间隔（秒）
   report-partial-timeout-seconds: ${TBOX_REPORT_PARTIAL_TIMEOUT_SECONDS:480} # running 超过该秒数→用已有内容整理“部分完成”报告
   hello-delay-millis: ${TBOX_HELLO_DELAY_MS:500} # HELLO 与 SEND_MESSAGE 间隔
+  # ── 职场训练（三场景接口优先；全部留空则回退旧 WS 会话链路）──
+  training-path-mock-interview: ${TBOX_TRAINING_PATH_MOCK_INTERVIEW:}   # 如 /api/training/interview
+  training-path-cross-role: ${TBOX_TRAINING_PATH_CROSS_ROLE:}           # 如 /api/training/communication
+  training-path-ai-office: ${TBOX_TRAINING_PATH_AI_OFFICE:}             # 如 /api/training/office
+  training-token: ${TRAINING_API_TOKEN:}                                # 平台配置后需带 X-Training-Token
+  training-timeout-seconds: ${TBOX_TRAINING_TIMEOUT_SECONDS:180}        # 训练单次调用超时（秒）
 
 # ── 日志 ──
 logging:

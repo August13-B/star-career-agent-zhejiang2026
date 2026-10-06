@@ -49,6 +49,44 @@ public class TboxProperties {
     /** 对话（HTTP SSE）超时（秒），含 RAG 检索空窗 */
     private int chatTimeoutSeconds = 180;
 
+    // ── 职场训练：本应用内新增的三个训练接口（推荐；未配置则回退旧 WS 会话链路）──
+
+    /** 模拟面试训练接口路径，如 /api/training/interview */
+    private String trainingPathMockInterview;
+
+    /** 跨岗位沟通训练接口路径，如 /api/training/communication */
+    private String trainingPathCrossRole;
+
+    /** AI 辅助办公训练接口路径，如 /api/training/office */
+    private String trainingPathAiOffice;
+
+    /** 训练接口令牌：平台配置 TRAINING_API_TOKEN 后需带 X-Training-Token（未配置则不发送） */
+    private String trainingToken;
+
+    /** 训练单次调用超时（秒），模型生成长文本较慢 */
+    private int trainingTimeoutSeconds = 180;
+
+    /**
+     * 按场景取训练接口路径。
+     *
+     * @return 未配置或未知场景时返回 {@code null}（调用方回退到旧 WS 会话链路）
+     */
+    public String trainingPathFor(String scenario) {
+        if (scenario == null) {
+            return null;
+        }
+        return switch (scenario) {
+            case "mock_interview" -> blankToNull(trainingPathMockInterview);
+            case "cross_role_communication" -> blankToNull(trainingPathCrossRole);
+            case "ai_assisted_office" -> blankToNull(trainingPathAiOffice);
+            default -> null;
+        };
+    }
+
+    private static String blankToNull(String value) {
+        return value == null || value.isBlank() ? null : value.trim();
+    }
+
     public boolean isConfigured() {
         return apiUrl != null && !apiUrl.isBlank();
     }

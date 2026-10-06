@@ -45,7 +45,10 @@ public class TrainingWorker {
             var work = service.claim(event.runId(), event.attempt());
             if (work == null) return;
             AtomicLong lastSave = new AtomicLong(0);
-            var output = gateway.execute("training-" + work.sessionId() + "-" + work.runId() + "-" + work.attempt(), work.prompt(), text -> {
+            var output = gateway.execute(new ScenarioAgentGateway.Request(
+                    work.scenario(), work.operation(),
+                    "training-" + work.sessionId() + "-" + work.runId() + "-" + work.attempt(),
+                    work.prompt()), text -> {
                 long now = System.nanoTime();
                 if (!"evaluate".equals(work.operation()) && now - lastSave.get() > TimeUnit.MILLISECONDS.toNanos(400)) {
                     service.partial(work, text); lastSave.set(now);
