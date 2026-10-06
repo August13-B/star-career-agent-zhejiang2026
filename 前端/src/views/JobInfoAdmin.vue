@@ -29,6 +29,8 @@
             <button class="search-btn" @click="fetchData">搜索</button>
           </div>
           <button class="add-btn" @click="openModal('add')">+ 新增岗位</button>
+          <button class="add-btn" :disabled="analyzing" :title="'按岗位画像补全十维要求（训练出题与差距对照依赖它）；每次串行处理 10 个（避免反代读超时）'"
+                  @click="analyzeMissingProfiles">{{ analyzing ? '补全中…' : '🤖 批量补全岗位要求' }}</button>
         </div>
       </div>
 
@@ -248,6 +250,26 @@ const getHeaders = () => {
 
 // ===== 状态管理 =====
 const activeTab = ref('job')
+// 批量补全岗位画像要求（管理员）：串行调用平台 AI，故超时时间放很长
+const analyzing = ref(false)
+async function analyzeMissingProfiles() {
+  if (analyzing.value) return
+  if (!confirm('将按岗位画像逐个调用 AI 补全十维要求（已补全的自动跳过，本次最多 10 个，约需 2~3 分钟）。继续？')) return
+  analyzing.value = true
+  try {
+    const res = await axios.post(`${baseURL}/api/analysis/batch`, null, {
+      params: { limit: 10 }, headers: getHeaders(), timeout: 600000
+    })
+    const data = res.data?.data || {}
+    alert(`批量补全完成：处理 ${data.processed || 0} 个，跳过 ${data.skipped || 0} 个，失败 ${data.failed || 0} 个，剩余 ${data.remaining || 0} 个。\n可再次点击继续处理剩余项。`)
+    fetchData()
+  } catch (e) {
+    const message = e.response?.data?.message || e.message
+    alert(e.response?.status === 403 ? '需要管理员权限才能执行批量补全' : '批量补全失败：' + message)
+  } finally {
+    analyzing.value = false
+  }
+}
 
 // 岗位状态 (size 已改为 5)
 const loading = ref(false)
