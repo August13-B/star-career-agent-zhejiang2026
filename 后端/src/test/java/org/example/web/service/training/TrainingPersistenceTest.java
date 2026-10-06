@@ -66,9 +66,12 @@ class TrainingPersistenceTest {
         try (var connection = ds.getConnection()) { ScriptUtils.executeSqlScript(connection, new ByteArrayResource(migration.getBytes(StandardCharsets.UTF_8))); }
         String workplace = Files.readString(Path.of("..", "数据库", "migrations", "011_training_workplace.sql"), StandardCharsets.UTF_8).replace("USE `youthpath`;", "");
         try (var connection = ds.getConnection()) { ScriptUtils.executeSqlScript(connection, new ByteArrayResource(workplace.getBytes(StandardCharsets.UTF_8))); }
+        // 013：会话绑定岗位（job_id/job_snapshot）——与 CI 的迁移基线保持一致
+        String job = Files.readString(Path.of("..", "数据库", "migrations", "013_training_job.sql"), StandardCharsets.UTF_8).replace("USE `youthpath`;", "");
+        try (var connection = ds.getConnection()) { ScriptUtils.executeSqlScript(connection, new ByteArrayResource(job.getBytes(StandardCharsets.UTF_8))); }
         context = new AnnotationConfigApplicationContext();
         context.registerBean(DataSource.class, () -> ds);
-        context.register(Config.class, TrainingTemplate.class, TrainingScoreValidator.class, TrainingService.class, TrainingArtifactRules.class);
+        context.register(Config.class, TrainingTemplate.class, TrainingScoreValidator.class, TrainingService.class, TrainingArtifactRules.class, TrainingJobCatalog.class);
         context.addApplicationListener(event -> {
             if (rejectEvents.get() && event instanceof PayloadApplicationEvent<?> payload && payload.getPayload() instanceof TrainingService.Queued)
                 throw new IllegalStateException("simulated failure before transaction commit");
