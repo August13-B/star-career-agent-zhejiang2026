@@ -51,7 +51,7 @@ public class AbilityQuizController {
             return Result.error("登录状态无效");
         }
         try {
-            return Result.success("基本情况已保存", service.saveBasic(userId, body));
+            return Result.success("基本情况已保存", abilityQuizService.saveBasic(userId, body));
         } catch (IllegalArgumentException e) {
             return Result.error(e.getMessage());
         }
