@@ -87,7 +87,8 @@
               <textarea id="training-answer" v-model="draft" maxlength="4000" rows="4" :disabled="pending" :placeholder="answerPlaceholder" @input="onDraftInput" @blur="saveDraft().catch(() => {})"></textarea>
               <p v-if="recognizing" class="muted small voice-state">正在听写，边说边转文字…{{ voiceInterim ? '（' + voiceInterim + '）' : '' }}</p>
               <p v-else-if="voiceHint" class="muted small voice-state">{{ voiceHint }}</p>
-              <p v-else-if="!speechSupported" class="muted small voice-state">当前浏览器不支持语音输入（建议 Chrome / Edge）；直接打字同样可以完成训练。</p>
+              <p v-else-if="!speechSupported" class="muted small voice-state">{{ speechUnsupportedHint }}</p>
+              <p v-else-if="micPolicyBlocked" class="muted small voice-state">当前服务器响应头 Permissions-Policy 禁用了麦克风（microphone=()），浏览器会拒绝语音输入；请改为 microphone=(self) 后重启 nginx。</p>
               <p v-if="timeLimitNotice" class="notice">{{ timeLimitNotice }}</p>
               <div v-if="draftConflict" class="notice error">草稿已在其他页面修改。当前输入保留，你可以复制后再读取最新草稿。<button type="button" class="text-button" @click="reloadDraft">读取最新草稿</button></div>
               <div class="composer-actions">
@@ -154,11 +155,16 @@ const canAnswer = computed(() => session.value?.status === 'active' && !busy.val
 const canFinish = computed(() => canAnswer.value && session.value?.answeredCount > 0)
 const canCancel = computed(() => session.value && ['active', 'scoring'].includes(session.value.status))
 
-// ===== 语音输入（浏览器原生 Web Speech API；不支持时隐藏按钮，打字输入不受影响）=====
+// ===== 语音输入（浏览器原生 Web Speech API；不支持/非安全上下文时隐藏按钮，打字输入不受影响）=====
 const SpeechRecognitionImpl = typeof window === 'undefined' ? null : (window.SpeechRecognition || window.webkitSpeechRecognition)
-const speechSupported = typeof SpeechRecognitionImpl === 'function'
+const speechApiAvailable = typeof SpeechRecognitionImpl === 'function'
+// 语音识别属于受限能力：必须 HTTPS 或 localhost（安全上下文），否则浏览器直接禁用
+const speechSecureContext = typeof window === 'undefined' || window.isSecureContext !== false
+const speechSupported = speechApiAvailable && speechSecureContext
+// 服务器响应头 Permissions-Policy 若写成 microphone=()，任何页面都会被拒（nginx 默认配置曾如此）
+const micPolicyBlocked = typeof document !== 'undefined' && typeof document.featurePolicy?.allowsFeature === 'function' && !document.featurePolicy.allowsFeature('microphone')
 const recognizing = ref(false), voiceInterim = ref(''), voiceHint = ref('')
-let recognition = null, voiceBase = '', voiceWriting = false
+let recognition = null, voiceBase = '', voiceWriting = false, voiceIntent = false, voiceRestarts = 0
 
 // ===== 单题限时（以服务端下发时刻为准；超时自动提交并标记「超时」）=====
 const clock = ref(Date.now()), serverOffset = ref(0), timeLimitNotice = ref('')
@@ -202,6 +208,9 @@ const limitText = computed(() => (questionLimit.value > 0 ? `${Math.round(questi
 const answerPlaceholder = computed(() => questionLimit.value > 0
   ? `说清你的做法、理由和验证方式。本题限时 ${limitText.value}，超时将自动提交当前草稿。`
   : '说清你的做法、理由和验证方式。支持换行；点击按钮提交。')
+const speechUnsupportedHint = computed(() => !speechApiAvailable
+  ? '当前浏览器不支持语音输入（建议 Chrome / Edge）；直接打字同样可以完成训练。'
+  : `语音输入需要 HTTPS 或 localhost（当前是 ${typeof location === 'undefined' ? '非安全来源' : location.origin}），请改用安全地址访问或直接打字。`)
 function formatClock(total) { return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}` }
 
 watch(remainingSeconds, value => {
@@ -218,7 +227,12 @@ function toggleVoice() { return recognizing.value ? stopVoice() : startVoice() }
 function startVoice() {
   if (!speechSupported || recognizing.value || !canAnswer.value) return
   voiceHint.value = ''
-  try { recognition = new SpeechRecognitionImpl() } catch (e) { voiceHint.value = '语音输入初始化失败，请改用打字输入。'; return }
+  voiceIntent = true
+  voiceRestarts = 0
+  launchRecognition()
+}
+function launchRecognition() {
+  try { recognition = new SpeechRecognitionImpl() } catch (e) { voiceIntent = false; voiceHint.value = '语音输入初始化失败，请改用打字输入。'; return }
   recognition.lang = 'zh-CN'
   recognition.continuous = true
   recognition.interimResults = true
@@ -238,15 +252,28 @@ function startVoice() {
     scheduleDraft()
   }
   recognition.onerror = event => {
-    recognizing.value = false; voiceInterim.value = ''
+    voiceInterim.value = ''
+    // no-speech / aborted 交给 onend 自动续上（Chrome 停顿后会自动结束）
+    if (event.error === 'no-speech' || event.error === 'aborted') return
+    voiceIntent = false; recognizing.value = false
     voiceHint.value = ['not-allowed', 'service-not-allowed'].includes(event.error)
-      ? '麦克风权限被拒绝：请在地址栏允许麦克风后重试（需 HTTPS 或 localhost）。'
-      : event.error === 'no-speech' ? '没有听到声音，请靠近麦克风重试。' : `语音识别中断（${event.error}），可以继续打字输入。`
+      ? '麦克风被拒绝或被服务器策略禁用：请检查地址栏麦克风权限；若通过 nginx 访问，需允许响应头 Permissions-Policy microphone=(self)。'
+      : event.error === 'network'
+        ? '浏览器的语音识别服务连接失败（Chrome 需访问其云端识别服务）：请检查系统代理/网络，或改用打字输入。'
+        : event.error === 'audio-capture' ? '未检测到可用麦克风设备，请在系统设置里检查输入设备。'
+          : `语音识别中断（${event.error}），可以继续打字输入。`
   }
-  recognition.onend = () => { recognizing.value = false; voiceInterim.value = '' }
-  try { recognition.start(); recognizing.value = true } catch (e) { voiceHint.value = '语音识别无法启动，请改用打字输入。' }
+  recognition.onend = () => {
+    voiceInterim.value = ''
+    if (!voiceIntent || !canAnswer.value) { voiceIntent = false; recognizing.value = false; return }
+    if (voiceRestarts >= 30) { voiceIntent = false; recognizing.value = false; voiceHint.value = '语音识别多次中断，已停止；可以重新点击按钮或直接打字。'; return }
+    voiceRestarts += 1
+    setTimeout(() => { if (voiceIntent) launchRecognition() }, 250)
+  }
+  try { recognition.start(); recognizing.value = true } catch (e) { voiceIntent = false; recognizing.value = false; voiceHint.value = '语音识别无法启动，请改用打字输入。' }
 }
 function stopVoice() {
+  voiceIntent = false
   try { recognition?.stop() } catch (e) { /* 停止时的异常可忽略 */ }
   recognition = null; recognizing.value = false; voiceInterim.value = ''
 }
