@@ -30,6 +30,21 @@ class TrainingJobCatalogTest {
         assertEquals("一职业", words.get(0));
     }
 
+    @Test void expandsLongHanWordBySlidingWindows() {
+        List<String> probes = TrainingJobCatalog.expand("全栈开发工程师");
+        assertEquals("全栈开发工程师", probes.get(0), "整词优先");
+        assertTrue(probes.contains("开发工程师"), "应包含 5 字子串");
+        assertTrue(probes.contains("工程师"), "应到最后退到 3 字子串");
+        assertEquals(probes.size(), probes.stream().distinct().count(), "不应重复");
+    }
+
+    @Test void keepsAsciiAndShortWordsIntact() {
+        assertEquals(List.of("Java"), TrainingJobCatalog.expand("Java"));
+        assertEquals(List.of("数据分析"), TrainingJobCatalog.expand("数据分析"), "不足 5 字不拆");
+        assertEquals(List.of(), TrainingJobCatalog.expand(null));
+        assertEquals(List.of(), TrainingJobCatalog.expand("  "));
+    }
+
     @Test void blankIntentYieldsNoKeywords() {
         assertEquals(List.of(), TrainingJobCatalog.keywords(null));
         assertEquals(List.of(), TrainingJobCatalog.keywords("   "));

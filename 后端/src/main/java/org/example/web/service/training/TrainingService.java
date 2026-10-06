@@ -53,23 +53,26 @@ public class TrainingService {
     }
 
     /**
-     * @param jobId 目标岗位（可空）。传了就冻结岗位快照进会话，供出题占位符与评分对照使用；不传则题目保持通用描述。
+     * @param jobKey 目标岗位键（可空）：{@code profile:123}（岗位画像池）或 {@code job:456}（真实岗位池）。
+     *               传了就冻结岗位快照进会话，供出题占位符与评分对照使用；不传则题目保持通用描述。
      */
     @Transactional
-    public Map<String, Object> create(Long userId, String templateId, String requestId, String difficulty, boolean useForProfile, Long jobId) {
+    public Map<String, Object> create(Long userId, String templateId, String requestId, String difficulty, boolean useForProfile, String jobKey) {
         lockUser(userId);
         var definition = template.get(templateId);
         if (!Set.of("entry", "standard").contains(difficulty)) throw error(422, "DIFFICULTY_INVALID", "难度无效");
         JsonNode job = null;
-        if (jobId != null) {
-            job = jobs.snapshot(jobId);
+        if (jobKey != null && !jobKey.isBlank()) {
+            job = jobs.snapshot(jobKey);
             if (job == null) throw error(422, "JOB_NOT_FOUND", "岗位不存在，请重新从意向岗位中选择");
         }
         Session previous = db.createdRequest(userId, requestId);
         if (previous != null) {
             Config old = workspace.config(previous.getId());
+            Long previousJob = old == null ? null : old.getJobId();
+            Long currentJob = job == null ? null : job.path("jobId").asLong();
             if (!previous.getTemplateId().equals(templateId) || (old != null && (!old.getDifficulty().equals(difficulty) || old.getUseForProfile() != useForProfile
-                    || (jobId != null && !jobId.equals(old.getJobId()))))) throw conflict("请求标识已用于其他模板");
+                    || !java.util.Objects.equals(previousJob, currentJob)))) throw conflict("请求标识已用于其他模板");
             return accepted(db.latestRun(previous.getId()));
         }
         ensureNotBusy(userId);
@@ -81,7 +84,7 @@ public class TrainingService {
         Config config = new Config(); config.setSessionId(session.getId()); config.setTemplateSnapshot(write(definition.raw()));
         config.setDifficulty(difficulty); config.setUseForProfile(useForProfile); config.setArtifactDraft(cipher.encrypt("{}"));
         if (job != null) {
-            config.setJobId(jobId);
+            config.setJobId(job.path("jobId").asLong());
             config.setJobSnapshot(write(job));
         }
         if (useForProfile) {
