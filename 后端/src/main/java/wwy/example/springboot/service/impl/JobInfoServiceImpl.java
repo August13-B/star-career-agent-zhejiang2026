@@ -93,12 +93,13 @@ public class JobInfoServiceImpl implements JobInfoService {
 
     @Override
     public IPage<JobInfo> pageQuery(long current, long size, String jobName) {
-        Page<JobInfo> page = new Page<>(current, size);
+        Page<JobInfo> page = new Page<>(Math.max(1, current), Math.max(1, Math.min(100, size)));
         LambdaQueryWrapper<JobInfo> wrapper = new LambdaQueryWrapper<>();
         if (StringUtils.hasText(jobName)) {
             wrapper.like(JobInfo::getJobName, jobName);
         }
         wrapper.orderByDesc(JobInfo::getCreateTime);
+        wrapper.orderByDesc(JobInfo::getId);
         return jobInfoMapper.selectPage(page, wrapper);
     }
 

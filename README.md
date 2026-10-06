@@ -113,9 +113,17 @@ python manage.py gui           # 可视化管理器（Tkinter）
 
 > ⚠️ 生产部署：先在 Windows 侧执行 `npm run build` 生成 `前端/dist`，再由 Nginx 托管静态文件并反代 `/api/*` 到后端（详见 `nginx/README.md`）。
 
-> 🗄️ **数据库自动灌库**：`manage.py` 启动后端前会自动检查并灌库（缺表建表、无数据导入，已有数据则跳过）。
+> 🗄️ **数据库自动灌库**：`manage.py` 启动后端前会检查数据库；空库初始化，已有库执行幂等增量迁移。已有但不完整的库不会自动覆盖，请先备份核查。
 > 也可手动执行：`python manage.py db`（灌库）/ `python manage.py db status`（查看）。
 > 数据说明见 [`数据库/README.md`](./数据库/README.md)（岗位 9958 条 + 画像/能力/用户，向量数据见 `数据库/向量数据/`）。
+
+### 职场模拟训练与评分
+
+登录后从侧栏进入「职场训练与评分」或打开 `/training`，可选择目标岗位，完成模拟面试、跨岗位沟通或 AI 辅助办公练习。训练结束后由百宝箱生成分维度评分、回答证据和改进建议；只有通过证据校验的完整训练，且用户主动勾选并已有能力基线时，才会更新个人画像。训练分与能力画像总分是不同指标。
+
+首次启动后端时，`manage.py` 会增量执行 `数据库/migrations/010` 至 `013`；已有数据不会被清空。平台已部署独立训练接口时，在 `后端/.env` 配置 `TBOX_TRAINING_PATH_MOCK_INTERVIEW`、`TBOX_TRAINING_PATH_CROSS_ROLE`、`TBOX_TRAINING_PATH_AI_OFFICE`，如需专用令牌再配置 `TRAINING_API_TOKEN`。未配置训练接口路径时回退现有 WebSocket 对话链路，真实 AI 评分仍取决于百宝箱侧训练场景与评分提示词是否就绪。
+
+本地验证：在 `前端` 执行 `npm test && npm run build`，在 `后端` 执行 `mvnw test`。真实 MySQL 集成测试需额外设置 `TRAINING_DB_TEST=true` 和 `DB_URL`、`DB_USERNAME`、`DB_PASSWORD`；测试只创建并清理带专用前缀的临时用户。
 
 ## 七、百宝箱应用接入（已实测 ✅）
 

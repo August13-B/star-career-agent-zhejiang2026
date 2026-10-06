@@ -49,6 +49,27 @@ public class TboxProperties {
     /** 对话（HTTP SSE）超时（秒），含 RAG 检索空窗 */
     private int chatTimeoutSeconds = 180;
 
+    /** 职场训练三场景接口；留空时回退既有 WebSocket 对话链路。 */
+    private String trainingPathMockInterview;
+    private String trainingPathCrossRole;
+    private String trainingPathAiOffice;
+    private String trainingToken;
+    private int trainingTimeoutSeconds = 180;
+
+    public String trainingPathFor(String scenario) {
+        if (scenario == null) return null;
+        return switch (scenario) {
+            case "mock_interview" -> blankToNull(trainingPathMockInterview);
+            case "cross_role_communication" -> blankToNull(trainingPathCrossRole);
+            case "ai_assisted_office" -> blankToNull(trainingPathAiOffice);
+            default -> null;
+        };
+    }
+
+    private static String blankToNull(String value) {
+        return value == null || value.isBlank() ? null : value.trim();
+    }
+
     public boolean isConfigured() {
         return apiUrl != null && !apiUrl.isBlank();
     }
