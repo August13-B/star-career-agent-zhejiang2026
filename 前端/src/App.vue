@@ -1,18 +1,18 @@
 <template>
-  <div class="app-layout" :class="{ 'training-layout': $route.path.startsWith('/training') || $route.path === '/graph' }">
+  <div class="app-layout" :class="{ 'app-layout--entry': isEntryRoute }">
     
-    <aside class="sidebar">
-      <div class="logo-area">
+    <aside v-if="!isEntryRoute" class="sidebar">
+      <router-link to="/" class="logo-area" aria-label="返回星职首页">
         <span class="logo-mark"><AppIcon name="compass" :size="19" /></span>
-        <span class="logo-text">AI职业规划师</span>
-      </div>
+        <span class="logo-text">星职 <small>STAR CAREER</small></span>
+      </router-link>
 
       <div class="nav-section">
-        <p class="section-title">核心功能</p>
+        <p class="section-title">职业旅程</p>
         <nav class="nav-menu">
-          <router-link to="/" class="nav-item">
-            <AppIcon name="chat" class="nav-icon" :size="17" />
-            <span class="nav-text">智能体对话</span>
+          <router-link to="/multi-agent" class="nav-item">
+            <AppIcon name="cpu" class="nav-icon" :size="17" />
+            <span class="nav-text">多智能体联合测评</span>
           </router-link>
           
           <router-link to="/graph" class="nav-item">
@@ -22,12 +22,17 @@
 
           <router-link to="/ai-score" class="nav-item">
             <AppIcon name="radar" class="nav-icon" :size="17" />
-            <span class="nav-text">AI 能力测评</span>
+            <span class="nav-text">能力补充测评</span>
           </router-link>
 
-          <router-link to="/multi-agent" class="nav-item">
-            <AppIcon name="cpu" class="nav-icon" :size="17" />
-            <span class="nav-text">多智能体中枢</span>
+          <router-link to="/assistant" class="nav-item">
+            <AppIcon name="chat" class="nav-icon" :size="17" />
+            <span class="nav-text">智能体对话</span>
+          </router-link>
+
+          <router-link to="/training" class="nav-item">
+            <AppIcon name="briefcase" class="nav-icon" :size="17" />
+            <span class="nav-text">职场训练与评分</span>
           </router-link>
 
           <router-link to="/training" class="nav-item">
@@ -58,7 +63,7 @@
       </div>
 
       <div class="recommend-section">
-        <p class="section-title">推荐专属路线</p>
+        <p class="section-title">探索参考</p>
         <div class="recommend-list">
           <div class="recommend-item" @click="openReport('dachang')">
             <AppIcon name="trendUp" class="item-icon" :size="16" />
@@ -137,12 +142,13 @@
 </template>
 
 <script setup>
-import { ref, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import AppIcon from './components/AppIcon.vue'
 
 const router = useRouter()
 const route = useRoute()
+const isEntryRoute = computed(() => route.meta.entryFlow === true)
 
 const isLogged = ref(false)
 const username = ref('')
@@ -326,6 +332,8 @@ body { margin: 0; background-color: #F4F7FC; font-family: -apple-system, BlinkMa
 .status-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; display: inline-block; }
 
 .main-content { flex: 1; min-width: 0; display: flex; justify-content: center; align-items: center; padding: 20px; box-sizing: border-box; overflow: hidden; }
+.app-layout--entry { height: 100vh; min-height: 100vh; overflow: hidden; }
+.app-layout--entry .main-content { width: 100%; height: 100vh; min-height: 0; padding: 0; align-items: stretch; overflow-x: hidden; overflow-y: auto; }
 
 /* 弹窗核心样式 */
 .modal-overlay { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(15, 23, 42, 0.55); backdrop-filter: blur(8px); z-index: 9999; display: flex; justify-content: center; align-items: center; }
@@ -379,13 +387,39 @@ body { margin: 0; background-color: #F4F7FC; font-family: -apple-system, BlinkMa
 
 .page-fade-enter-active, .page-fade-leave-active { transition: all 0.4s cubic-bezier(0.25, 0.8, 0.25, 1); }
 .page-fade-enter-from, .page-fade-leave-to { opacity: 0; transform: translateY(15px); }
-/* Keep training usable at narrow widths while preserving the shared navigation links. */
-@media (max-width: 700px) {
-  .training-layout { flex-direction: column; }
-  .training-layout .sidebar { width:100%;min-width:0;padding:8px;flex-shrink:0; }
-  .training-layout .logo-area,.training-layout .recommend-section,.training-layout .section-title,.training-layout .user-profile-wrapper { display:none; }
-  .training-layout .nav-menu { flex-direction:row;overflow-x:auto;gap:4px; }
-  .training-layout .nav-item { flex-direction:column;min-width:62px;gap:4px;padding:8px 5px;font-size:11px;white-space:nowrap; }
-  .training-layout .main-content { min-height:0;padding:0; }
+
+/* 职业地图主题：与封面共用暖白、深蓝和香槟金。 */
+.app-layout:not(.app-layout--entry) { background: #f7f4ed; font-family: 'Noto Sans SC','Microsoft YaHei',system-ui,sans-serif; }
+.app-layout:not(.app-layout--entry) .sidebar { width: 186px; min-width: 186px; padding: 24px 14px 17px; border-right: 1px solid #28445d; background: #102b46; color: #f8f3e8; box-shadow: 5px 0 22px rgba(11,34,55,.07); }
+.app-layout:not(.app-layout--entry) .logo-area { gap: 10px; padding: 1px 4px 29px; color: #fbf5e8; text-decoration: none; font-family: 'Noto Serif SC',serif; font-size: 21px; }
+.app-layout:not(.app-layout--entry) .logo-mark { width: 36px; height: 36px; border: 1px solid #bb945b; border-radius: 50%; color: #ebc786; background: transparent; }
+.app-layout:not(.app-layout--entry) .logo-text small { display: block; margin-top: 3px; color: #aebeca; font-family: 'Noto Sans SC',sans-serif; font-size: 8px; letter-spacing: .16em; }
+.app-layout:not(.app-layout--entry) .section-title { margin-bottom: 12px; color: #9eafbd; font-size: 10px; letter-spacing: .22em; }
+.app-layout:not(.app-layout--entry) .section-title::before { display: none; }
+.app-layout:not(.app-layout--entry) .nav-item { gap: 10px; min-height: 40px; padding: 8px 10px; border: 1px solid transparent; border-radius: 6px; color: #c7d0d5; font-size: 12px; }
+.app-layout:not(.app-layout--entry) .nav-item .app-icon { color: #caa86f; }
+.app-layout:not(.app-layout--entry) .nav-item:hover,.app-layout:not(.app-layout--entry) .nav-item.router-link-active { border-color: rgba(213,179,119,.48); color: #fff7e6; background: #23435f; }
+.app-layout:not(.app-layout--entry) .nav-item.tutor-item,.app-layout:not(.app-layout--entry) .nav-item.admin-item { color: #e0d4ba; }
+.app-layout:not(.app-layout--entry) .recommend-section { margin-top: 8px; border-top: 1px solid rgba(215,188,143,.22); padding-top: 18px; }
+.app-layout:not(.app-layout--entry) .recommend-item { padding: 9px 10px; color: #b8c5cd; font-size: 11px; }
+.app-layout:not(.app-layout--entry) .recommend-item:hover { color: #fff8e7; background: #23435f; }
+.app-layout:not(.app-layout--entry) .recommend-item .app-icon { color: #bd9b68; }
+.app-layout:not(.app-layout--entry) .user-profile-wrapper { border-top-color: rgba(215,188,143,.22); }
+.app-layout:not(.app-layout--entry) .user-profile:hover { background: #23435f; }
+.app-layout:not(.app-layout--entry) .avatar-small { color: #f5e1bb; background: #28506b; }
+.app-layout:not(.app-layout--entry) .username { color: #f8f0df; }
+.app-layout:not(.app-layout--entry) .main-content { padding: 0; align-items: stretch; overflow: auto; background: #f7f4ed; }
+.app-layout:not(.app-layout--entry) .user-popover { border-color: #cdbb9f; background: #fffaf0; }
+.app-layout:not(.app-layout--entry) .modal-header { border-bottom-color: #e4d9c7; background: #fffaf0; }
+.app-layout:not(.app-layout--entry) .modal-body { background: #faf6ed; }
+@media (max-width: 720px) {
+  .app-layout:not(.app-layout--entry) { flex-direction: column; }
+  .app-layout:not(.app-layout--entry) .sidebar { width: 100%; min-width: 0; height: auto; max-height: 116px; flex: 0 0 auto; flex-direction: row; gap: 12px; padding: 10px 12px; overflow-x: auto; }
+  .app-layout:not(.app-layout--entry) .logo-area { flex: 0 0 auto; margin: 0; padding: 2px 0; }
+  .app-layout:not(.app-layout--entry) .logo-text,.app-layout:not(.app-layout--entry) .section-title,.app-layout:not(.app-layout--entry) .recommend-section,.app-layout:not(.app-layout--entry) .user-profile-wrapper { display: none; }
+  .app-layout:not(.app-layout--entry) .nav-section { margin: 0; }
+  .app-layout:not(.app-layout--entry) .nav-menu { flex-direction: row; width: max-content; }
+  .app-layout:not(.app-layout--entry) .nav-item { white-space: nowrap; }
+  .app-layout:not(.app-layout--entry) .main-content { min-height: 0; }
 }
 </style>

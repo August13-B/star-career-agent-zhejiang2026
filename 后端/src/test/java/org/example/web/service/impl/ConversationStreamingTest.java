@@ -36,7 +36,7 @@ class ConversationStreamingTest {
         var properties = new TboxProperties();
         properties.setChatChannel("ws");
         var profile = mock(StudentProfileContextService.class);
-        when(profile.build(1L, null, null)).thenReturn("测试画像");
+        when(profile.buildChat(1L)).thenReturn("测试画像");
         ReflectionTestUtils.setField(service, "aiConversationMapper", conversations);
         ReflectionTestUtils.setField(service, "userMapper", users);
         ReflectionTestUtils.setField(service, "aiService", ai);
@@ -105,6 +105,19 @@ class ConversationStreamingTest {
         upstream.tryEmitError(new IllegalStateException("连接中断"));
         assertEquals(List.of("partial"), received);
         assertEquals(1, errors.size());
+        verify(conversations, never()).insertMessage(argThat(m -> m.getMessageType() == 2));
+        verify(conversations, never()).updateConversationStatus(2L, 2);
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void platformErrorFrameIsForwardedButNotSavedAsAnAnswer(boolean withImage) {
+        var received = new ArrayList<String>();
+        response(withImage).subscribe(received::add);
+        String error = "{\"error\":\"平台不可用\"}";
+        upstream.tryEmitNext(error);
+        upstream.tryEmitComplete();
+        assertEquals(List.of(error), received);
         verify(conversations, never()).insertMessage(argThat(m -> m.getMessageType() == 2));
         verify(conversations, never()).updateConversationStatus(2L, 2);
     }

@@ -119,13 +119,109 @@ manage.py / manage_gui.py     命令行 / Tkinter 服务管理
 
 首次复制 `后端/.env.example` 为 `.env` 后填写，已有文件不要覆盖。
 
-| 配置 | 说明 |
+1. **智能体对话**：职业规划智能问答，SSE 流式输出 + 打字机体验（A02 改造后对话能力由百宝箱开放 API 提供）
+2. **职业星图**：垂直晋升链路 + 横向换岗路径的可视化宇宙星图
+3. **AI 能力测评**：多维能力量化评估（能力测评/评分历史）
+4. **人岗匹配**：10 维双向画像匹配，输出匹配度与差距分析
+5. **生涯报告**：职业探索→目标设定→路径规划→行动计划，支持润色/编辑/导出
+6. **职场场景模拟训练（新增，A02 要求）**：模拟面试 / 跨岗位沟通 / AI 辅助办公，训练结果反哺学生能力画像
+7. **学生就业大盘（B 端）**：班级/院系就业数据看板（当前为静态展示）
+8. **岗位管理（B 端）**：岗位数据维护、AI 自动分析入库
+
+## 六、快速启动
+
+### 环境准备
+
+- JDK 17+、Maven Wrapper（已内置）、Node 20+、MySQL（导入 `数据库/数据库结构.sql` 到 `youthpath` 库）、Redis（可选）
+- Python 3（服务管理器用）
+
+### 配置环境变量
+
+```bash
+cd 后端
+cp .env.example .env     # 填写数据库/邮件/RSA/AES 等真实值
+```
+
+### 一键启动（推荐）
+
+```bash
+python manage.py start all     # 启动 后端 + 前端 + nginx
+python manage.py status        # 查看状态
+python manage.py logs backend  # 查看日志
+python manage.py gui           # 可视化管理器（Tkinter）
+```
+
+### 手动启动
+
+| 模块 | 端口 | 启动方式 | 依赖 |
+|---|---|---|---|
+| 后端 | 8080 | `cd 后端 && mvnw spring-boot:run` | MySQL（youthpath）、`.env` |
+| 前端 | 5173 | `cd 前端 && npm install && npm run dev` | — |
+| Nginx（生产） | 80 | `python manage.py start nginx` | `前端/dist` 构建产物 |
+
+> ⚠️ 生产部署：先在 Windows 侧执行 `npm run build` 生成 `前端/dist`，再由 Nginx 托管静态文件并反代 `/api/*` 到后端（详见 `nginx/README.md`）。
+
+> 🗄️ **数据库自动灌库**：`manage.py` 启动后端前会检查数据库；空库初始化，已有库执行幂等增量迁移。已有但不完整的库不会自动覆盖，请先备份核查。
+> 也可手动执行：`python manage.py db`（灌库）/ `python manage.py db status`（查看）。
+> 数据说明见 [`数据库/README.md`](./数据库/README.md)（岗位 9958 条 + 画像/能力/用户，向量数据见 `数据库/向量数据/`）。
+
+### 职场模拟训练与评分
+
+登录后从侧栏进入「职场训练与评分」或打开 `/training`，可选择目标岗位，完成模拟面试、跨岗位沟通或 AI 辅助办公练习。训练结束后由百宝箱生成分维度评分、回答证据和改进建议；只有通过证据校验的完整训练，且用户主动勾选并已有能力基线时，才会更新个人画像。训练分与能力画像总分是不同指标。
+
+首次启动后端时，`manage.py` 会增量执行 `数据库/migrations/010` 至 `013`；已有数据不会被清空。平台已部署独立训练接口时，在 `后端/.env` 配置 `TBOX_TRAINING_PATH_MOCK_INTERVIEW`、`TBOX_TRAINING_PATH_CROSS_ROLE`、`TBOX_TRAINING_PATH_AI_OFFICE`，如需专用令牌再配置 `TRAINING_API_TOKEN`。未配置训练接口路径时回退现有 WebSocket 对话链路，真实 AI 评分仍取决于百宝箱侧训练场景与评分提示词是否就绪。
+
+本地验证：在 `前端` 执行 `npm test && npm run build`，在 `后端` 执行 `mvnw test`。真实 MySQL 集成测试需额外设置 `TRAINING_DB_TEST=true` 和 `DB_URL`、`DB_USERNAME`、`DB_PASSWORD`；测试只创建并清理带专用前缀的临时用户。
+
+## 七、百宝箱应用接入（已实测 ✅）
+
+省赛 A02 要求依托**蚂蚁百宝箱企业版**开发，本项目的**知识库与多智能体能力部署在百宝箱侧**，自研后端通过接口对接（链路：前端 → 后端 → 百宝箱）。
+
+**应用基址**（来自平台注入环境变量 `APP_API_URL`，预览态域名会变，勿硬编码）：
+```
+https://202609APqqd122487260-coding.tboxpro.cn
+```
+
+### 已实测通过的通道
+
+| # | 通道 | 地址 | 结果 |
+|---|---|---|---|
+| 1 | 健康检查 | `GET /api/health` | ✅ `{"status":"ok"}` |
+| 2 | 对话页 H5 | `GET /` | ✅ HTTP 200 |
+| 3 | 创建会话 | `POST /api/conversation/create` | ✅ 返回 `conversationId` |
+| 4 | 历史导出 | `GET /api/conversation/messages?format=raw` | ✅ 分页结构正常 |
+| 5 | 平台会话 | `GET /api/tbox/session` | ✅ 返回 `sessionId / appId` |
+| 6 | **对话通道** | `WSS /ws` | ✅ 握手 + HELLO + SEND_MESSAGE + `RUN_STARTED` 全通 |
+| 7 | 知识库 OpenAPI | `POST api.tbox.cn/api/datasets/retrieve` | ✅ 鉴权通过（待补 datasetId） |
+
+### 对话协议（AG-UI）
+
+```
+客户端：HELLO{sessionId} → SEND_MESSAGE{content, sessionId, conversationId?}
+        （可选 CANCEL_RUN / UI_ACTION）
+服务端：RUN_STARTED
+        → TOOL_CALL*（searchJobs 双库 RAG：岗位记录 | 能力画像）
+        → TEXT_MESSAGE_CONTENT(delta)*   ← Markdown 正文
+        → CUSTOM('tbox:card')            ← 结构化卡片
+        → RUN_FINISHED{requestId}
+```
+
+**结构化卡片契约**：
+- `career_pathway`：`{title, phases[{phase, goal, key_actions[], timeline}]}`（3-5 年路径）
+- `scenario_score`：`{scenario, dimensions{professional/communication/teamwork/problem_solving/learning/innovation/pressure}, total, comment, suggestions[]}`（与库表 `student_ability_score` 一一对应）
+- `weather`：`{city, temp, weather, humidity}`
+
+**模型输出协议**：`{"response":...}` / `{"career_pathway":{...}}` / `{"scenario_score":{...}}`
+
+### 环境变量（`后端/.env`）
+
+| 变量 | 说明 |
 |---|---|
 | `SERVER_PORT` | 默认 8080 |
-| `DB_URL`、`DB_USERNAME`、`DB_PASSWORD` | MySQL 地址和凭据；当前电脑用 3307，模板默认 3306；保留 `allowMultiQueries=true` |
+| `DB_URL`、`DB_USERNAME`、`DB_PASSWORD` | MySQL 地址和凭据；端口按本机实际配置填写，保留 `allowMultiQueries=true` |
 | `RSA_PRIVATE_KEY`、`RSA_PUBLIC_KEY` | 匹配的 RSA 密钥对，PKCS#8 私钥 / X.509 公钥，Base64 DER 单行 |
 | `AES_KEY`、`AES_IV` | 按模板填写 16 个 ASCII 字符；已有数据时不要随意换密钥 |
-| `JWT_SECRET` | 必填，至少 32 字节的随机签名密钥，禁止使用示例常量；当前电脑已生成并保存在后端 `.env`。更换后旧登录失效，需重新登录 |
+| `JWT_SECRET` | 必填，至少 32 字节的随机签名密钥，禁止使用示例常量；只写入未提交的后端 `.env`。更换后旧登录失效，需重新登录 |
 | `MAIL_HOST`、`MAIL_PORT`、`MAIL_USERNAME`、`MAIL_PASSWORD` | 验证码、密码找回；通常填写 SMTP 授权码 |
 | `TBOX_API_URL`、`TBOX_API_KEY`、`TBOX_AGENT_ID` | 小组百宝箱应用地址、密钥和应用 ID |
 | `TBOX_REPORT_TOKEN` | 平台启用报告专用令牌时必填，否则可留空 |

@@ -223,7 +223,7 @@ public class AIConversationServiceImpl implements AIConversationService {
             
             // 6. 获取学生信息（每次对话都获取）
             // 统一复用报告的画像上下文（基本信息 + 10 维评分 + 能力文本 + 最近匹配）
-            String studentInfo = buildUserContext(userId);
+            String studentInfo = studentProfileContextService.buildChat(userId);
             
             // 7. 构建完整的AI请求（按照用户要求的新格式）
             // 使用用户提供的temperature参数，如果为空则使用1.0
@@ -1532,7 +1532,7 @@ public class AIConversationServiceImpl implements AIConversationService {
 
             // 7. 获取学生信息（每次对话都获取）
             // 统一复用报告的画像上下文（基本信息 + 10 维评分 + 能力文本 + 最近匹配）
-            String studentInfo = buildUserContext(userId);
+            String studentInfo = studentProfileContextService.buildChat(userId);
             
             // 8. 构建最终消息
             String finalMessage;
@@ -1706,7 +1706,7 @@ public class AIConversationServiceImpl implements AIConversationService {
             aiConversationMapper.updateConversationStatus(localConversationId, 1);
 
             // 6. 拼上下文：账号画像（部分缺失自动降级）+ 本轮问题
-            String message = studentProfileContextService.build(userId, null, userMessage);
+            String message = studentProfileContextService.buildChat(userId) + "\n[USER MESSAGE]\n" + userMessage;
             String platformConversationId = conversation.getTboxConversationId();
 
             // 7. 调平台 SSE，逐帧转换下发
@@ -1858,7 +1858,7 @@ public class AIConversationServiceImpl implements AIConversationService {
 
             // 6. 获取学生信息（每次对话都获取）
             // 统一复用报告的画像上下文（基本信息 + 10 维评分 + 能力文本 + 最近匹配）
-            String studentInfo = buildUserContext(userId);
+            String studentInfo = studentProfileContextService.buildChat(userId);
             
             // 7. 构建最终消息
             String finalMessage;
@@ -2034,7 +2034,7 @@ public class AIConversationServiceImpl implements AIConversationService {
 
             // 6. 获取学生信息（每次对话都获取）
             // 统一复用报告的画像上下文（基本信息 + 10 维评分 + 能力文本 + 最近匹配）
-            String studentInfo = buildUserContext(userId);
+            String studentInfo = studentProfileContextService.buildChat(userId);
             
             // 7. 更新对话状态为生成中
             conversation.setStatus(1);
@@ -2116,13 +2116,13 @@ public class AIConversationServiceImpl implements AIConversationService {
         // 每个订阅独立累积正文；边到达边转发，仅正常结束后保存完整回复。
         return Flux.defer(() -> {
             StringBuilder fullResponse = new StringBuilder();
-            var failed = new java.util.concurrent.atomic.AtomicBoolean(false);
+            java.util.concurrent.atomic.AtomicBoolean failed = new java.util.concurrent.atomic.AtomicBoolean();
             return upstream.map(chunk -> {
                 String processedChunk = chunk;
                 String text = chunk;
                 try {
                     Map<?, ?> frame = objectMapper.readValue(chunk, Map.class);
-                    if (frame.get("error") != null) {
+                    if (frame.containsKey("error")) {
                         failed.set(true);
                         return chunk;
                     }

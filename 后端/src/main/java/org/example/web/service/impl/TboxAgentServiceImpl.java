@@ -2,6 +2,7 @@ package org.example.web.service.impl;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.netty.resolver.DefaultAddressResolverGroup;
 import lombok.extern.slf4j.Slf4j;
 import org.example.web.config.TboxProperties;
 import org.example.web.entity.AiConversation;
@@ -10,6 +11,7 @@ import org.example.web.service.TboxAgentService;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.http.client.reactive.ReactorClientHttpConnector;
 import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.socket.WebSocketMessage;
@@ -20,6 +22,7 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.Sinks;
 import reactor.core.scheduler.Schedulers;
+import reactor.netty.http.client.HttpClient;
 
 import java.net.URI;
 import java.time.Duration;
@@ -49,7 +52,7 @@ public class TboxAgentServiceImpl implements TboxAgentService {
     private final AiConversationMapper conversationMapper;
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final WebClient http;
-    private final WebSocketClient wsClient = new ReactorNettyWebSocketClient();
+    private final WebSocketClient wsClient;
 
     /** 最近一次运行的平台 ID（按本地对话ID缓存，供保存消息时回填） */
     private final Map<Long, RunIds> runIdsCache = new ConcurrentHashMap<>();
@@ -57,11 +60,15 @@ public class TboxAgentServiceImpl implements TboxAgentService {
     public TboxAgentServiceImpl(TboxProperties props, AiConversationMapper conversationMapper) {
         this.props = props;
         this.conversationMapper = conversationMapper;
+        // 复用操作系统/JDK 的域名解析，避免 Windows 网络环境下 Netty 独立 DNS 查询失败。
+        HttpClient client = HttpClient.create().resolver(DefaultAddressResolverGroup.INSTANCE);
+        this.wsClient = new ReactorNettyWebSocketClient(client);
         String base = props.getApiUrl();
         if (base != null && base.endsWith("/")) {
             base = base.substring(0, base.length() - 1);
         }
         this.http = WebClient.builder()
+                .clientConnector(new ReactorClientHttpConnector(client))
                 .baseUrl(base == null ? "" : base)
                 // 平台报告任务 done 响应会带上各段全文，可能远超默认 256KB →
                 // 不放开会报 DataBufferLimitException: Exceeded limit on max bytes to buffer : 262144
@@ -75,7 +82,7 @@ public class TboxAgentServiceImpl implements TboxAgentService {
     public Flux<String> chatStream(Long userId, Long localConversationId, String message) {
         if (!props.isConfigured()) {
             log.warn("百宝箱未配置（TBOX_API_URL 为空），返回不可用提示");
-            return Flux.just(errorChunk("AI 服务暂不可用，请联系管理员检查平台配置。"));
+            return Flux.just(errorChunk("AI 服务暂不可用：后端未配置百宝箱地址（TBOX_API_URL）。"));
         }
         return Mono.fromCallable(() -> resolveSession(userId, localConversationId))
                 .subscribeOn(Schedulers.boundedElastic())
@@ -259,7 +266,14 @@ public class TboxAgentServiceImpl implements TboxAgentService {
             String type = n.path("type").asText("");
             switch (type) {
                 case "TEXT_MESSAGE_CONTENT" -> {
-                    String delta = firstNonBlank(n, "delta", "content", "text");
+                    // 空格和换行也是正文，不能沿用 ID 字段的非空白筛选。
+                    String delta = null;
+                    for (String field : List.of("delta", "content", "text")) {
+                        if (n.path(field).isTextual()) {
+                            delta = n.get(field).asText();
+                            break;
+                        }
+                    }
                     if (delta != null && !delta.isEmpty()) {
                         sink.tryEmitNext(chunk(delta));
                     }
@@ -627,6 +641,10 @@ public class TboxAgentServiceImpl implements TboxAgentService {
 
     /** 异常 → 可读提示 */
     private String translateError(Throwable e) {
+        if (e instanceof org.springframework.web.reactive.function.client.WebClientResponseException response
+                && response.getResponseBodyAsString().contains("Agent not found")) {
+            return "百宝箱应用当前不可用（Agent not found），请确认应用已启动或发布，并核对当前应用地址。";
+        }
         if (e instanceof TimeoutException) {
             return "AI 响应超时，请稍后重试。";
         }
@@ -634,7 +652,7 @@ public class TboxAgentServiceImpl implements TboxAgentService {
         if (s.contains("Not Open")) {
             return "AI 模型网关尚未开通（平台返回 Not Open）。请在百宝箱侧开通模型后重试。";
         }
-        if (s.contains("Connection refused") || s.contains("UnknownHost")
+        if (s.contains("Connection refused") || s.contains("UnknownHost") || s.contains("Failed to resolve")
                 || s.contains("Failed to connect") || s.contains("timeout")) {
             return "无法连接百宝箱平台，请检查网络与 TBOX_API_URL 配置（详见后端日志）。";
         }

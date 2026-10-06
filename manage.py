@@ -47,7 +47,7 @@ def _win(cmd: list[str]) -> list[str]:
         return cmd
     exe = cmd[0].lower()
     if exe.endswith((".cmd", ".bat")) or exe in ("npm", "npx", "nginx"):
-        return ["cmd", "/c"] + cmd
+        return [os.environ.get("COMSPEC", "cmd.exe"), "/c"] + cmd
     return cmd
 
 
@@ -87,6 +87,7 @@ def _pid_on_port(port: str) -> int | None:
     try:
         if IS_WINDOWS:
             r = subprocess.run(["netstat", "-ano"], capture_output=True, text=True,
+                               encoding="mbcs", errors="replace",
                                creationflags=subprocess.CREATE_NO_WINDOW)
             for line in r.stdout.splitlines():
                 if f":{port} " in line and "LISTENING" in line:
@@ -352,7 +353,7 @@ def db_seed(force: bool = False) -> bool:
 
 
 def _apply_migrations(files: list) -> bool:
-    """执行幂等迁移；缺失或失败时阻止后端带着不完整的结构启动。"""
+    """执行幂等迁移；失败时阻止后端带着不完整的结构启动。"""
     for path in files:
         if not path.exists():
             print(f"❌ 缺少迁移脚本：{path.name}")
@@ -394,6 +395,7 @@ def cmd_db(args):
             "010_training_interview.sql",
             "011_training_workplace.sql",
             "012_report_job_owner.sql",
+            "013_training_job.sql",
         )]
         _apply_migrations(files)
     else:
@@ -561,6 +563,7 @@ def _read_pid(name: str) -> int | None:
 def _pid_alive(pid: int) -> bool:
     if IS_WINDOWS:
         r = subprocess.run(["tasklist", "/FI", f"PID eq {pid}"], capture_output=True, text=True,
+                           encoding="mbcs", errors="replace",
                            creationflags=subprocess.CREATE_NO_WINDOW)
         return str(pid) in r.stdout
     try:

@@ -44,7 +44,7 @@ public class AbilityQuizServiceImpl implements AbilityQuizService {
 
     @Autowired
     private StudentAbilityScoreService studentAbilityScoreService;
-    @org.springframework.beans.factory.annotation.Autowired
+    @Autowired
     private org.example.web.service.training.AbilityScoreWrites scoreWrites;
 
     @Autowired
@@ -195,13 +195,7 @@ public class AbilityQuizServiceImpl implements AbilityQuizService {
         // 4) 写 student_ability（第 1 步硬实力文本，服务内部 RSA 加密）
         StudentAbility ability = upsertHardText(userId, basic);
 
-        // 5) 覆盖 student_ability_score（旧 score_type=1 逻辑删除）
-        List<StudentAbilityScore> olds = studentAbilityScoreService.selectByUserId(userId);
-        for (StudentAbilityScore old : olds) {
-            if (old.getScoreType() != null && old.getScoreType() == 1) {
-                studentAbilityScoreService.deleteById(old.getId());
-            }
-        }
+        // 5) 评分由短事务原子替换，避免训练过程读到半成品基线。
         String comment = buildComment(softScores, educationScore, internshipScore,
                 professionalScore, certificateScore, total);
         StudentAbilityScore sc = new StudentAbilityScore();
@@ -220,7 +214,7 @@ public class AbilityQuizServiceImpl implements AbilityQuizService {
         sc.setTotalScore(BigDecimal.valueOf(total));
         sc.setScoreType(1);            // 1-系统自动评分（初步问卷）
         sc.setScoreComment(comment);
-        studentAbilityScoreService.insert(sc);
+        scoreWrites.replace(sc);
 
         // 6) 返回（结构化分数给前端做雷达/展示；不含题库内部信息）
         Map<String, Object> scores = new LinkedHashMap<>();
@@ -271,8 +265,6 @@ public class AbilityQuizServiceImpl implements AbilityQuizService {
             List<StudentAbility> existing = studentAbilityService.selectByUserId(userId);
             StudentAbility ab = existing.isEmpty() ? new StudentAbility() : existing.get(0);
             ab.setUserId(userId);
-            // A score without its owner's profile link cannot serve as a training baseline.
-            // Re-submitting also repairs older questionnaire records with a missing link.
             var profiles = studentProfileService.selectByUserId(userId);
             if (profiles != null && profiles.size() == 1) {
                 ab.setProfileId(profiles.get(0).getId());

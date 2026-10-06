@@ -1,427 +1,125 @@
 <template>
-  <div class="graph-page dark-universe">
-    
-    <div class="starfield">
-      <div 
-        v-for="i in 150" 
-        :key="i" 
-        class="star" 
-        :style="getStarStyle()"
-      ></div>
-    </div>
-
-    <div class="nebula-glow glow-1"></div>
-    <div class="nebula-glow glow-2"></div>
-
-    <div class="page-header">
-      <h2 class="neon-text">🌌 全息宇宙演化星图</h2>
-      <p class="subtitle">AI 神经元引擎 · 维度跃迁链路分析</p>
-    </div>
-
-    <div class="graph-workspace">
-      <div class="chart-container dark-glass">
-        
-        <div v-if="isLoading" class="overlay-state">
-          <div class="quantum-loader"></div>
-          <p class="loading-text">正在扫描深空拓扑数据...</p>
+  <main class="career-workbench scientific-atlas">
+    <header class="workbench-heading"><div><span class="eyebrow">职业探索 / 02</span><h1>我的职业星图</h1><p>以联合测评为依据，梳理适合你的职业方向与能力补齐路径。</p></div><router-link class="wb-button" to="/multi-agent">返回联合测评</router-link></header>
+    <nav class="journey" aria-label="职业规划流程"><router-link to="/multi-agent"><b>01</b> 联合测评</router-link><span class="current"><b>02</b> 职业星图</span><router-link to="/growth"><b>03</b> 行动计划</router-link></nav>
+    <p v-if="error" class="wb-notice" role="alert">{{ error }} <button @click="loadReports">重新加载</button></p>
+    <section v-if="loading" class="wb-empty" aria-live="polite"><h2>正在读取联合测评…</h2></section>
+    <section v-else-if="!reports.length" class="wb-empty graph-empty"><span class="eyebrow">从联合测评开始</span><h2>{{ error ? '测评暂时无法读取，先看看星图的样子。' : '完成联合测评，点亮你的职业星图。' }}</h2><p>{{ error ? '下方仅为视觉示意；恢复连接后可重新加载测评，生成你的专属职业分支。' : '请先完成六个智能体的联合测评。职业分支将来自你的测评结论，不会凭空生成。' }}</p><router-link class="wb-button primary" to="/multi-agent">开始联合测评 →</router-link><small>下方为视觉示意，不代表你的测评结果。</small><div class="graph-preview-map"><CareerStarMap :branches="previewBranches" :selected-index="previewSelected" preview center-action="开始联合测评" @select="previewSelected = $event" @center-click="router.push('/multi-agent')" /></div></section>
+    <template v-else-if="reports.length">
+      <section class="source-bar"><div><label for="report-select">测评来源</label><select id="report-select" v-model="reportId" :disabled="generating" @change="loadGraph"><option v-for="r in reports" :key="r.id" :value="String(r.id)">{{ r.name }}</option></select></div><span class="source-date">{{ selectedReport?.createdAt }}</span><button v-if="!graph" class="wb-button primary" :disabled="generating || graphLoading" @click="generate">{{ generating ? '正在提取分支…' : '根据测评绘制星图' }}</button><span v-else class="saved-mark">已保存 · 刷新可恢复</span></section>
+      <section v-if="!graph" class="wb-empty"><span class="eyebrow">测评已就绪</span><h2>{{ generating ? '正在整理职业路径…' : '测评已就绪，开始探索可能性。' }}</h2><p>{{ generating ? '正在提取推荐方向、发展阶段和能力差距，请保持当前页面。' : '生成后，点击岗位节点查看测评依据、待补能力与行动建议。' }}</p></section>
+      <section v-else class="atlas-layout">
+        <div class="atlas-panel graph-star-panel">
+          <div class="atlas-toolbar"><div><span class="eyebrow">图 01 · 以测评画像为中心</span><h2>{{ graph.center }}</h2></div><span class="graph-source-mark">联合测评生成</span></div>
+          <CareerStarMap :branches="mapBranches" :selected-index="selectedMapIndex" :center-label="graph.center" center-subtitle="你的职业探索起点" :aria-label="`职业星图，优先展示${mapBranches.length}个方向`" @select="selectBranch" @center-click="active = null" />
+          <div class="atlas-footer"><span>优先展示 {{ mapBranches.length }} 个方向 · 共 {{ graph.branches.length }} 条职业分支</span><span>点击方向查看依据与行动</span></div>
+          <p class="figure-note">星线表达职业探索的连接，不代表晋升先后。{{ graph.branches.length > 4 ? '全部方向可在下方切换。' : '' }}能力详情来自联合测评报告。</p>
         </div>
-        
-        <div v-else-if="isDataEmpty" class="overlay-state empty-state">
-          <span class="empty-icon">🛰️</span>
-          <p>当前星系坐标未建立，空间折叠尚未展开</p>
-          <p v-if="generationError" role="alert">{{ generationError }}</p>
-          <p v-if="!canGenerate">请由管理员从岗位管理页选择原始岗位，建立星图。</p>
-          <button v-if="canGenerate" @click="handleTriggerGeneration" class="cyber-btn" :disabled="isGenerating">
-            {{ isGenerating ? '⚡ 星轨引擎充能中...' : '🚀 唤醒 AI 重构星图' }}
-          </button>
-        </div>
-
-        <div v-show="!isLoading && !isDataEmpty" ref="chartRef" class="echarts-box"></div>
-        <p v-if="!isLoading && !isDataEmpty && !realGraphData.promotions?.length && !realGraphData.transfers?.length" class="graph-note">当前仅有岗位节点，尚无晋升或换岗路线数据。</p>
-      </div>
-
-      <transition name="panel-fade">
-        <div v-if="activeNode && activeNode.category && activeNode.category !== '当前岗位' && activeNode.category !== '星尘'" class="detail-panel dark-glass">
-          <div class="panel-deco-line"></div>
-          <div class="panel-header">
-            <h3>{{ activeNode.name }}</h3>
-            <span class="node-tag" :class="activeNode.category === '晋升路线' ? 'tag-up' : 'tag-transfer'">
-              {{ activeNode.category === '晋升路线' ? '🔺 维度跃升' : '🌀 平行跃迁' }}
-            </span>
-          </div>
-          <div class="panel-body">
-            <div class="info-row">
-              <span class="label">🎯 技能跃迁向量</span>
-              <span class="value">{{ activeNode.skillDiff || '核心能力平滑过渡' }}</span>
-            </div>
-            <div class="info-row" v-if="activeNode.education">
-              <span class="label">🎓 学历结界</span>
-              <span class="value">{{ activeNode.education }}</span>
-            </div>
-            <div class="info-row" v-if="activeNode.experience">
-              <span class="label">💼 经验沉淀要求</span>
-              <span class="value">{{ activeNode.experience }}</span>
-            </div>
-            <div class="info-row">
-              <span class="label">⏱️ 蜕变周期估算</span>
-              <span class="value highlight">{{ activeNode.learningCycle || '3-6' }} 个月</span>
-            </div>
-          </div>
-          <button class="close-btn" @click="activeNode = null">关闭控制台 ✕</button>
-        </div>
-      </transition>
-    </div>
-  </div>
+        <aside class="insight-panel"><span class="eyebrow">分支解读</span><h2>{{ active?.name || '你的测评摘要' }}</h2><p>{{ active?.reason || graph.summary }}</p><template v-if="active"><h3>推荐依据 · 测评原文</h3><blockquote>{{ active.evidence }}</blockquote><h3>需要补齐的能力</h3><ul><li v-for="(s,i) in active.skills" :key="i">{{ s }}</li></ul><h3>从这些行动开始</h3><ol><li v-for="(a,i) in active.actions" :key="i">{{ a }}</li></ol><router-link class="wb-button primary" :to="{path:'/assistant',query:{prompt:consultPrompt}}">和智能体深入讨论 →</router-link></template><p v-else>点击星图或下方岗位按钮，查看推荐依据和下一步行动。</p><router-link class="wb-button" to="/growth">查看成长行动计划</router-link><small>AI 整理自联合测评，仅供职业探索参考，不代表录用或晋升承诺。</small></aside>
+      </section>
+      <section v-if="graph" class="branch-list" aria-label="职业分支列表"><button v-for="(branch,i) in graph.branches" :key="i" :class="[branch.kind,{selected:active===branch}]" :aria-pressed="active===branch" @click="selectBranch(i)"><span>{{ String(i+1).padStart(2,'0') }}</span>{{ branch.name }}<small>{{ kindLabel[branch.kind] }}</small></button></section>
+    </template>
+  </main>
 </template>
-
 <script setup>
-import { ref, computed, onMounted, onUnmounted, shallowRef, nextTick } from 'vue'
-import * as echarts from 'echarts'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import axios from 'axios'
-import { useRoute } from 'vue-router'
-import API_CONFIG from '../config/api'
-
-const route = useRoute()
-const chartRef = ref(null)
-const chartInstance = shallowRef(null)
-let chartResizeObserver
-const activeNode = ref(null)
-
-const isLoading = ref(true)
-const isDataEmpty = ref(false)
-const isGenerating = ref(false)
-const generationError = ref('')
-const activeProfileId = ref(route.query.id || '232745912058150912')
-const canGenerate = computed(() => Boolean(route.query.jobInfoId) && localStorage.getItem('userRole') === '2')
-
-const realGraphData = ref({ center: null, promotions: [], transfers: [] })
-
-const baseURL = API_CONFIG.BASE_URL
-const getHeaders = () => {
-  const token = localStorage.getItem('token') || ''
-  return { 'Authorization': token.startsWith('Bearer ') ? token : `Bearer ${token}` }
+import CareerStarMap from '../components/CareerStarMap.vue'
+import '../styles/careerWorkbench.css'
+const route=useRoute()
+const router=useRouter()
+const reports=ref([]),reportId=ref(''),loading=ref(true),graphLoading=ref(false),generating=ref(false),error=ref('')
+const graph=ref(null),active=ref(null)
+const previewSelected=ref(0)
+const previewBranches=[
+  {id:'frontend',name:'前端开发',tagline:'创造可感知的数字世界',icon:'cpu',skills:['界面实现','工程能力']},
+  {id:'product',name:'产品设计',tagline:'连接用户与未来',icon:'briefcase',skills:['需求分析','用户研究']},
+  {id:'data',name:'数据分析',tagline:'用数据发现规律',icon:'trendUp',skills:['数据处理','业务洞察']},
+  {id:'ai',name:'AI 应用',tagline:'与智能共创新可能',icon:'sparkle',skills:['AI 工具','场景落地']}
+]
+const kindLabel={target:'目标方向',promotion:'进阶路径',transfer:'迁移方向'}
+const selectedReport=computed(()=>reports.value.find(r=>String(r.id)===reportId.value))
+const mapBranches=computed(()=>graph.value?.branches.slice(0,4).map((branch,index)=>({
+  ...branch,id:`branch-${index}`,tagline:kindLabel[branch.kind],icon:['cpu','briefcase','trendUp','sparkle'][index]
+}))||[])
+const selectedMapIndex=computed(()=>graph.value?.branches.indexOf(active.value)??-1)
+const consultPrompt=computed(()=>`我完成了联合测评，正在探索「${active.value?.name}」。测评依据：${active.value?.evidence}。能力差距：${active.value?.skills.join('、')}。请结合我的画像细化行动：${active.value?.actions.join('；')}。`)
+const headers=()=>{const token=localStorage.getItem('token')||'';return {Authorization:token.startsWith('Bearer ')?token:`Bearer ${token}`}}
+let request=0
+const read=res=>{if(res.data.code!==200)throw new Error(res.data.message||'读取失败');return res.data.data}
+const loadReports=async()=>{
+  loading.value=true;error.value=''
+  try{reports.value=read(await axios.get('/api/report-graph/reports',{headers:headers()}))||[];const wanted=String(route.query.reportId||'');reportId.value=String(reports.value.find(r=>String(r.id)===wanted)?.id||reports.value[0]?.id||'');if(reportId.value)await loadGraph()}
+  catch(e){error.value=e.message}finally{loading.value=false}
 }
-
-// ================= 🌟 生成繁星的随机算法 =================
-const getStarStyle = () => {
-  const size = Math.random() * 2.5 + 0.5 // 星星大小 0.5px - 3px
-  const duration = Math.random() * 3 + 1.5 // 闪烁周期 1.5s - 4.5s
-  const delay = Math.random() * 5 // 错开闪烁时间
-  return {
-    width: `${size}px`,
-    height: `${size}px`,
-    left: `${Math.random() * 100}%`,
-    top: `${Math.random() * 100}%`,
-    animationDuration: `${duration}s`,
-    animationDelay: `${delay}s`,
-    opacity: Math.random() * 0.5 + 0.1 // 初始透明度随机
-  }
+const loadGraph=async()=>{
+  const current=++request;graphLoading.value=true;graph.value=null;active.value=null;error.value=''
+  try{const data=read(await axios.get(`/api/report-graph/${reportId.value}`,{headers:headers()}));if(current===request)graph.value=data}
+  catch(e){if(current===request)error.value=e.message}finally{if(current===request)graphLoading.value=false}
 }
-
-// ================= 🌟 获取星图数据 (带超级防崩盾) =================
-const fetchGraphData = async () => {
-  const profileId = activeProfileId.value
-  try {
-    isLoading.value = true; 
-    isDataEmpty.value = false;
-    
-    const res = await axios.get(`${baseURL}/api/analysis/graph/${profileId}`, { headers: getHeaders() })
-    
-    // 防范后端嵌套多层数据
-    let remoteData = res.data.data || res.data;
-    
-    // 防范后端传回的是个 JSON 字符串
-    if (typeof remoteData === 'string') {
-        try { remoteData = JSON.parse(remoteData); } catch(e) {}
-    }
-
-    if (remoteData && remoteData.center) {
-      realGraphData.value = remoteData;
-      isLoading.value = false; 
-      
-      await nextTick(); 
-      try {
-        initChart()
-      } catch(e) {
-        console.error("星图渲染引擎报错，已安全拦截:", e);
-      }
-    } else {
-      isDataEmpty.value = true; 
-      isLoading.value = false;
-    }
-  } catch (error) {
-    console.error("接口请求失败:", error);
-    isDataEmpty.value = true; 
-    isLoading.value = false;
-  }
+const generate=async()=>{
+  if(generating.value)return
+  const current=++request;generating.value=true;error.value=''
+  try{const data=read(await axios.post(`/api/report-graph/${reportId.value}`,{},{headers:headers(),timeout:180000}));if(current!==request)return;graph.value=data}
+  catch(e){if(current===request)error.value=e.message||'生成失败，请重试'}finally{if(current===request)generating.value=false}
 }
-
-const handleTriggerGeneration = async () => {
-  const jobId = route.query.jobInfoId
-  if (!jobId || !canGenerate.value) return
-  try {
-    isGenerating.value = true
-    generationError.value = ''
-    const res = await axios.post(`${baseURL}/api/analysis/job/${jobId}`, {}, { headers: getHeaders() })
-    if (![200, 0].includes(res.data.code)) throw new Error('星图生成暂不可用，请稍后重试。')
-    const info = await axios.get(`${baseURL}/api/job-info/${jobId}`, { headers: getHeaders() })
-    const profileId = info.data.data?.jobId
-    if (!profileId) throw new Error('尚未建立岗位画像，请稍后重试。')
-    activeProfileId.value = String(profileId)
-    await fetchGraphData()
-  } catch {
-    generationError.value = '星图生成暂不可用；请确认管理员权限及 AI 平台状态。'
-  } finally {
-    isGenerating.value = false
-  }
-}
-
-// ================= 🌟 暗黑荧光数据构建 (超强容错版) =================
-const buildGraphData = () => {
-  const nodes = []
-  const links = []
-  const data = realGraphData.value
-  
-  if (!data || !data.center) return { nodes, links }
-
-  // 兜底中心点名称，防止 null
-  const centerName = data.center.name || '未知基准岗位';
-
-  // 1. 核心主星 (赛博亮蓝)
-  nodes.push({
-    name: centerName,
-    category: '当前岗位',
-    symbolSize: 95,
-    label: { position: 'bottom', width: 160, overflow: 'break' },
-    itemStyle: { 
-      color: new echarts.graphic.RadialGradient(0.3, 0.3, 1, [{ offset: 0, color: '#60A5FA' }, { offset: 1, color: '#1E3A8A' }]), 
-      shadowBlur: 50, shadowColor: '#3B82F6', borderColor: '#BFDBFE', borderWidth: 2
-    }
-  })
-
-  const dustNames = []
-
-  // 2. 晋升行星 (高亮荧光绿) - 强加 Array.isArray 校验！
-  if (Array.isArray(data.promotions)) {
-    data.promotions.forEach((p, index) => {
-      // 容错：如果后端传的是个纯字符串数组，把它变成对象
-      let nodeData = typeof p === 'string' ? { name: p } : p;
-      // 容错：如果没有名字，给个默认名字防止 Echarts 崩溃
-      let nodeName = nodeData.name || `晋升锚点 ${index + 1}`;
-      
-      const size = 50 + Math.random() * 25
-      nodes.push({ 
-        ...nodeData, 
-        name: nodeName,
-        category: '晋升路线', 
-        symbolSize: size,
-        itemStyle: { 
-          color: new echarts.graphic.RadialGradient(0.3, 0.3, 1, [{ offset: 0, color: '#34D399' }, { offset: 1, color: '#064E3B' }]), 
-          shadowBlur: 30, shadowColor: '#10B981', borderColor: '#A7F3D0', borderWidth: 1.5
-        } 
-      })
-      links.push({ source: centerName, target: nodeName, lineStyle: { width: 2 } })
-    })
-  }
-
-  // 3. 换岗行星 (幻影霓虹紫) - 强加 Array.isArray 校验！
-  if (Array.isArray(data.transfers)) {
-    data.transfers.forEach((t, index) => {
-      // 容错机制同上
-      let nodeData = typeof t === 'string' ? { name: t } : t;
-      let nodeName = nodeData.name || `换岗锚点 ${index + 1}`;
-
-      const size = 45 + Math.random() * 20
-      nodes.push({ 
-        ...nodeData, 
-        name: nodeName,
-        category: '换岗路线', 
-        symbolSize: size,
-        itemStyle: { 
-          color: new echarts.graphic.RadialGradient(0.3, 0.3, 1, [{ offset: 0, color: '#C084FC' }, { offset: 1, color: '#6B21A8' }]), 
-          shadowBlur: 30, shadowColor: '#A855F7', borderColor: '#E9D5FF', borderWidth: 1.5
-        } 
-      })
-      links.push({ source: centerName, target: nodeName, lineStyle: { width: 2 } })
-    })
-  }
-
-  // 4. 星座底纹 (填补空白的终极武器)
-  const dustColors = ['#38BDF8', '#818CF8', '#34D399', '#A78BFA']
-  for (let i = 0; i < 35; i++) {
-    const name = `dust_${Math.random()}`
-    dustNames.push(name)
-    nodes.push({
-      name, category: '星尘', symbolSize: Math.random() * 4 + 1.5,
-      itemStyle: { color: dustColors[i % dustColors.length], opacity: 0.8, shadowBlur: 10, shadowColor: dustColors[i % dustColors.length] },
-      label: { show: false }
-    })
-    links.push({ source: centerName, target: name, lineStyle: { opacity: 0 } })
-  }
-  for (let i = 0; i < 40; i++) {
-    links.push({
-      source: dustNames[Math.floor(Math.random() * dustNames.length)],
-      target: dustNames[Math.floor(Math.random() * dustNames.length)],
-      lineStyle: { opacity: 0.15, width: 0.5, type: 'dashed', curveness: 0.1, color: '#64748B' }
-    })
-  }
-
-  return { nodes, links }
-}
-
-// ================= 🌟 深空暗黑 ECharts 配置 =================
-const initChart = () => {
-  if (!chartRef.value) return
-  if (chartInstance.value) chartInstance.value.dispose()
-  
-  chartInstance.value = echarts.init(chartRef.value)
-  chartResizeObserver?.disconnect()
-  chartResizeObserver = new ResizeObserver(() => chartInstance.value?.resize())
-  chartResizeObserver.observe(chartRef.value)
-  const { nodes, links } = buildGraphData()
-
-  const option = {
-    backgroundColor: 'transparent',
-    tooltip: { 
-      trigger: 'item', 
-      backgroundColor: 'rgba(15, 23, 42, 0.9)',
-      borderColor: 'rgba(51, 65, 85, 0.8)',
-      textStyle: { color: '#F8FAFC', fontWeight: 'bold' },
-      padding: [12, 18], borderRadius: 12, boxShadow: '0 10px 30px rgba(0,0,0,0.5)',
-      formatter: (p) => {
-        if (!p.data || p.data.category === '星尘') return '';
-        return `<div>${echarts.format.encodeHTML(String(p.name || ''))}</div>`;
-      } 
-    },
-    color: ['#3B82F6', '#10B981', '#A855F7'],
-    legend: { 
-      data: ['当前岗位', '晋升路线', '换岗路线'], 
-      bottom: '4%', icon: 'circle', itemGap: 40, itemWidth: 12,
-      textStyle: { color: '#CBD5E1', fontSize: 13, fontWeight: '700' }
-    },
-    series: [{
-      type: 'graph',
-      layout: 'force',
-      force: { 
-        repulsion: [1500, 4000],
-        edgeLength: [150, 400], 
-        gravity: 0.05,
-        friction: 0.1 
-      },
-      roam: true,
-      categories: [{ name: '当前岗位' }, { name: '晋升路线' }, { name: '换岗路线' }, { name: '星尘' }],
-      label: { 
-        show: true, 
-        position: 'right', 
-        distance: 12,
-        formatter: (p) => (p.data && p.data.category === '星尘') ? '' : `{title|${p.name}}`,
-        rich: {
-          title: {
-            color: '#F8FAFC',
-            fontSize: 13,
-            fontWeight: 800,
-            backgroundColor: 'rgba(15, 23, 42, 0.7)',
-            borderColor: 'rgba(51, 65, 85, 0.8)',
-            borderWidth: 1.5,
-            padding: [6, 14],
-            borderRadius: 20,
-            shadowColor: 'rgba(0,0,0,0.5)',
-            shadowBlur: 10,
-          }
-        }
-      },
-      data: nodes,
-      links: links,
-      lineStyle: { color: 'source', curveness: 0.25, opacity: 0.4 },
-      emphasis: { 
-        focus: 'adjacency', 
-        lineStyle: { width: 4, opacity: 1, shadowBlur: 15, shadowColor: 'rgba(255,255,255,0.5)' },
-        itemStyle: { shadowBlur: 60 }
-      }
-    }],
-    animationEasingUpdate: 'quinticInOut', animationDurationUpdate: 2500
-  }
-  
-  chartInstance.value.setOption(option)
-  
-  chartInstance.value.on('click', (p) => {
-    if (p.dataType === 'node' && p.data && p.data.category !== '星尘') {
-      activeNode.value = p.data
-    }
-  })
-  
-  chartInstance.value.getZr().on('click', (p) => {
-    if (!p.target) activeNode.value = null
-  })
-}
-
-const handleResize = () => chartInstance.value?.resize()
-onMounted(() => {
-  fetchGraphData()
-  window.addEventListener('resize', handleResize)
-})
-
-onUnmounted(() => {
-  chartResizeObserver?.disconnect()
-  window.removeEventListener('resize', handleResize)
-  if (chartInstance.value) chartInstance.value.dispose()
-})
+const selectBranch=i=>{active.value=graph.value.branches[i]}
+onMounted(loadReports)
+onUnmounted(()=>{++request})
 </script>
-
 <style scoped>
-/* 🌟 终极暗黑宇宙底层 */
-.graph-page.dark-universe { width: 100%; height: 100%; min-height: 0; display: flex; flex-direction: column; background: radial-gradient(ellipse at bottom, #589dec 0%, #394b9c 100%); padding: 24px; overflow: hidden; box-sizing: border-box; font-family: 'Inter', -apple-system, sans-serif; position: relative; }
-
-/* 🌟 满天繁星生成器 */
-.starfield { position: absolute; inset: 0; pointer-events: none; z-index: 0; overflow: hidden;}
-.star { position: absolute; background: white; border-radius: 50%; box-shadow: 0 0 8px 2px rgba(255, 255, 255, 0.4); animation: twinkle linear infinite alternate; }
-@keyframes twinkle { 
-  0% { transform: scale(0.8); opacity: 0.1; } 
-  100% { transform: scale(1.2); opacity: 1; } 
-}
-/* 巨大的深空星云光晕 */
-.nebula-glow { position: absolute; width: 1200px; height: 1200px; border-radius: 50%; filter: blur(200px); opacity: 0.15; z-index: 0; pointer-events: none;}
-.glow-1 { top: -20%; left: -10%; background: #31539d; }
-.glow-2 { bottom: -20%; right: -10%; background: #9333EA; }
-/* 头部科幻排版 */
-.page-header { text-align: center; margin-bottom: 25px; z-index: 2; position: relative; }
-.neon-text { font-size: 2.2rem; font-weight: 900; color: #F8FAFC; margin: 0 0 8px 0; letter-spacing: 2px; text-shadow: 0 0 20px rgba(75, 128, 212, 0.8), 0 0 40px rgba(59, 130, 246, 0.4);}
-.subtitle { color: #94A3B8; margin: 0; font-size: 1.05rem; font-weight: 500; letter-spacing: 3px; text-transform: uppercase;}
-.graph-workspace { flex: 1; min-height: 0; position: relative; display: flex; justify-content: center; z-index: 1;}
-/* 极客黑晶玻璃态主容器 */
-.chart-container.dark-glass { width: 100%; height: 100%; border-radius: 30px; position: relative; background: rgba(17, 47, 122, 0.4); backdrop-filter: blur(15px); overflow: hidden; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.05), 0 20px 50px rgba(0,0,0,0.5);}
-.echarts-box { width: 100%; height: 100%; min-height: 0; }
-.graph-note { position: absolute; top: 10px; left: 16px; right: 16px; color: #E2E8F0; text-align: center; font-size: 13px; pointer-events: none; }
-/* 加载状态与空状态（暗黑版） */
-.overlay-state { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 20px; background: rgba(2, 6, 23, 0.7); backdrop-filter: blur(10px); z-index: 5;}
-.quantum-loader { width: 60px; height: 60px; border-radius: 50%; border: 3px solid rgba(56, 189, 248, 0.1); border-top-color: #38BDF8; border-right-color: #818CF8; animation: spin 1s linear infinite; box-shadow: 0 0 30px rgba(56, 189, 248, 0.3); }
-@keyframes spin { to { transform: rotate(360deg); } }
-.loading-text { color: #38BDF8; font-weight: 800; font-size: 1.1rem; letter-spacing: 2px;}
-.empty-state p { color: #94A3B8; font-weight: 600; font-size: 1.1rem;}
-.empty-icon { font-size: 5rem; margin-bottom: -10px; filter: drop-shadow(0 0 20px rgba(56, 189, 248, 0.4));}
-.cyber-btn { padding: 16px 32px; background: rgba(15, 23, 42, 0.8); color: #38BDF8; border: 1px solid #38BDF8; border-radius: 12px; cursor: pointer; font-size: 1.05rem; font-weight: 800; transition: all 0.3s ease; box-shadow: 0 0 15px rgba(56, 189, 248, 0.2), inset 0 0 15px rgba(56, 189, 248, 0.1);}
-.cyber-btn:hover:not(:disabled) { transform: translateY(-3px); background: #38BDF8; color: #020617; box-shadow: 0 0 30px rgba(56, 189, 248, 0.5);}
-/* 🌟 深空探测站（暗黑悬浮面板） */
-.detail-panel.dark-glass { position: absolute; right: 40px; top: 40px; width: 340px; padding: 28px; border-radius: 24px; background: rgba(15, 23, 42, 0.85); z-index: 100; box-shadow: 0 30px 60px rgba(0,0,0,0.6), inset 0 0 0 1px rgba(255,255,255,0.1); backdrop-filter: blur(25px); display: flex; flex-direction: column; gap: 20px;}
-.panel-deco-line { position: absolute; left: 0; top: 30px; bottom: 30px; width: 4px; background: linear-gradient(to bottom, #38BDF8, #818CF8); border-radius: 0 4px 4px 0; box-shadow: 0 0 10px rgba(56, 189, 248, 0.5);}
-.panel-header { border-bottom: 1px solid rgba(58, 119, 205, 0.2); padding-bottom: 18px; }
-.panel-header h3 { margin: 0 0 12px 0; font-size: 1.3rem; color: #F8FAFC; font-weight: 900; line-height: 1.3; text-shadow: 0 0 10px rgba(255,255,255,0.2);}
-.node-tag { padding: 6px 14px; border-radius: 12px; font-size: 0.8rem; font-weight: 900; display: inline-block; border: 1px solid transparent;}
-.tag-up { background: rgba(5, 150, 105, 0.2); color: #34D399; border-color: rgba(52, 211, 153, 0.3); }
-.tag-transfer { background: rgba(109, 40, 217, 0.2); color: #C084FC; border-color: rgba(192, 132, 252, 0.3); }
-.panel-body { display: flex; flex-direction: column; gap: 16px; }
-.info-row { display: flex; flex-direction: column; gap: 8px; }
-.info-row .label { color: #94A3B8; font-size: 0.85rem; font-weight: 800; letter-spacing: 1px;}
-.info-row .value { color: #E2E8F0; font-weight: 700; background: rgba(30, 41, 59, 0.6); padding: 12px 16px; border-radius: 12px; display: block; border: 1px solid rgba(148, 163, 184, 0.1); font-size: 0.95rem; line-height: 1.5;}
-.highlight { color: #38BDF8 !important; font-weight: 900 !important; background: rgba(56, 189, 248, 0.1) !important; border-color: rgba(56, 189, 248, 0.3) !important; text-shadow: 0 0 8px rgba(56,189,248,0.4); }
-.close-btn { width: 100%; margin-top: 10px; padding: 14px; border: 1px solid rgba(148, 163, 184, 0.2); border-radius: 12px; cursor: pointer; background: transparent; font-weight: 900; color: #94A3B8; transition: 0.3s; font-size: 0.95rem;}
-.close-btn:hover { background: rgba(255,255,255,0.05); color: #F8FAFC; border-color: rgba(255,255,255,0.2);}
-.panel-fade-enter-active, .panel-fade-leave-active { transition: all 0.5s cubic-bezier(0.2, 1, 0.3, 1); }
-.panel-fade-enter-from, .panel-fade-leave-to { opacity: 0; transform: translateX(30px) scale(0.95); filter: blur(5px); }
-@media (max-width: 700px) {
-  .graph-page.dark-universe { padding: 12px; }
-  .neon-text { font-size: 1.35rem; letter-spacing: 0; }
-  .subtitle { font-size: .85rem; letter-spacing: 0; }
-  .detail-panel.dark-glass { inset: 12px; width: auto; max-height: calc(100% - 24px); padding: 16px; box-sizing: border-box; overflow-y: auto; }
-}
+.scientific-atlas{--wb-accent:#315d78;--wb-border:#ded5c8;background:#f7f4ed}
+.workbench-heading h1{font-size:30px;letter-spacing:0}
+.source-bar{display:flex;align-items:center;gap:18px;background:#fff;border:1px solid var(--wb-border);padding:16px 20px;border-radius:10px;margin:22px 0}
+.source-bar>div{flex:1;min-width:0}.source-bar label{display:block;font-size:11px;color:var(--wb-muted);margin-bottom:6px}
+.source-bar select{width:100%;border:0;background:transparent;font:inherit;color:var(--wb-ink)}
+.source-date,.saved-mark{font-size:12px;color:var(--wb-muted)}.saved-mark{color:#557544}
+.atlas-layout{display:grid;grid-template-columns:minmax(0,1fr);gap:18px}
+.atlas-panel{background:#fff;border:1px solid var(--wb-border);border-radius:12px;min-width:0;overflow:hidden}
+.atlas-toolbar{padding:24px 24px 16px;display:flex;align-items:center;justify-content:space-between;gap:16px}
+.atlas-toolbar h2{font-size:21px;margin:10px 0 0;overflow-wrap:anywhere}
+.atlas-toolbar .eyebrow{color:#697586;font-size:10px;letter-spacing:1px}
+.chart-reset{background:#fff;color:#536176;border:1px solid #d8dfe8;border-radius:7px;padding:9px 13px;cursor:pointer;white-space:nowrap}
+.chart-reset:hover{background:#f2f5fa}
+.atlas-legend{display:flex;gap:22px;flex-wrap:wrap;padding:0 24px 22px;color:#566174;font-size:12px}
+.atlas-legend span{display:flex;align-items:center;gap:7px}
+.atlas-legend span::before{content:'';width:11px;height:11px;border-radius:3px;background:#d9e2f4;border:1px solid #4773ca}
+.atlas-legend .promotion::before{background:#e2f1d8;border-color:#81975e}.atlas-legend .transfer::before{background:#f9dade;border-color:#b76679}
+.atlas-scroll{overflow-x:auto;border-top:1px solid #e9edf1;background:#fff}
+.atlas-diagram{min-width:1100px}
+.column-labels{display:grid;grid-template-columns:26% 32% 42%;border-bottom:1px solid #edf0f3;padding:14px 0;font-size:12px;color:#667281;text-align:center;background:#fafbfc}
+.column-labels b{font-family:Georgia,serif;font-size:17px;color:#263448;margin-right:8px}
+.atlas-canvas{width:100%}
+.atlas-footer{border-top:1px solid #e9edf1;display:flex;gap:10px;justify-content:space-between;padding:14px 24px 8px;color:#667281;font-size:11px;flex-wrap:wrap}
+.figure-note{font-size:11px;line-height:1.8;color:#77808c;margin:0;padding:0 24px 16px}
+.insight-panel{background:#fff;border:1px solid var(--wb-border);border-radius:12px;padding:24px;min-width:0}
+.insight-panel h2{font-size:21px;line-height:1.4;margin:12px 0;overflow-wrap:anywhere}
+.insight-panel h3{font-size:13px;margin-top:22px}
+.insight-panel p,.insight-panel li{font-size:13px;line-height:1.85;color:#59677b;overflow-wrap:anywhere}
+.insight-panel blockquote{font-size:12px;line-height:1.8;color:#50617c;margin:12px 0;border-left:3px solid #86b9e0;padding:12px 16px;background:#f3f7fc}
+.insight-panel ul,.insight-panel ol{padding-left:18px}
+.insight-panel .wb-button{margin:12px 10px 0 0}
+.insight-panel small{display:block;font-size:11px;line-height:1.8;color:var(--wb-muted);margin-top:20px}
+.branch-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin:18px 0}
+.branch-list button{display:flex;align-items:center;gap:10px;border:1px solid var(--wb-border);border-left:3px solid #4773ca;padding:14px;border-radius:8px;background:#fff;color:var(--wb-ink);cursor:pointer;text-align:left;font:inherit;font-size:12px}
+.branch-list button.promotion{border-left-color:#81975e}.branch-list button.transfer{border-left-color:#b76679}
+.branch-list span{font:12px monospace;color:#6580a2}.branch-list small{margin-left:auto;color:#6a7a91;font-size:10px;white-space:nowrap}
+.branch-list button:hover,.branch-list .selected{background:#f0f4fb;border-color:#4773ca}
+.wb-empty small{display:block;margin-top:22px;color:var(--wb-muted)}
+@media(min-width:1560px){.atlas-layout{grid-template-columns:minmax(840px,1fr) 300px}}
+@media(max-width:900px){.source-bar{flex-wrap:wrap}.source-bar>div{flex-basis:100%}.workbench-heading h1{font-size:26px}.atlas-toolbar{padding:20px}.atlas-legend{padding-left:20px}}
+.scientific-atlas .workbench-heading h1,.scientific-atlas .atlas-toolbar h2,.scientific-atlas .insight-panel h2{font-family:'Noto Serif SC','Source Han Serif SC',serif;color:#14314b}
+.scientific-atlas .source-bar,.scientific-atlas .atlas-panel,.scientific-atlas .insight-panel{border-color:#ded5c8;background:#fffdf8}
+.scientific-atlas .atlas-scroll{background:#fffdf8;border-top-color:#e4dac8}
+.scientific-atlas .column-labels{background:#faf6ee;border-bottom-color:#e4dac8}
+.scientific-atlas .wb-button.primary{border-color:#b89158;background:#f0dbb2;color:#19354c}
+.scientific-atlas .insight-panel blockquote{border-left-color:#b89158;background:#faf5e9}
+.graph-star-panel .atlas-toolbar{align-items:center;padding:17px 23px 15px;border-bottom:1px solid #e4dac8}
+.graph-star-panel .atlas-toolbar h2{margin:4px 0 0;font-size:19px}
+.graph-source-mark{flex:0 0 auto;padding:7px 10px;border:1px solid #d8c5a5;border-radius:30px;color:#8c6e45;background:#fbf6ea;font-size:10px}
+.graph-empty{padding:42px 24px 30px}.graph-empty>small{margin:17px 0 0}.graph-preview-map{max-width:980px;margin:24px auto 0;border:1px solid #e1d3ba;border-radius:8px;overflow:hidden;text-align:left}
+.graph-star-panel .figure-note{padding-top:4px}.graph-star-panel .atlas-footer{border-color:#e4dac8;background:#fffdf8}
+@media(min-width:1400px){.atlas-layout{grid-template-columns:minmax(0,1fr) minmax(290px,320px)}}
+@media(max-width:900px){.graph-source-mark{display:none}.graph-empty{padding:27px 13px}.graph-preview-map{margin-top:19px}}
 </style>

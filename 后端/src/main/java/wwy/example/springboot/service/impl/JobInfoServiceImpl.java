@@ -99,7 +99,6 @@ public class JobInfoServiceImpl implements JobInfoService {
             wrapper.like(JobInfo::getJobName, jobName);
         }
         wrapper.orderByDesc(JobInfo::getCreateTime);
-        // 同一秒导入的岗位也有稳定顺序，翻页不会因时间戳相同而重复或遗漏。
         wrapper.orderByDesc(JobInfo::getId);
         return jobInfoMapper.selectPage(page, wrapper);
     }

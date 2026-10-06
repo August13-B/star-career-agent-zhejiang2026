@@ -1,26 +1,25 @@
 <template>
   <div class="innovative-score-page">
-    <div class="mesh-background">
-      <div class="color-blob blob-1"></div>
-      <div class="color-blob blob-2"></div>
-      <div class="color-blob blob-3"></div>
-      <div class="grid-overlay"></div>
-    </div>
+    <div class="mesh-background" aria-hidden="true"></div>
 
     <div class="page-container">
       <div class="page-header">
-        <div class="title-badge">
-          <span class="pulse-dot"></span> AI 综合能力评估矩阵
+        <div class="assessment-heading">
+          <div class="title-badge"><span class="pulse-dot"></span> 职业旅程 / 能力补充</div>
+          <h1 class="gradient-text">能力补充测评</h1>
+          <p class="header-description">以个人画像为起点，看见能力优势与下一步成长方向。</p>
         </div>
-        <h1 class="gradient-text">多维神经元测算系统</h1>
+        <router-link class="back-to-graph" :to="{ path: '/graph', query: { target } }">返回职业星图 <span aria-hidden="true">↗</span></router-link>
       </div>
+      <div class="assessment-flow"><CareerNextSteps :target="target" /><router-link class="full-assessment-link" to="/multi-agent">完整测评从多智能体联合测评开始 →</router-link></div>
+      <p class="assessment-disclaimer">测评结合已保存的画像与能力描述，仅供职业探索参考，不代表录用概率或正式考试成绩。</p>
 
       <div class="holographic-layout">
         
         <div class="control-glass-panel">
           <div class="panel-deco-line"></div>
           <h3 class="panel-title">
-            <span class="icon">🧠</span> 测算控制台
+            <AppIcon name="radar" :size="21" /> 输入测评重点
           </h3>
           
           <div class="input-group">
@@ -34,14 +33,8 @@
             </div>
           </div>
 
-          <div class="input-group slider-group">
-            <label>AI 严谨度 <span class="temp-val">{{ temperature }}</span></label>
-            <input type="range" v-model.number="temperature" min="0.1" max="1.0" step="0.1" class="hologram-slider" />
-            <div class="slider-labels">
-              <span>精准客观</span>
-              <span>发散创造</span>
-            </div>
-          </div>
+          <p>测评会使用个人中心已保存的画像与能力描述；请先补全实际经历。结果会供后续智能体咨询与职业报告参考。</p>
+          <p v-if="historyError" role="alert">{{ historyError }}</p>
 
           <button 
             class="start-btn" 
@@ -49,7 +42,7 @@
             :disabled="isAnalyzing || !analyzeMessage.trim()"
             :class="{ 'is-loading': isAnalyzing }"
           >
-            <span v-if="!isAnalyzing" class="btn-text">🚀 启动全息扫描</span>
+            <span v-if="!isAnalyzing" class="btn-text">开始能力测评 <span aria-hidden="true">→</span></span>
             <span v-else class="btn-text">
               <div class="cyber-dots"><span></span><span></span><span></span></div>
               深度测算中...
@@ -60,7 +53,7 @@
           <transition name="slide-up">
             <div v-if="scoreData" class="insight-box">
               <div class="insight-header">
-                <span class="icon">💡</span> 
+                <AppIcon name="sparkle" :size="18" />
                 <span>AI 测算综述</span>
               </div>
               <div class="insight-content">
@@ -71,6 +64,7 @@
         </div>
 
         <div class="radar-glass-panel">
+          <div class="radar-panel-label"><span>图 02 · 能力雷达</span><small>基于个人画像与测评描述</small></div>
           
           <div v-if="!scoreData && !isAnalyzing" class="empty-state">
             <div class="holo-ring"></div>
@@ -83,7 +77,7 @@
               <div class="grid-circle"></div>
               <div class="grid-circle inner"></div>
             </div>
-            <p class="scanning-text">正在通过千万级简历库进行多维比对</p>
+            <p class="scanning-text">正在结合个人画像与目标方向分析能力，请稍候</p>
           </div>
 
           <div v-show="scoreData && !isAnalyzing" class="chart-wrapper">
@@ -112,13 +106,19 @@ import { ref, onMounted, onUnmounted, shallowRef, nextTick } from 'vue'
 import * as echarts from 'echarts'
 import axios from 'axios'
 import API_CONFIG from '../config/api'
+import { useRoute } from 'vue-router'
+import CareerNextSteps from '../components/CareerNextSteps.vue'
+import AppIcon from '../components/AppIcon.vue'
+const route = useRoute()
+const target = typeof route.query.target === 'string' ? route.query.target.slice(0, 200) : ''
 
 const baseURL = API_CONFIG.BASE_URL
 
-const analyzeMessage = ref('重点分析该学生的编程能力和项目实践能力，偏向互联网后端开发方向')
+const analyzeMessage = ref(`请结合我的个人画像和能力描述，分析${target || '我的职业意向'}所需能力，指出已有优势、证据不足之处及下一步行动。`)
 const temperature = ref(0.1)
 const isAnalyzing = ref(false)
 const scoreData = ref(null)
+const historyError = ref('')
 const decryptedComment = ref('')
 
 const radarChartRef = ref(null)
@@ -138,8 +138,7 @@ const startAnalysis = async () => {
   }
   
   isAnalyzing.value = true
-  scoreData.value = null
-  decryptedComment.value = ''
+  historyError.value = ''
 
   try {
     const payload = {
@@ -152,10 +151,11 @@ const startAnalysis = async () => {
 
     if (res.data.code === 10001 || res.data.code === 200 || res.data.code === 0) {
       const data = Array.isArray(res.data.data) ? res.data.data[0] : res.data.data
+      if (!data || data.totalScore == null) throw new Error('测评结果不完整，请重试')
       scoreData.value = data
       
       // ... 前面的代码 ...
-      decryptedComment.value = "AI 已完成测算" + String(data.scoreComment || '').substring(0, 500)
+      decryptedComment.value = String(data.scoreComment || '')
 
       await nextTick()
       // 🌟 修复 ECharts 缩骨功：延迟 150 毫秒，等 CSS 和 Flexbox 把盒子完全撑开后再画图！
@@ -187,9 +187,9 @@ const renderRadarChart = () => {
     backgroundColor: 'transparent',
     tooltip: {
       trigger: 'item',
-      backgroundColor: 'rgba(255, 255, 255, 0.95)',
-      borderColor: '#E2E8F0',
-      textStyle: { color: '#1E293B', fontWeight: 'bold' },
+      backgroundColor: 'rgba(255, 252, 244, 0.97)',
+      borderColor: '#d4bd91',
+      textStyle: { color: '#173a55', fontWeight: 'bold' },
       padding: [15, 20],
       borderRadius: 12,
       boxShadow: '0 10px 30px rgba(0,0,0,0.1)'
@@ -208,22 +208,22 @@ const renderRadarChart = () => {
         { name: '证书资质', max: 100 }
       ],
       shape: 'polygon',
-      radius: '68%',
+      radius: window.innerWidth <= 720 ? '52%' : '68%',
       splitNumber: 5,
       axisName: {
-        color: '#475569',
-        fontSize: 13,
+        color: '#3d5a70',
+        fontSize: window.innerWidth <= 720 ? 10 : 13,
         fontWeight: 800,
-        padding: [5, 10]
+        padding: window.innerWidth <= 720 ? [2, 2] : [5, 10]
       },
       splitLine: {
-        lineStyle: { color: ['rgba(74, 144, 226, 0.1)', 'rgba(74, 144, 226, 0.2)', 'rgba(74, 144, 226, 0.3)'].reverse() }
+        lineStyle: { color: ['rgba(46, 84, 109, 0.12)', 'rgba(46, 84, 109, 0.2)', 'rgba(46, 84, 109, 0.34)'].reverse() }
       },
       splitArea: { 
         show: true,
-        areaStyle: { color: ['rgba(255,255,255,0.4)', 'rgba(240,249,255,0.4)'] }
+        areaStyle: { color: ['rgba(255,252,244,0.56)', 'rgba(233,226,211,0.36)'] }
       },
-      axisLine: { lineStyle: { color: 'rgba(74, 144, 226, 0.3)' } }
+      axisLine: { lineStyle: { color: 'rgba(46, 84, 109, 0.34)' } }
     },
     series: [
       {
@@ -240,19 +240,19 @@ const renderRadarChart = () => {
             symbol: 'circle',
             symbolSize: 8,
             itemStyle: {
-              color: '#3B82F6',
+              color: '#bd945a',
               borderColor: '#FFFFFF',
               borderWidth: 2,
               shadowBlur: 10,
-              shadowColor: '#3B82F6'
+              shadowColor: '#d7b67e'
             },
             areaStyle: {
               color: new echarts.graphic.RadialGradient(0.5, 0.5, 1, [
-                { offset: 0, color: 'rgba(59, 130, 246, 0.2)' },
-                { offset: 1, color: 'rgba(59, 130, 246, 0.6)' }
+                { offset: 0, color: 'rgba(206, 165, 98, 0.16)' },
+                { offset: 1, color: 'rgba(22, 66, 95, 0.52)' }
               ])
             },
-            lineStyle: { width: 3, color: '#3B82F6', shadowBlur: 10, shadowColor: 'rgba(59,130,246,0.5)' }
+            lineStyle: { width: 3, color: '#b78d51', shadowBlur: 10, shadowColor: 'rgba(183,141,81,0.48)' }
           }
         ]
       }
@@ -264,9 +264,33 @@ const renderRadarChart = () => {
   chartInstance.value.setOption(option)
 }
 
-onMounted(() => { window.addEventListener('resize', () => chartInstance.value?.resize()) })
+const resizeChart = () => {
+  if (!chartInstance.value) return
+  const compact = window.innerWidth <= 720
+  chartInstance.value.setOption({
+    radar: {
+      radius: compact ? '52%' : '68%',
+      axisName: { fontSize: compact ? 10 : 13, padding: compact ? [2, 2] : [5, 10] }
+    }
+  })
+  chartInstance.value.resize()
+}
+onMounted(async () => {
+  window.addEventListener('resize', resizeChart)
+  const userId = localStorage.getItem('userId') || ''
+  if (!/^\d+$/.test(userId)) return
+  try {
+    const res = await axios.get(`${baseURL}/api/ability/score/user/${userId}`, { headers: getHeaders() })
+    if (res.data.code !== 200) throw new Error(res.data.message || '读取测评失败')
+    const scores = Array.isArray(res.data.data) ? res.data.data : []
+    scoreData.value = [...scores].sort((a, b) => String(b.updateTime || b.createTime || '').localeCompare(String(a.updateTime || a.createTime || '')))[0] || null
+    decryptedComment.value = scoreData.value?.scoreComment || ''
+    await nextTick()
+    if (scoreData.value) renderRadarChart()
+  } catch (e) { historyError.value = '历史测评读取失败，请检查登录状态后重试。' }
+})
 onUnmounted(() => {
-  window.removeEventListener('resize', () => chartInstance.value?.resize())
+  window.removeEventListener('resize', resizeChart)
   if (chartInstance.value) chartInstance.value.dispose()
 })
 </script>
@@ -368,4 +392,75 @@ onUnmounted(() => {
 .cyber-dots span { display: inline-block; width: 6px; height: 6px; background: #3B82F6; border-radius: 50%; margin: 0 2px; animation: bounce 1.4s infinite ease-in-out; }
 .cyber-dots span:nth-child(1) { animation-delay: -0.32s; }
 .cyber-dots span:nth-child(2) { animation-delay: -0.16s; }
+.innovative-score-page { width:100%; height:100%; min-height:0; overflow:auto; align-items:flex-start; }
+.page-container { height:auto; min-height:90vh; box-sizing:border-box; padding:24px; }
+.control-glass-panel { box-sizing:border-box; overflow:auto; }
+@media (max-width: 1100px) {
+  .holographic-layout { flex-direction:column; }
+  .control-glass-panel { width:100%; }
+  .radar-glass-panel { min-height:480px; padding:12px; }
+  .radar-chart { min-height:480px; }
+  .gradient-text { font-size:1.7rem; }
+}
+
+/* 山海星图主题：保留雷达、扫描与分数动画，只统一界面材质和层级。 */
+.innovative-score-page{--score-ink:#14314b;--score-muted:#596f80;--score-gold:#bb955d;display:block;width:100%;height:auto;min-height:100%;overflow:visible;background:#f7f4ed;color:var(--score-ink);font-family:'Noto Sans SC','Microsoft YaHei',system-ui,sans-serif}
+.mesh-background{position:fixed;inset:0;background:url('../assets/images/atlas-map-bg-v2.png') center 42%/cover no-repeat;opacity:.16;pointer-events:none}
+.color-blob,.grid-overlay{display:none}
+.page-container{width:min(100%,1380px);max-width:1380px;min-height:100%;height:auto;margin:0 auto;padding:clamp(26px,3.2vw,48px) clamp(22px,3vw,46px) 46px;box-sizing:border-box}
+.page-header{display:flex;flex-direction:row;align-items:flex-end;justify-content:space-between;gap:20px;margin:0 0 20px;text-align:left}
+.assessment-heading{min-width:0}
+.title-badge{padding:0;border:0;border-radius:0;background:none;box-shadow:none;backdrop-filter:none;color:#9b7847;font-size:11px;letter-spacing:.18em}
+.pulse-dot{width:7px;height:7px;background:#b89158;box-shadow:0 0 0 3px rgba(184,145,88,.15)}
+.gradient-text{margin:11px 0 6px;background:none;color:var(--score-ink);-webkit-text-fill-color:currentColor;filter:none;font-family:'Noto Serif SC','Source Han Serif SC',serif;font-size:clamp(30px,3vw,44px);font-weight:800;letter-spacing:.02em;line-height:1.25}
+.header-description{margin:0;color:var(--score-muted);font-size:13px;line-height:1.7}
+.back-to-graph{display:inline-flex;align-items:center;gap:14px;padding:10px 14px;border:1px solid #cdb88f;border-radius:7px;background:rgba(255,252,245,.84);color:#31516a;font-size:12px;font-weight:700;text-decoration:none;white-space:nowrap}
+.back-to-graph:hover{background:#f2e4ca}
+.assessment-flow{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px;padding:0 0 7px}
+.assessment-flow :deep(.career-next){flex:1;min-width:0}
+.full-assessment-link{color:#86663a;font-size:12px;text-decoration:none;white-space:nowrap}
+.full-assessment-link:hover{text-decoration:underline}
+.assessment-disclaimer{margin:3px 0 22px;color:#718090;font-size:11px;line-height:1.7}
+.holographic-layout{display:grid;grid-template-columns:minmax(310px,370px) minmax(0,1fr);align-items:stretch;gap:18px;min-height:580px}
+.control-glass-panel,.radar-glass-panel{width:auto;min-width:0;padding:27px;border:1px solid #ded3c0;border-radius:10px;background:rgba(255,253,247,.94);box-shadow:0 12px 35px rgba(24,49,70,.06);backdrop-filter:none}
+.control-glass-panel{overflow:visible}
+.panel-deco-line{top:26px;width:3px;height:35px;background:#bc965d}
+.panel-title{margin-bottom:23px;color:var(--score-ink);font-family:'Noto Serif SC',serif;font-size:19px;gap:9px}
+.panel-title .app-icon{color:#ac8048}
+.input-group{gap:8px;margin-bottom:18px}
+.input-group label{color:#36536a;font-size:12px}
+.textarea-wrapper{border:1px solid #dccfbb;border-radius:8px;background:#fffdf8;box-shadow:none}
+.textarea-wrapper textarea{height:152px;padding:14px;color:#233f56;font-family:inherit;font-size:13px;line-height:1.75}
+.focus-border{border-radius:8px}
+.textarea-wrapper:focus-within .focus-border{border-color:#aa854e;box-shadow:0 0 0 3px rgba(184,145,88,.12)}
+.control-glass-panel>p{color:var(--score-muted);font-size:12px;line-height:1.75}
+.start-btn{min-height:48px;margin-top:16px;padding:11px 15px;border:1px solid #aa8249;border-radius:7px;background:#173a55;box-shadow:0 8px 18px rgba(17,47,73,.16)}
+.start-btn:hover:not(:disabled){background:#244b66;box-shadow:0 12px 23px rgba(17,47,73,.21)}
+.btn-text{font-size:13px;letter-spacing:.08em}
+.btn-glow{background:radial-gradient(circle,rgba(234,200,142,.3),transparent 70%)}
+.insight-box{margin-top:25px;padding:18px;border:1px solid #dfd0b5;border-radius:8px;background:#faf3e7;box-shadow:none}
+.insight-header{color:#8b6737;font-size:13px}
+.insight-content p{color:#3e5567;font-size:12px}
+.radar-glass-panel{position:relative;min-height:580px;padding:54px 17px 17px;justify-content:center}
+.radar-panel-label{position:absolute;z-index:2;top:20px;left:25px;right:25px;display:flex;justify-content:space-between;gap:12px;color:#8b714b;font-size:11px;font-weight:700;letter-spacing:.08em}
+.radar-panel-label small{color:#87949b;font-size:10px;font-weight:400;letter-spacing:0}
+.empty-state{gap:21px;color:#61778a;font-size:13px}
+.holo-ring{width:116px;height:116px;border-color:#c7a66f}
+.holo-ring::after{border-color:rgba(32,72,101,.34)}
+.radar-scanner{background:#f4eddf;border-color:#c5a66f;box-shadow:0 0 30px rgba(190,150,88,.18)}
+.grid-circle{border-color:rgba(176,133,76,.45)}
+.sweep{background:linear-gradient(90deg,transparent,rgba(190,150,88,.72))}
+.scanning-text{color:#345771;font-size:13px;letter-spacing:.08em;text-align:center;text-shadow:none}
+.chart-wrapper{min-height:500px}
+.radar-chart{min-height:500px}
+.score-hero{top:16px;right:15px;width:104px;height:104px;border:1px solid #d9bf8f;background:rgba(255,252,244,.96);box-shadow:0 9px 22px rgba(30,51,66,.12)}
+.bg-circle{stroke:#e6d9c2}
+.progress-circle{stroke:#bd945a}
+.score-label{color:#7d6c52;font-size:10px}
+.score-value{color:var(--score-ink);font-family:'Noto Serif SC',serif;font-size:31px}
+.cyber-dots span{background:#e8be7b}
+.innovative-score-page :focus-visible{outline:2px solid #b78948;outline-offset:3px}
+@media(max-width:1100px){.holographic-layout{grid-template-columns:1fr}.control-glass-panel{width:100%}.radar-glass-panel{min-height:510px}.radar-chart{min-height:440px}.chart-wrapper{min-height:440px}}
+@media(max-width:720px){.page-container{padding:24px 16px 32px}.page-header{align-items:flex-start}.back-to-graph{font-size:11px;padding:9px}.assessment-flow :deep(.career-next){flex-basis:100%}.full-assessment-link{white-space:normal}.assessment-disclaimer{margin-bottom:16px}.holographic-layout{gap:14px}.control-glass-panel,.radar-glass-panel{padding:22px 18px}.radar-glass-panel{min-height:460px;padding-top:52px}.radar-panel-label{top:18px;left:18px;right:18px}.radar-panel-label small{display:none}.chart-wrapper{min-height:410px;flex-direction:column;justify-content:flex-start}.radar-chart{height:350px;min-height:350px}.score-hero{position:relative;top:auto;right:auto;align-self:flex-end;width:80px;height:80px;margin-bottom:-10px}.score-value{font-size:25px}}
+@media(prefers-reduced-motion:reduce){.color-blob,.pulse-dot,.holo-ring,.holo-ring::after,.sweep,.cyber-dots span{animation:none!important}.slide-up-enter-active,.slide-up-leave-active,.progress-circle{transition:none!important}}
 </style>

@@ -8,6 +8,9 @@ import org.example.web.entity.CareerReport;
 
 @Mapper
 public interface CareerReportMapper {
+    @org.apache.ibatis.annotations.Update("UPDATE career_report SET report_content=#{next} WHERE id=#{id} AND user_id=#{userId} AND is_deleted=0 AND CAST(report_content AS JSON)=CAST(#{previous} AS JSON)")
+    int saveGraphIfUnchanged(@Param("id") Long id, @Param("userId") Long userId,
+            @Param("previous") String previous, @Param("next") String next);
     
     int insert(CareerReport careerReport);
     

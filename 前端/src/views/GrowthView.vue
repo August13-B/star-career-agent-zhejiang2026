@@ -317,4 +317,14 @@ onMounted(load)
 .add-task { display: flex; gap: 10px; margin-top: 14px; }
 .add-task input { flex: 1; padding: 10px 12px; border: 1px dashed #CBD5E1; border-radius: 9px; font-size: 0.86rem; outline: none; font-family: inherit; }
 .add-task input:focus { border-color: #4A90E2; border-style: solid; }
+.growth-page{background:#f7f4ed;color:#17334d;font-family:'Noto Sans SC','Microsoft YaHei',sans-serif}
+.title-block h1{font-family:'Noto Serif SC','Source Han Serif SC',serif;color:#14314b}
+.plan-card,.empty-plan,.new-plan{border-color:#ded4c3;background:#fffdf8}
+.btn.primary{border:1px solid #b89158;background:#f0dbb2;color:#19354c}
+.btn.primary:hover:not(:disabled){background:#e8ca93}
+.btn.ghost{border-color:#ded4c3;background:#fffdf8;color:#31536d}
+.plan-badge{background:#f4e5c9;color:#866338}
+.tl-dot{background:#b89158}
+.timeline{border-left-color:#d4bf9d}
+.record-input input:focus,.add-task input:focus{border-color:#b89158}
 </style>

@@ -511,9 +511,10 @@ onMounted(async () => {
   fetchMyAbility()
   fetchReports()
   fetchMyScore()
-  // 注册后跳转过来：自动弹出六维能力初步测评（初步分，后续 AI 测评会覆盖）
-  if (route.query.quiz === '1') {
+  // 首次进入个人中心时补做初步问卷；联合测评仍是登录后的第一站。
+  if (route.query.quiz === '1' || localStorage.getItem('pendingAbilityQuiz') === '1') {
     quizVis.value = true
+    localStorage.removeItem('pendingAbilityQuiz')
   }
 })
 

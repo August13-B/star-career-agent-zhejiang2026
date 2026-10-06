@@ -34,7 +34,6 @@ public class AIAnalysisController {
     @PostMapping("/ability/score")
     public Result<List<StudentAbilityScore>> analyzeAbilityScore(@RequestBody @Valid AbilityAnalysisRequest request) {
         access.self(request.getUserId());
-
         logger.info("【AI分析接口】收到请求，userId: {}, message: {}, temperature: {}", 
                 request.getUserId(), request.getMessage(), request.getTemperature());
         Result<List<StudentAbilityScore>> result = aiAnalysisService.analyzeAndSaveAbilityScore(

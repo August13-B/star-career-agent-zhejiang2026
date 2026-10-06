@@ -79,7 +79,7 @@ public class AIServiceImpl implements AIService {
     @Override
     public Flux<String> chatWithImageStream(String message, Double temperature, String imageUrl) {
         Map<String, Object> chunk = new HashMap<>();
-        chunk.put("data", "图片对话暂不可用：百宝箱文本通道不支持图片输入，请改用文字描述。");
+        chunk.put("error", "图片对话暂不可用：百宝箱文本通道不支持图片输入，请改用文字描述。");
         return Flux.just(toJson(chunk));
     }
 
