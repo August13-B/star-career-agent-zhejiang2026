@@ -291,7 +291,7 @@ def _mysql_file(path: Path) -> bool:
 
 
 def db_seed(force: bool = False) -> bool:
-    """自动灌库（幂等）：缺表则建表，无业务数据则导入数据。
+    """空库初始化；已有但不完整的库停止启动，避免结构脚本覆盖数据。
 
     - 结构：数据库/数据库结构.sql（含 CREATE DATABASE）
     - 数据：数据库/数据库数据.sql（岗位 9958 条 + 画像/能力/用户等）

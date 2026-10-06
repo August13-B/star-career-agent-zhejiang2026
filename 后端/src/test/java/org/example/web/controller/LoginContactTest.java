@@ -4,6 +4,8 @@ import org.example.web.entity.User;
 import org.example.web.service.UserService;
 import org.example.web.tool.RSA_256;
 import org.example.web.tool.SHA_256;
+import org.example.web.tool.JwtUtil;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -12,6 +14,11 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 class LoginContactTest {
+    @BeforeAll
+    static void configureTestJwt() {
+        new JwtUtil("test-only-jwt-signing-key-32-bytes-long");
+    }
+
     @ParameterizedTest
     @CsvSource({"auto,account", "auto,email", "auto,nickname", "userAccount,account",
             "email,email", "nickname,nickname", ",account"})

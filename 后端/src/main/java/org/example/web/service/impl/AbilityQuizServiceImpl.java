@@ -44,7 +44,6 @@ public class AbilityQuizServiceImpl implements AbilityQuizService {
 
     @Autowired
     private StudentAbilityScoreService studentAbilityScoreService;
-
     @Autowired
     private org.example.web.service.training.AbilityScoreWrites scoreWrites;
 

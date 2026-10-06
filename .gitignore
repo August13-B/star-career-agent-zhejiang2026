@@ -43,6 +43,8 @@ uploads/
 
 # ===== 环境变量（含密钥，勿提交）=====
 .env
+.env.local
+.env.*.local
 
 # ===== 运行产物 =====
 .pids/

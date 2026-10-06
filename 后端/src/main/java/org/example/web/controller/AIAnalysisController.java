@@ -20,6 +20,9 @@ import java.util.List;
 @RequestMapping("/ai/analysis")
 @RequiredArgsConstructor
 public class AIAnalysisController {
+    @org.springframework.beans.factory.annotation.Autowired
+    private org.example.web.security.AccessGuard access;
+
 
     private static final Logger logger = LoggerFactory.getLogger(AIAnalysisController.class);
     private final AIAnalysisService aiAnalysisService;
@@ -29,12 +32,8 @@ public class AIAnalysisController {
      * 接收JSON格式: { "userId": 6, "message": "重点分析编程能力", "temperature": 0.1 }
      */
     @PostMapping("/ability/score")
-    public Result<List<StudentAbilityScore>> analyzeAbilityScore(@RequestBody @Valid AbilityAnalysisRequest request,
-            @org.springframework.web.bind.annotation.RequestHeader(value = "Authorization", required = false) String token) {
-        try {
-            Long userId = Long.valueOf(String.valueOf(org.example.web.tool.JwtUtil.parseToken(token).get("id")));
-            if (!userId.equals(request.getUserId())) return Result.error("只能测评当前登录账号", null);
-        } catch (Exception e) { return Result.error("登录状态无效，请重新登录", null); }
+    public Result<List<StudentAbilityScore>> analyzeAbilityScore(@RequestBody @Valid AbilityAnalysisRequest request) {
+        access.self(request.getUserId());
         logger.info("【AI分析接口】收到请求，userId: {}, message: {}, temperature: {}", 
                 request.getUserId(), request.getMessage(), request.getTemperature());
         Result<List<StudentAbilityScore>> result = aiAnalysisService.analyzeAndSaveAbilityScore(

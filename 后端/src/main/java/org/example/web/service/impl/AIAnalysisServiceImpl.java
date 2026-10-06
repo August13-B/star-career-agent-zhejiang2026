@@ -58,7 +58,6 @@ public class AIAnalysisServiceImpl implements AIAnalysisService {
             "4. 用户补充需求（如有）请优先参考：";
 
     @Override
-    @Transactional(rollbackFor = Exception.class)
     public Result<List<StudentAbilityScore>> analyzeAndSaveAbilityScore(Long userId, String userMessage, Float temperature) {
         try {
             // 1. 入参合法性校验
@@ -178,7 +177,7 @@ public class AIAnalysisServiceImpl implements AIAnalysisService {
                 logger.error("【AI能力分析】评分保存失败，userId：{}", userId);
                 throw new RuntimeException("评分保存失败");
             }
-            
+
             // 查询刚刚插入的记录
             List<StudentAbilityScore> savedScoreList = studentAbilityScoreService.selectByUserId(userId);
             logger.info("【AI能力分析】评分保存成功，userId：{}", userId);
@@ -206,8 +205,6 @@ public class AIAnalysisServiceImpl implements AIAnalysisService {
                     .filter(score -> abilityScore.getId().equals(score.getId())).toList());
 
         } catch (Exception e) {
-            // 本方法返回业务错误而非抛出时，仍需撤销先前删除/插入。
-            org.springframework.transaction.interceptor.TransactionAspectSupport.currentTransactionStatus().setRollbackOnly();
             logger.error("【AI能力分析】全流程失败，userId：{}", userId, e);
             return Result.error("AI能力分析评分失败：" + e.getMessage(), null);
         }

@@ -15,6 +15,9 @@ import java.util.Map;
 @RequestMapping("/ability")
 @RequiredArgsConstructor
 public class StudentAbilityController {
+    @org.springframework.beans.factory.annotation.Autowired
+    private org.example.web.security.AccessGuard access;
+
 
     private static final Logger logger = LoggerFactory.getLogger(StudentAbilityController.class);
     private final StudentAbilityService studentAbilityService;
@@ -33,6 +36,8 @@ public class StudentAbilityController {
      */
     @GetMapping("/all")
     public Map<String, Object> selectAll() {
+        access.admin();
+
         try {
             List<StudentAbility> abilities = studentAbilityService.selectAll();
             return buildResult(200, "查询成功", abilities);
@@ -47,6 +52,8 @@ public class StudentAbilityController {
      */
     @PostMapping("/condition")
     public Map<String, Object> selectByCondition(@RequestBody StudentAbility ability) {
+        ability.setUserId(access.self(ability.getUserId()));
+
         try {
             List<StudentAbility> abilities = studentAbilityService.selectByCondition(ability);
             return buildResult(200, "查询成功", abilities);
@@ -61,6 +68,9 @@ public class StudentAbilityController {
      */
     @PostMapping("/insert")
     public Map<String, Object> insert(@RequestBody StudentAbility ability) {
+        ability.setUserId(access.self(ability.getUserId()));
+        access.optionalOwned("student_profile", ability.getProfileId());
+
         try {
             List<StudentAbility> newAbility = studentAbilityService.insert(ability);
             return buildResult(200, "新增成功", newAbility);
@@ -75,6 +85,10 @@ public class StudentAbilityController {
      */
     @PutMapping("/update")
     public Map<String, Object> update(@RequestBody StudentAbility ability) {
+        access.owned("student_ability", ability.getId());
+        ability.setUserId(access.self(ability.getUserId()));
+        access.optionalOwned("student_profile", ability.getProfileId());
+
         try {
             List<StudentAbility> updatedAbility = studentAbilityService.update(ability);
             return buildResult(200, "更新成功", updatedAbility);
@@ -97,6 +111,8 @@ public class StudentAbilityController {
      */
     @GetMapping("/{id}")
     public Map<String, Object> selectById(@PathVariable Long id) {
+        access.owned("student_ability", id);
+
         try {
             List<StudentAbility> ability = studentAbilityService.selectById(id);
             return buildResult(200, "查询成功", ability);
@@ -113,6 +129,8 @@ public class StudentAbilityController {
      */
     @DeleteMapping("/{id}")
     public Map<String, Object> deleteById(@PathVariable Long id) {
+        access.owned("student_ability", id);
+
         try {
             List<StudentAbility> deletedAbility = studentAbilityService.deleteById(id);
             return buildResult(200, "删除成功", deletedAbility);
@@ -129,6 +147,8 @@ public class StudentAbilityController {
      */
     @PostMapping("/batchdelete")
     public Map<String, Object> batchDelete(@RequestBody List<Long> ids) {
+        access.batch("student_ability", ids);
+
         try {
             List<StudentAbility> deletedAbilities = studentAbilityService.batchDelete(ids);
             return buildResult(200, "批量删除成功", deletedAbilities);
@@ -145,6 +165,8 @@ public class StudentAbilityController {
      */
     @PostMapping("/batchselect")
     public Map<String, Object> batchSelect(@RequestBody List<Long> ids) {
+        access.batch("student_ability", ids);
+
         try {
             List<StudentAbility> abilities = studentAbilityService.batchSelect(ids);
             return buildResult(200, "批量查询成功", abilities);
@@ -161,6 +183,8 @@ public class StudentAbilityController {
      */
     @GetMapping("/user/{userId}")
     public Map<String, Object> selectByUserId(@PathVariable Long userId) {
+        access.self(userId);
+
         try {
             List<StudentAbility> abilities = studentAbilityService.selectByUserId(userId);
             return buildResult(200, "查询成功", abilities);

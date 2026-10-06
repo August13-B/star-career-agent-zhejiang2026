@@ -12,6 +12,10 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 class GraphPreviewTest {
+    static {
+        new JwtUtil("test-only-jwt-signing-key-32-bytes-long");
+    }
+
     final JobRequirementProfileService profiles = mock(JobRequirementProfileService.class);
     final JobPromotionGraphService promotions = mock(JobPromotionGraphService.class);
     final JobTransferGraphService transfers = mock(JobTransferGraphService.class);

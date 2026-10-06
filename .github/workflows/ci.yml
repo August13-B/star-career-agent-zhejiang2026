@@ -47,6 +47,7 @@ jobs:
       DB_URL: jdbc:mysql://127.0.0.1:3306/youthpath?allowPublicKeyRetrieval=true&useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=UTC&allowMultiQueries=true
       DB_USERNAME: root
       DB_PASSWORD: root
+      TRAINING_DB_TEST: 'true'
       # 16 字符（AES-128-CBC）；仅测试用
       AES_KEY: CICICICICICICI16
       AES_IV: IVIVIVIVIVIVIV16
@@ -64,6 +65,9 @@ jobs:
           openssl rsa -in /tmp/priv.pem -pubout -outform DER -out /tmp/pub.der
           echo "RSA_PRIVATE_KEY=$(base64 -w0 /tmp/priv.der)" >> "$GITHUB_ENV"
           echo "RSA_PUBLIC_KEY=$(base64 -w0 /tmp/pub.der)" >> "$GITHUB_ENV"
+          jwt_secret=$(openssl rand -hex 32)
+          echo "::add-mask::$jwt_secret"
+          echo "JWT_SECRET=$jwt_secret" >> "$GITHUB_ENV"
 
       - name: 安装 JDK 17
         uses: actions/setup-java@v4
@@ -116,6 +120,9 @@ jobs:
       - name: 安装依赖（npm ci）
         working-directory: 前端
         run: npm ci
+
+      - name: 数据库启动安全回归测试
+        run: python3 scripts/test_manage.py
 
       - name: 流式解析回归测试（npm test）
         working-directory: 前端

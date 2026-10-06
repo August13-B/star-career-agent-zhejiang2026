@@ -8,7 +8,11 @@
       <button class="back-btn" @click="$router.back()">← 返回列表</button>
     </div>
 
-    <div class="compare-container" v-if="!isLoading">
+    <div v-if="errorMessage" class="loading-screen" role="alert">
+      <p>{{ errorMessage }}</p>
+      <button class="back-btn" @click="fetchDataSequence">重试分析</button>
+    </div>
+    <div class="compare-container" v-else-if="!isLoading">
       
       <div class="analysis-section glass-panel">
         <div class="section-title">
@@ -28,7 +32,7 @@
         
         <div class="radar-card glass-panel" v-if="profileDetail">
           <div class="section-title">
-            <span class="icon">🎯</span> 最高契合岗位画像模型
+            <span class="icon">🎯</span> 最高关联岗位与需求权重
           </div>
           
           <div class="top-match-info">
@@ -46,6 +50,7 @@
           </div>
 
           <div ref="radarChartRef" class="radar-box"></div>
+          <p>图中为岗位画像的三项原始权重，不代表个人能力得分。</p>
 
           <div class="hard-requirements" v-if="profileDetail.hardRequirement">
             <div class="req-tag" v-if="profileDetail.hardRequirement.educationRequirement">
@@ -107,6 +112,7 @@ const router = useRouter()
 const route = useRoute()
 
 const isLoading = ref(true)
+const errorMessage = ref('')
 const reportData = ref({})
 const profileDetail = ref(null) // 存储“全家桶大接口”返回的数据
 
@@ -122,7 +128,7 @@ const getHeaders = () => {
 // 🌟 文本解析器 (保持你优秀的逻辑)
 const formatAnalysis = (text) => {
   if (!text) return ''
-  let parsed = text
+  let parsed = String(text).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
   parsed = parsed.replace(/['‘](.*?)['’]/g, '<span class="keyword-tag">$1</span>')
   parsed = parsed.replace(/ID:(\d+)/g, '<span class="id-tag">ID:$1</span>')
   parsed = parsed.replace(/(①|②|③|④|⑤|\(1\)|\(2\)|\(3\)|\(4\)|\(5\))/g, '<br><span class="list-badge">$1</span>')
@@ -137,6 +143,9 @@ const fetchDataSequence = async () => {
   
   try {
     isLoading.value = true
+    errorMessage.value = ''
+    reportData.value = {}
+    profileDetail.value = null
     
     // 1. 调用 AI 分析接口 (拿到文本和匹配列表)
     const aiRes = await axios.post(`${baseURL}/api/job-compare/analyze-new-job`, 
@@ -154,9 +163,13 @@ const fetchDataSequence = async () => {
       } else {
         isLoading.value = false // 没有匹配项直接结束
       }
+    } else {
+      throw new Error('AI 分析暂不可用，请稍后重试。')
     }
   } catch (error) {
     console.error('获取报告序列失败:', error)
+    errorMessage.value = error.response?.status === 401 ? '请先登录后再分析岗位。' : 'AI 分析暂不可用，请稍后重试。'
+  } finally {
     isLoading.value = false
   }
 }
@@ -171,10 +184,13 @@ const fetchProfileDetail = async (profileId) => {
       // 数据准备完毕，DOM 更新后渲染雷达图
       await nextTick()
       initRadarChart()
+    } else {
+      throw new Error('岗位画像暂不可用')
     }
   } catch (error) {
     console.error('获取画像详情全家桶失败:', error)
     isLoading.value = false
+    throw error
   }
 }
 
@@ -184,28 +200,18 @@ const initRadarChart = () => {
   if (chartRef.value) chartRef.value.dispose()
   chartRef.value = echarts.init(radarChartRef.value)
 
-  // 从全家桶里安全提取权重数据
   const profile = profileDetail.value?.jobRequirementProfile || {}
-  const hw = profile.hardWeight || 30
-  const skw = profile.skillWeight || 40
-  const sow = profile.softWeight || 20
-  
-  // 从门槛和其他数据里衍生 3 个维度，凑成六边形
-  const hasEdu = profileDetail.value?.hardRequirement?.educationRequirement ? 85 : 50
-  const hasExp = profileDetail.value?.hardRequirement?.experienceRequirement ? 90 : 60
-  // 潜力值通过晋升和换岗的路线数量来决定
-  const transferCount = (profileDetail.value?.transferGraphs?.length || 0) + (profileDetail.value?.promotionGraphs?.length || 0)
-  const potential = transferCount > 0 ? Math.min(100, 60 + transferCount * 10) : 60
+  const rawWeights = [profile.hardWeight, profile.skillWeight, profile.softWeight]
+  if (rawWeights.some(value => value == null || value === '')) return
+  const weights = rawWeights.map(Number)
+  if (weights.some(value => !Number.isFinite(value) || value < 0 || value > 100)) return
 
   const option = {
     radar: {
       indicator: [
-        { name: '硬性门槛 (Hard)', max: 100 },
-        { name: '专业技能 (Skill)', max: 100 },
-        { name: '软性素质 (Soft)', max: 100 },
-        { name: '学历要求 (Edu)', max: 100 },
-        { name: '经验沉淀 (Exp)', max: 100 },
-        { name: '跨界潜力 (Poten)', max: 100 }
+        { name: '硬门槛权重', max: 100 },
+        { name: '专业技能权重', max: 100 },
+        { name: '软性素质权重', max: 100 }
       ],
       shape: 'polygon',
       radius: '65%',
@@ -218,9 +224,8 @@ const initRadarChart = () => {
     series: [{
       type: 'radar',
       data: [{
-        // 将后端的权重百分比映射到100分制雷达图中 (为了图表饱满，稍微放大比例)
-        value: [hw * 2, skw * 1.8, sow * 2.5, hasEdu, hasExp, potential],
-        name: '岗位能力模型',
+        value: weights,
+        name: '岗位需求权重',
         itemStyle: { color: '#4A90E2' },
         areaStyle: { color: new echarts.graphic.RadialGradient(0.5, 0.5, 1, [{ offset: 0, color: 'rgba(74, 144, 226, 0.1)' }, { offset: 1, color: 'rgba(74, 144, 226, 0.5)' }]) },
         lineStyle: { width: 2, color: '#4A90E2' },

@@ -119,10 +119,9 @@ public class TboxAgentServiceImpl implements TboxAgentService {
             for (String c : chunks) {
                 try {
                     JsonNode n = objectMapper.readTree(c);
+                    if (n.has("error")) return "";
                     if (n.has("data")) {
                         sb.append(n.get("data").asText(""));
-                    } else if (n.has("error")) {
-                        sb.append(n.get("error").asText(""));
                     }
                 } catch (Exception ignore) {
                     sb.append(c);
@@ -242,7 +241,7 @@ public class TboxAgentServiceImpl implements TboxAgentService {
                                 .takeUntil(m -> done.get()))
                         .then());
 
-        sessionMono.subscribe(
+        var connection = sessionMono.subscribe(
                 null,
                 err -> {
                     log.error("百宝箱 WS 异常", err);
@@ -251,10 +250,13 @@ public class TboxAgentServiceImpl implements TboxAgentService {
                 },
                 () -> {
                     log.debug("百宝箱 WS 会话结束 localConversation={}", localConversationId);
+                    if (!done.get()) {
+                        sink.tryEmitNext(errorChunk("AI 回复未完整结束，请稍后重试；已提交的内容会保留。"));
+                    }
                     sink.tryEmitComplete();
                 });
 
-        return sink.asFlux();
+        return sink.asFlux().doFinally(signal -> connection.dispose());
     }
 
     private void handleEvent(String raw, Sinks.Many<String> sink, AtomicBoolean done, Long localConversationId) {
@@ -654,6 +656,6 @@ public class TboxAgentServiceImpl implements TboxAgentService {
                 || s.contains("Failed to connect") || s.contains("timeout")) {
             return "无法连接百宝箱平台，请检查网络与 TBOX_API_URL 配置（详见后端日志）。";
         }
-        return "AI 服务调用失败：" + e.getMessage();
+        return "AI 服务暂不可用，请稍后重试；已提交的内容会保留。";
     }
 }

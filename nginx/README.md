@@ -1,40 +1,24 @@
-# Nginx（星职部署用）
+# Nginx 部署
 
-`nginx/conf/nginx.conf` 提供生产环境反向代理：
+本目录代理构建后的 Vue 应用和 Spring Boot `/api`。开发模式使用 Vite 即可，Nginx 可选。
 
-- **前端静态文件**：`../frontend/dist`（需先 `npm run build`）
-- **API 反代**：`/api/*` → `http://127.0.0.1:8080`（合并后端，context-path 为 `/api`，SSE 已关闭缓冲）
+- 静态根目录 `../前端/dist`，相对 `nginx/` 前缀目录。
+- `/api/` 转发到 `127.0.0.1:8080`，保留 `/api` 路径。
+- SSE 关闭缓冲，读写超时 600 秒。
+- 已提供 `conf/mime.types` 和 `logs/` 目录，不包含 Nginx 可执行程序。
 
-## 安装 nginx（二选一）
+先在 `前端/` 执行 `npm ci`、`npm run build`，启动后端，再安装 Nginx 并加入 PATH。从仓库根目录执行：
 
-**Windows**（PowerShell，需管理员）：
 ```powershell
-winget install nginx
-# 或从 https://nginx.org/en/download.html 下载 Windows 版解压
+nginx -t -p "$PWD/nginx/" -c conf/nginx.conf
+python manage.py start nginx
 ```
 
-**WSL / Linux**：
-```bash
-sudo apt update && sudo apt install -y nginx
+配置检查通过后访问 `http://localhost`。手动管理也应指定同一个前缀：
+
+```powershell
+nginx -p "$PWD/nginx/" -c conf/nginx.conf -s reload
+nginx -p "$PWD/nginx/" -c conf/nginx.conf -s quit
 ```
 
-## 使用
-
-通过 `manage.py` 一键管理：
-```bash
-python manage.py start nginx      # 启动（自动使用 nginx/conf/nginx.conf）
-python manage.py status           # 查看状态
-```
-
-或手动：
-```bash
-# 进入 nginx 目录后
-nginx -p ./ -c conf/nginx.conf    # 启动
-nginx -s stop                     # 停止
-nginx -s reload                   # 重载配置
-```
-
-> ⚠️ 注意：
-> 1. `mime.types` 需随 nginx 安装包提供（本仓库只含 `conf/nginx.conf`）
-> 2. 若 nginx 不在 PATH，请在 `manage.py` 的 `SERVICES["nginx"]["cmd"]` 中改为 nginx 可执行文件完整路径
-> 3. Windows 下端口 80 可能被占用，可自行修改 `listen` 端口
+修改后端端口时同步修改代理端口。当前是本机 HTTP 示例，没有 TLS。本轮修正了路径和缺失的 MIME 配置，未完成 Nginx 运行验收；旧接口权限修复前不要公开部署。Windows 上若 Nginx 不支持中文静态路径，请部署到 ASCII 路径并修改 `root`。

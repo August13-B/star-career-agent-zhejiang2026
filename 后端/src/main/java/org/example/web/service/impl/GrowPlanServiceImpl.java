@@ -30,8 +30,8 @@ import lombok.extern.slf4j.Slf4j;
 /**
  * 成长规划 / 计划跟踪实现
  *
- * <p>落库策略：每次生成报告时**覆盖**该用户旧的 active 计划（软删除后重建），
- * 避免计划堆积；任务状态变化时自动重算计划进度。
+ * <p>落库策略：目标由用户在「查看报告」里**手动一键导入**，采用**追加**语义（不清理已有规划/待办）；
+ * 同一份报告只导入一次（幂等判断见 {@link #isReportImported}）；任务状态变化时自动重算计划进度。
  */
 @Slf4j
 @Service
@@ -51,16 +51,16 @@ public class GrowPlanServiceImpl implements GrowPlanService {
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public void saveGoalsFromReport(Long userId, Long reportId, String targetJob, List<Map<String, Object>> goals) {
+    public Map<String, Object> importGoalsFromReport(Long userId, Long reportId, String targetJob, List<Map<String, Object>> goals) {
+        Map<String, Object> stat = new LinkedHashMap<>();
+        int planCount = 0;
+        int taskCount = 0;
         if (userId == null || goals == null || goals.isEmpty()) {
-            return;
+            stat.put("plans", 0);
+            stat.put("tasks", 0);
+            return stat;
         }
-        // 覆盖：软删除该用户旧的计划（MP 逻辑删除 → is_deleted=1），任务随计划逻辑删除
-        List<GrowPlan> oldPlans = growPlanMapper.selectList(new QueryWrapper<GrowPlan>().eq("user_id", userId));
-        for (GrowPlan old : oldPlans) {
-            growTaskMapper.delete(new QueryWrapper<GrowTask>().eq("plan_id", old.getId()));
-            growPlanMapper.deleteById(old.getId());
-        }
+        // 追加语义：不清理用户已有的规划/待办（旧实现为「生成报告时自动覆盖」，已改为手动导入 + 追加）
 
         String job = (targetJob == null || targetJob.isBlank()) ? "通用方向" : targetJob;
         LocalDateTime now = LocalDateTime.now();
@@ -89,6 +89,7 @@ public class GrowPlanServiceImpl implements GrowPlanService {
             plan.setUpdateTime(now);
             plan.setIsDeleted(0);
             growPlanMapper.insert(plan);
+            planCount++;
 
             // keyActions → grow_task（完成情况的载体）
             Object actions = g.get("keyActions");
@@ -114,10 +115,39 @@ public class GrowPlanServiceImpl implements GrowPlanService {
                     task.setUpdateTime(now);
                     task.setIsDeleted(0);
                     growTaskMapper.insert(task);
+                    taskCount++;
                 }
             }
         }
-        log.info("已写入成长计划: userId={}, reportId={}, goals={}", userId, reportId, goals.size());
+        stat.put("plans", planCount);
+        stat.put("tasks", taskCount);
+        log.info("已导入成长计划（追加）: userId={}, reportId={}, plans={}, tasks={}", userId, reportId, planCount, taskCount);
+        return stat;
+    }
+
+    @Override
+    public boolean isReportImported(Long userId, Long reportId) {
+        if (userId == null || reportId == null) {
+            return false;
+        }
+        return growPlanMapper.selectCount(new QueryWrapper<GrowPlan>()
+                .eq("user_id", userId).eq("report_id", reportId)) > 0;
+    }
+
+    @Override
+    public java.util.Set<Long> importedReportIds(Long userId) {
+        java.util.Set<Long> ids = new java.util.HashSet<>();
+        if (userId == null) {
+            return ids;
+        }
+        List<GrowPlan> plans = growPlanMapper.selectList(new QueryWrapper<GrowPlan>()
+                .select("report_id").eq("user_id", userId).isNotNull("report_id"));
+        for (GrowPlan p : plans) {
+            if (p.getReportId() != null) {
+                ids.add(p.getReportId());
+            }
+        }
+        return ids;
     }
 
     @Override

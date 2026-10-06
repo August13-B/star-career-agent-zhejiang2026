@@ -11,6 +11,7 @@ import JobCompareView from '../views/JobCompareView.vue'
 import TutorDashboardView from '../views/TutorDashboardView.vue'
 import WelcomeView from '../views/WelcomeView.vue'
 import DashboardView from '../views/DashboardView.vue'
+import API_CONFIG from '../config/api'
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
@@ -80,8 +81,19 @@ const router = createRouter({
   ]
 })
 
-router.beforeEach((to) => {
-  if (to.meta.requiresAuth && !localStorage.getItem('token')) {
+router.beforeEach(async (to) => {
+  const token = localStorage.getItem('token')
+  if (to.meta.requiresAuth && !token) {
+    return { name: 'login', query: { redirect: to.fullPath } }
+  }
+  const allowed = to.path === '/admin/job-info' ? [2] : to.path === '/tutor-dashboard' ? [2, 4] : null
+  if (!allowed) return true
+  try {
+    const response = await fetch(`${API_CONFIG.BASE_URL}/api/user/getUserInfo`, { headers: { Authorization: token } })
+    if (!response.ok) return { name: 'login', query: { redirect: to.fullPath } }
+    const result = await response.json()
+    return allowed.includes(Number(result.data?.userRole)) ? true : { path: '/profile' }
+  } catch {
     return { name: 'login', query: { redirect: to.fullPath } }
   }
 })
