@@ -103,6 +103,18 @@ python manage.py free-port backend
     - **前端**：`TrainingView.vue`（工作台：进度/交付物/证据定位/限时倒计时）、`utils/text.js`（去 Markdown 按纯文本展示）、
       `utils/draftSync.js`（草稿同步，防旧快照回写）；语音输入用浏览器原生 Web Speech API
       —— 部署时 nginx 必须 `Permissions-Policy … microphone=(self)`（已修正），且需 HTTPS 或 localhost。
+19. **能力补充测评（`/ai-score`）—— 平台接口已交付，后端尚未实现**（设计已定稿）：
+    - **个人中心不再做软实力测评**：只保留「基本情况」（硬实力 4 维：学历/实习/专业技能/证书，规则表换算）；
+      六维软素质测评移到 `/ai-score`「能力补充测评」
+    - 平台接口（已实现，对方 commit `bd3e89b`）：`POST /api/assessment/ability`，`{mode: ask|evaluate, prompt}`；
+      ask → `objective_question`（恰好 4 选项、分值 1–4 互异）/ `subjective_question`（带 followUp 判定）；
+      evaluate → `ability_evaluation`（**只评六维** + `evidence[{dimension,evidenceId}]`，不输出 total）；
+      可选 `X-Assessment-Token`；契约与提示词见 `百宝箱/提示词-能力补充测评接口.md`、§十二
+    - 定稿口径：客观题 **8~10 道**（按专业/意向定制，AI 优先，**结构不合法/不可用回退题库**）、
+      主观题 **3~4 道**（仅笼统时追问，同题最多 2 轮）；限时：客观 **30 秒**/题、主观 **3 分钟**/题，超时自动跳题，
+      **不允许提前交卷**，支持**断点续答**；结果展示 **10 维**（硬 4 来自表单 + 软 6 来自问答），
+      总分 `硬均值×30% + 软均值×70%`；写库只覆盖六维、写 history（version+1）
+    - 题库字段与接口字段**不同名**（`dim/text/t/s` → `dimension/question/text/score`），兜底需适配层
 
 ## 5. 当前阻塞（平台侧）
 
