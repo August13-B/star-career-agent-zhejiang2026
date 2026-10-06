@@ -195,20 +195,29 @@ public class AssessmentService {
             throw new AssessmentException(409, "NO_ACTIVE_TURN", "当前没有待作答的题目，请刷新页面");
         }
         boolean objective = "objective".equals(turn.get("kind"));
+        boolean expired = timedOut(turn);
         if (objective) {
             JsonNode options = store.read((String) turn.get("options"));
             int count = options == null ? 0 : options.size();
-            if (chosen == null || chosen < 0 || chosen >= count) {
+            boolean valid = chosen != null && chosen >= 0 && chosen < count;
+            // 允许「超时未作答」的空提交（服务端已判定超时）；否则必须选一个选项
+            if (!valid && !expired) {
                 throw new AssessmentException(422, "OPTION_REQUIRED", "请选择一个选项");
             }
-        } else if (text == null || text.isBlank()) {
-            throw new AssessmentException(422, "ANSWER_REQUIRED", "请填写回答内容");
-        } else if (text.length() > 2000) {
-            throw new AssessmentException(422, "ANSWER_TOO_LONG", "回答最多 2000 字");
+        } else {
+            boolean blank = text == null || text.isBlank();
+            if (blank && !expired) {
+                throw new AssessmentException(422, "ANSWER_REQUIRED", "请填写回答内容");
+            }
+            if (text != null && text.length() > 2000) {
+                throw new AssessmentException(422, "ANSWER_TOO_LONG", "回答最多 2000 字");
+            }
         }
-        String status = timedOut(turn) ? "timeout" : "answered";
+        String status = expired ? "timeout" : "answered";
+        boolean validChosen = !objective || (chosen != null && chosen >= 0);
         store.answerTurn(((Number) turn.get("id")).longValue(),
-                objective ? null : (text == null ? null : text.strip()), objective ? chosen : null, status);
+                objective ? null : (text == null || text.isBlank() ? null : text.strip()),
+                objective && validChosen ? chosen : null, status);
         store.touchSession(sessionId, "active", 1, null);
         store.clearDraft(sessionId);
         advance(store.session(sessionId));
