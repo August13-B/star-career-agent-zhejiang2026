@@ -20,6 +20,16 @@
         <div class="panel preparation">
           <h2>开始前的设置</h2>
           <label>练习难度 <select v-model="difficulty"><option value="standard">标准：独立分析</option><option value="entry">入门：适当结构提示</option></select></label>
+          <label>目标岗位（模拟面试必选，其余场景作为参考背景）
+            <select v-model="jobId" :disabled="!jobOptions.length">
+              <option value="">{{ jobOptions.length ? '请选择目标岗位' : '暂无可选岗位' }}</option>
+              <option v-for="item in jobOptions" :key="item.jobId" :value="item.jobId">{{ item.positionName }}<template v-if="item.industry"> · {{ item.industry }}</template><template v-if="item.address"> · {{ item.address }}</template></option>
+            </select>
+          </label>
+          <p v-if="jobNotice" class="muted small">{{ jobNotice }}<router-link to="/profile">前往个人中心完善</router-link></p>
+          <p v-else-if="selectedJobLabel" class="muted small">
+            已选岗位：{{ selectedJobLabel }}（来源：{{ targets.source === 'report' ? '职业报告目标岗位' : '职业意向' }}）——将用于出题与评分对照。
+          </p>
           <label><input v-model="useForProfile" type="checkbox"> 完整训练通过证据核验后，更新已有能力画像</label>
           <p class="muted small">无完整能力基线时只保存反馈。更新仅影响本次覆盖的维度，可能升降；阶段性反馈不更新画像。训练材料均为虚构，不要填写敏感信息。</p>
         </div>
@@ -29,7 +39,7 @@
             <p class="muted">{{ item.rounds }} 个阶段 · {{ item.duration }} · 文字对话</p>
             <div class="tags"><span v-for="label in item.dimensions" :key="label">{{ label }}</span></div>
             <p class="muted small">会话、草稿与训练成果保存在当前账户，可随时返回。</p>
-            <button :disabled="pending" @click="createSession(item.id)">{{ pending ? '正在创建…' : '开始训练' }}</button>
+            <button :disabled="pending || (item.scenario === 'mock_interview' && !jobId)" @click="createSession(item.id)">{{ pending ? '正在创建…' : (item.scenario === 'mock_interview' && !jobId ? '请先选择目标岗位' : '开始训练') }}</button>
           </article>
         </div>
         <section class="panel history-panel">
@@ -50,6 +60,7 @@
             <span class="pill">{{ trainingStatus(session.status) }}</span><h2>{{ session.template.title }}</h2>
             <p>{{ session.template.description }}</p>
             <p class="muted small">{{ session.difficulty === 'entry' ? '入门难度' : '标准难度' }} · {{ session.useForProfile ? '允许更新已有能力画像' : '仅保存练习反馈' }}</p>
+            <p v-if="session.job && session.job.positionName" class="muted small">目标岗位：{{ session.job.positionName }}<template v-if="session.job.industry"> · {{ session.job.industry }}</template><template v-if="session.job.salaryRange"> · {{ session.job.salaryRange }}</template><template v-if="session.job.level"> · 级别 {{ session.job.level }}</template></p>
             <details v-if="session.template.materials" open><summary>任务材料</summary><p class="material-text">{{ materialText(session.template.materials) }}</p></details>
             <details v-if="session.template.practiceDraft"><summary>用于核验练习的预设错误草稿</summary><p class="material-text">{{ materialText(session.template.practiceDraft) }}</p><small>这是预设练习材料，并非本轮 AI 实际生成结果。</small></details>
             <p v-if="session.template.stageLabels" class="muted small">当前阶段：{{ session.template.stageLabels[Math.min(session.answeredCount, session.template.rounds - 1)] }}</p>
@@ -141,6 +152,9 @@ import { stripMarkdown } from '../utils/text'
 import { nextDraftAction } from '../utils/draftSync'
 
 const difficulty = ref('standard'), useForProfile = ref(true), artifactEditor = ref(null)
+// 目标岗位：候选来自「职业意向 → 全库岗位搜索」（后端 /targets），意向/报告都没有时提示先去完善
+const targets = ref({ items: [], needProfile: false, message: '', source: '' })
+const jobId = ref('')
 const route = useRoute()
 const router = useRouter()
 const sessionId = computed(() => route.params.sessionId ? String(route.params.sessionId) : '')
@@ -193,6 +207,22 @@ function formatTime(value) { return value ? String(value).replace('T', ' ').slic
 function trackScroll() { const el = messagesElement.value; if (el) followingBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80 }
 function scrollToBottom() { const el = messagesElement.value; if (el) el.scrollTop = el.scrollHeight; followingBottom = true; hasNewMessages.value = false }
 function materialText(value) { return stripMarkdown(typeof value === 'string' ? value : Array.isArray(value) ? value.map(materialText).join('\n\n') : JSON.stringify(value, null, 2)) }
+
+const jobOptions = computed(() => targets.value.items || [])
+const jobNotice = computed(() => (jobOptions.value.length ? '' : (targets.value.message || '暂无可选岗位')))
+const selectedJobLabel = computed(() => {
+  const item = jobOptions.value.find(option => String(option.jobId) === String(jobId.value))
+  return item ? item.positionName + (item.industry ? ' · ' + item.industry : '') : ''
+})
+
+async function loadTargets() {
+  try {
+    targets.value = await read('/targets')
+    // 默认选中匹配度最高的一个（ID 为雪花值，全程按字符串处理，避免 JS 精度丢失）
+    if (!jobId.value && jobOptions.value.length) jobId.value = String(jobOptions.value[0].jobId)
+    if (jobId.value && !jobOptions.value.some(option => String(option.jobId) === String(jobId.value))) jobId.value = ''
+  } catch (reason) { reportError(reason) }
+}
 function showEvidence(evidence) { document.getElementById(evidence.sourceType === 'artifact' ? 'training-artifact' : `training-message-${evidence.sourceId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }) }
 
 // ===== 单题限时：服务端下发时刻 + 限时秒数 → 本地倒计时；到点自动提交 =====
@@ -349,7 +379,7 @@ async function refresh(clearError = false) {
   clearTimeout(pollTimer); loading.value = true
   try {
     if (sessionId.value) await loadSession()
-    else { templates.value = await read('/templates'); await loadHistory(false) }
+    else { templates.value = await read('/templates'); await loadTargets(); await loadHistory(false) }
   } catch (reason) { reportError(reason) }
   finally {
     loading.value = false
@@ -383,6 +413,8 @@ async function createSession(templateId) {
   pending.value = true; error.value = ''
   try {
     const options = { templateId, difficulty: difficulty.value, useForProfile: useForProfile.value }
+    // 岗位 ID 是雪花值：按字符串传给后端（Jackson 会转 Long），避免 JS Number 精度丢失
+    if (jobId.value) options.jobId = String(jobId.value)
     const key = JSON.stringify(options)
     if (createRequest?.key !== key) createRequest = { key, id: newTrainingRequestId() }
     const created = await trainingRequest('/sessions', { method: 'POST', body: { ...options, clientRequestId: createRequest.id } })

@@ -5,6 +5,7 @@ import jakarta.validation.constraints.*;
 import java.util.Map;
 import org.example.web.entity.Result;
 import org.example.web.service.training.TrainingException;
+import org.example.web.service.training.TrainingJobCatalog;
 import org.example.web.service.training.TrainingService;
 import org.example.web.service.training.TrainingOutcomeService;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -19,10 +20,12 @@ import org.springframework.web.bind.annotation.*;
 public class TrainingController {
     private final TrainingService service;
     private final TrainingOutcomeService outcomes;
-    public TrainingController(TrainingService service, TrainingOutcomeService outcomes) { this.service = service; this.outcomes = outcomes; }
+    private final TrainingJobCatalog jobs;
+    public TrainingController(TrainingService service, TrainingOutcomeService outcomes, TrainingJobCatalog jobs) { this.service = service; this.outcomes = outcomes; this.jobs = jobs; }
 
     public record Create(@NotBlank @Size(max=80) String templateId,
                          @Pattern(regexp="entry|standard") String difficulty, Boolean useForProfile,
+                         Long jobId,
                          @NotBlank @Pattern(regexp="[A-Za-z0-9_-]{8,80}") String clientRequestId) {}
     public record Answer(@NotBlank @Size(max=4000) String content, Boolean skip,
                          @NotBlank @Pattern(regexp="[A-Za-z0-9_-]{8,80}") String clientRequestId,
@@ -35,10 +38,21 @@ public class TrainingController {
     @GetMapping("/templates")
     public Result<?> templates() { return Result.success(service.templates()); }
 
+    /**
+     * 目标岗位候选（训练工作台用）。
+     *
+     * <p>来源：学生职业意向 → 全库岗位搜索；意向为空则回退到最近一次职业报告的目标岗位；
+     * 两者都没有 → {@code needProfile=true}（不兜底推荐、不允许手填）。
+     */
+    @GetMapping("/targets")
+    public Result<?> targets(@RequestHeader("Authorization") String token) {
+        return Result.success("获取目标岗位候选成功", jobs.candidates(user(token)));
+    }
+
     @PostMapping("/sessions")
     @ResponseStatus(HttpStatus.CREATED)
     public Result<?> create(@RequestHeader("Authorization") String token, @Valid @RequestBody Create body) {
-        return Result.success(service.create(user(token), body.templateId(), body.clientRequestId(), body.difficulty() == null ? "standard" : body.difficulty(), Boolean.TRUE.equals(body.useForProfile())));
+        return Result.success(service.create(user(token), body.templateId(), body.clientRequestId(), body.difficulty() == null ? "standard" : body.difficulty(), Boolean.TRUE.equals(body.useForProfile()), body.jobId()));
     }
 
     @GetMapping("/sessions")
