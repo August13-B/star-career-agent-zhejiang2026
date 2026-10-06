@@ -25,7 +25,7 @@ public class TrainingController {
 
     public record Create(@NotBlank @Size(max=80) String templateId,
                          @Pattern(regexp="entry|standard") String difficulty, Boolean useForProfile,
-                         Long jobId,
+                         @Pattern(regexp="(profile|job):[0-9]{1,20}") String jobId,
                          @NotBlank @Pattern(regexp="[A-Za-z0-9_-]{8,80}") String clientRequestId) {}
     public record Answer(@NotBlank @Size(max=4000) String content, Boolean skip,
                          @NotBlank @Pattern(regexp="[A-Za-z0-9_-]{8,80}") String clientRequestId,
