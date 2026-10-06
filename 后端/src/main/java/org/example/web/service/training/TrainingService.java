@@ -249,8 +249,7 @@ public class TrainingService {
             Evaluation evaluation = new Evaluation();
             evaluation.setId(id()); evaluation.setSessionId(session.getId()); evaluation.setRunId(run.getId());
             try {
-                JsonNode raw = output.score() == null
-                        ? json.reader().with(DeserializationFeature.FAIL_ON_TRAILING_TOKENS).readTree(output.text()) : output.score();
+                JsonNode raw = output.score() == null ? readEvaluation(output.text()) : output.score();
                 var definition = definition(session);
                 boolean full = session.getAnsweredCount() == definition.rounds() && db.turns(session.getId()).stream().noneMatch(t -> "skipped".equals(t.getStatus()));
                 var validated = validator.validate(raw, definition, sources(session), full && definition.needsArtifact());
@@ -281,7 +280,7 @@ public class TrainingService {
             workspace.applicationQueued(session.getId(), status, "pending".equals(status) ? "等待更新能力画像" : "仅保存练习反馈：未选择更新画像，或训练未完整通过证据核验");
         } else {
             if (output.text().isBlank()) throw error(502, "PLATFORM_EMPTY", "平台没有返回可用的训练回复");
-            db.updateTurn(run.getResponseMessageId(), cipher.encrypt(output.text()), "complete");
+            db.updateTurn(run.getResponseMessageId(), cipher.encrypt(replyText(output.text())), "complete");
         }
         run.setStatus("succeeded"); db.updateRun(run); db.updateSession(session);
     }
@@ -418,6 +417,30 @@ public class TrainingService {
         view.put("content", cipher.decrypt(turn.getContent())); view.put("status", turn.getStatus());
         view.put("createTime", turn.getCreateTime() == null ? null : turn.getCreateTime().toString());
         return view;
+    }
+
+    /**
+     * 解析平台返回的评分：
+     * 实测平台会把模型输出的裸 {@code {"training_evaluation":{…}}} 作为文本送到后端；
+     * 某些配置下模型会先包一层 {@code {"response":"<JSON字符串>"}}，这里自动解包，避免因通道差异误判为「待复核」。
+     */
+    private JsonNode readEvaluation(String text) throws Exception {
+        JsonNode root = json.reader().with(DeserializationFeature.FAIL_ON_TRAILING_TOKENS).readTree(text);
+        if (root.isObject() && root.path("response").isTextual()) {
+            return json.reader().with(DeserializationFeature.FAIL_ON_TRAILING_TOKENS).readTree(root.path("response").asText());
+        }
+        return root;
+    }
+
+    /** 追问/提问阶段的回复：若被包成 {@code {"response":"…"}} 则取内层文本，避免前端直接看到 JSON */
+    private String replyText(String text) {
+        try {
+            JsonNode root = json.readTree(text);
+            if (root.isObject() && root.path("response").isTextual()) return root.path("response").asText();
+        } catch (Exception ignore) {
+            // 不是 JSON 就按原文处理
+        }
+        return text;
     }
 
     /** 已作答（正常提交或超时提交）——超时答案同样属于有效证据 */
