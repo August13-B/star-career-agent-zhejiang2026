@@ -60,6 +60,18 @@ const router = createRouter({
       meta: { requiresAuth: true }
     },
     {
+      path: '/training',
+      name: 'TrainingLobby',
+      component: () => import('../views/TrainingView.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
+      path: '/training/:sessionId',
+      name: 'TrainingSession',
+      component: () => import('../views/TrainingView.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
       path: '/tutor-dashboard',
       name: 'TutorDashboard',
       component: TutorDashboardView,

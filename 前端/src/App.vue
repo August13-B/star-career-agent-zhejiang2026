@@ -30,6 +30,11 @@
             <span class="nav-text">智能体对话</span>
           </router-link>
 
+          <router-link to="/training" class="nav-item">
+            <AppIcon name="briefcase" class="nav-icon" :size="17" />
+            <span class="nav-text">职场训练与评分</span>
+          </router-link>
+
           <router-link to="/growth" class="nav-item">
             <AppIcon name="trendUp" class="nav-icon" :size="17" />
             <span class="nav-text">个人成长</span>
