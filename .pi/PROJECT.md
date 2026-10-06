@@ -103,7 +103,7 @@ python manage.py free-port backend
     - **前端**：`TrainingView.vue`（工作台：进度/交付物/证据定位/限时倒计时）、`utils/text.js`（去 Markdown 按纯文本展示）、
       `utils/draftSync.js`（草稿同步，防旧快照回写）；语音输入用浏览器原生 Web Speech API
       —— 部署时 nginx 必须 `Permissions-Policy … microphone=(self)`（已修正），且需 HTTPS 或 localhost。
-19. **能力补充测评（`/ai-score`）—— 平台接口已交付，后端尚未实现**（设计已定稿）：
+19. **能力补充测评（`/ai-score`）✅ 已实现**（迁移 **014** + 后端编排器 + 前端重建）：
     - **个人中心不再做软实力测评**：只保留「基本情况」（硬实力 4 维：学历/实习/专业技能/证书，规则表换算）；
       六维软素质测评移到 `/ai-score`「能力补充测评」
     - 平台接口（已实现，对方 commit `bd3e89b`）：`POST /api/assessment/ability`，`{mode: ask|evaluate, prompt}`；
@@ -114,7 +114,12 @@ python manage.py free-port backend
       主观题 **3~4 道**（仅笼统时追问，同题最多 2 轮）；限时：客观 **30 秒**/题、主观 **3 分钟**/题，超时自动跳题，
       **不允许提前交卷**，支持**断点续答**；结果展示 **10 维**（硬 4 来自表单 + 软 6 来自问答），
       总分 `硬均值×30% + 软均值×70%`；写库只覆盖六维、写 history（version+1）
-    - 题库字段与接口字段**不同名**（`dim/text/t/s` → `dimension/question/text/score`），兜底需适配层
+    - 题库字段与接口字段**不同名**（`dim/text/t/s` → `dimension/question/text/score`），兜底需适配层（`AssessmentBank`）
+    - 本仓库接口：`GET /api/assessment/state`、`POST /api/assessment/sessions`、`GET /api/assessment/sessions/{id}`、
+      `POST /api/assessment/sessions/{id}/turns`、`PUT /api/assessment/sessions/{id}/draft`、`GET /api/assessment/sessions`、
+      `POST /api/ability/quiz/basic`（只存硬实力四项）
+    - 证据可举证：证据目录含「客观题情境 + 我的选择」，只被客观题覆盖的维度也能给出可核对 `evidenceId`
+    - 不采纳模型自算：客观题维度分后端复算并落库审计（`assessment_evaluation.objective_json`）
 
 ## 5. 当前阻塞（平台侧）
 
