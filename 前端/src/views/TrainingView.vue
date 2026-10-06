@@ -163,8 +163,8 @@ const speechSecureContext = typeof window === 'undefined' || window.isSecureCont
 const speechSupported = speechApiAvailable && speechSecureContext
 // 服务器响应头 Permissions-Policy 若写成 microphone=()，任何页面都会被拒（nginx 默认配置曾如此）
 const micPolicyBlocked = typeof document !== 'undefined' && typeof document.featurePolicy?.allowsFeature === 'function' && !document.featurePolicy.allowsFeature('microphone')
-const recognizing = ref(false), voiceInterim = ref(''), voiceHint = ref('')
-let recognition = null, voiceBase = '', voiceWriting = false, voiceIntent = false, voiceRestarts = 0
+const recognizing = ref(false), voiceInterim = ref(''), voiceHint = ref(''), voiceSilent = ref(0)
+let recognition = null, voiceBase = '', voiceWriting = false, voiceIntent = false, voiceRestarts = 0, voiceWatchdog
 
 // ===== 单题限时（以服务端下发时刻为准；超时自动提交并标记「超时」）=====
 const clock = ref(Date.now()), serverOffset = ref(0), timeLimitNotice = ref('')
@@ -229,6 +229,8 @@ function startVoice() {
   voiceHint.value = ''
   voiceIntent = true
   voiceRestarts = 0
+  voiceSilent.value = 0
+  console.info('[语音输入] 开始：secure=' + speechSecureContext + ' policyBlocked=' + micPolicyBlocked + ' lang=zh-CN')
   launchRecognition()
 }
 function launchRecognition() {
@@ -237,24 +239,41 @@ function launchRecognition() {
   recognition.continuous = true
   recognition.interimResults = true
   voiceBase = draft.value
+  let heard = false
+  recognition.onstart = () => console.info('[语音输入] onstart（识别已启动）')
+  recognition.onaudiostart = () => console.info('[语音输入] onaudiostart（开始采集麦克风）')
+  recognition.onsoundstart = () => { heard = true; clearTimeout(voiceWatchdog); console.info('[语音输入] onsoundstart（检测到声音）') }
+  recognition.onspeechend = () => console.info('[语音输入] onspeechend（一句话结束）')
+  clearTimeout(voiceWatchdog)
+  voiceWatchdog = setTimeout(() => {
+    if (voiceIntent && !heard) voiceHint.value = '识别已启动但没检测到声音：请确认 Windows「设置 → 系统 → 声音 → 输入设备」选对了麦克风、未被静音、也没被其它软件占用。'
+  }, 4000)
   recognition.onresult = event => {
     let interim = ''
     for (let index = event.resultIndex; index < event.results.length; index += 1) {
       const result = event.results[index]
       const text = result[0]?.transcript || ''
-      if (result.isFinal) voiceBase += text
+      if (result.isFinal) { voiceBase += text; console.info('[语音输入] 定稿:', text) }
       else interim += text
     }
     voiceWriting = true
     draft.value = voiceBase + interim
     voiceWriting = false
     voiceInterim.value = interim
+    voiceSilent.value = 0
     scheduleDraft()
   }
   recognition.onerror = event => {
     voiceInterim.value = ''
-    // no-speech / aborted 交给 onend 自动续上（Chrome 停顿后会自动结束）
-    if (event.error === 'no-speech' || event.error === 'aborted') return
+    console.warn('[语音输入] onerror:', event.error, event.message || '')
+    // aborted 交给 onend 自动续上
+    if (event.error === 'aborted') return
+    // no-speech：麦克风没拾到声音——不静默，明确提示并继续听
+    if (event.error === 'no-speech') {
+      voiceSilent.value += 1
+      voiceHint.value = `第 ${voiceSilent.value} 次没听到声音：请靠近麦克风、确认浏览器默认输入设备正确且未静音（仍在继续听）`
+      return
+    }
     voiceIntent = false; recognizing.value = false
     voiceHint.value = ['not-allowed', 'service-not-allowed'].includes(event.error)
       ? '麦克风被拒绝或被服务器策略禁用：请检查地址栏麦克风权限；若通过 nginx 访问，需允许响应头 Permissions-Policy microphone=(self)。'
@@ -265,15 +284,17 @@ function launchRecognition() {
   }
   recognition.onend = () => {
     voiceInterim.value = ''
-    if (!voiceIntent || !canAnswer.value) { voiceIntent = false; recognizing.value = false; return }
-    if (voiceRestarts >= 30) { voiceIntent = false; recognizing.value = false; voiceHint.value = '语音识别多次中断，已停止；可以重新点击按钮或直接打字。'; return }
+    console.info('[语音输入] onend（voiceIntent=' + voiceIntent + ', restarts=' + voiceRestarts + '）')
+    if (!voiceIntent || !canAnswer.value) { voiceIntent = false; recognizing.value = false; clearTimeout(voiceWatchdog); return }
+    if (voiceRestarts >= 30) { voiceIntent = false; recognizing.value = false; clearTimeout(voiceWatchdog); voiceHint.value = '语音识别多次中断，已停止；可以重新点击按钮或直接打字。'; return }
     voiceRestarts += 1
     setTimeout(() => { if (voiceIntent) launchRecognition() }, 250)
   }
-  try { recognition.start(); recognizing.value = true } catch (e) { voiceIntent = false; recognizing.value = false; voiceHint.value = '语音识别无法启动，请改用打字输入。' }
+  try { recognition.start(); recognizing.value = true } catch (e) { voiceIntent = false; recognizing.value = false; voiceHint.value = '语音识别无法启动，请改用打字输入。'; console.warn('[语音输入] start 失败:', e) }
 }
 function stopVoice() {
   voiceIntent = false
+  clearTimeout(voiceWatchdog)
   try { recognition?.stop() } catch (e) { /* 停止时的异常可忽略 */ }
   recognition = null; recognizing.value = false; voiceInterim.value = ''
 }
