@@ -16,7 +16,7 @@
       <h3>把一条建议加入成长任务</h3>
       <p v-if="session.growthTask">已关联成长任务。每次训练只创建一条，重复操作不会增加任务。<router-link to="/growth">前往成长轨迹</router-link></p>
       <template v-else>
-        <label>选择练习建议<select v-model="suggestion"><option v-for="(item,index) in session.evaluation.result.suggestions" :key="index" :value="index">{{ item }}</option></select></label>
+        <label>选择练习建议<select v-model="suggestion"><option v-for="(item,index) in session.evaluation.result.suggestions" :key="index" :value="index">{{ stripMarkdown(item) }}</option></select></label>
         <label>加入已有成长计划<select v-model="planId"><option value="">请选择计划</option><option v-for="plan in plans" :key="plan.id" :value="plan.id">{{ plan.name }}</option></select></label>
         <p v-if="!plans.length">还没有可用计划，请先在<router-link to="/growth">成长轨迹</router-link>创建计划，然后返回本次训练。</p>
         <button :disabled="pending || !planId" @click="link">加入成长任务</button><button class="secondary" :disabled="pending" @click="loadPlans">刷新计划</button>
@@ -28,6 +28,7 @@
 <script setup>
 import { onMounted, ref } from 'vue'
 import { trainingRequest } from '../utils/trainingApi'
+import { stripMarkdown } from '../utils/text'
 const props = defineProps({ session: { type: Object, required: true } }), emit = defineEmits(['updated'])
 const labels = { education: '学历背景', internship: '实习经历', professional: '专业技能', certificate: '证书资质', innovation: '创新能力', learning: '学习能力', pressure: '抗压能力', communication: '沟通能力', problem_solving: '问题解决', teamwork: '团队协作' }
 const plans = ref([]), planId = ref(''), suggestion = ref(0), pending = ref(false), error = ref('')

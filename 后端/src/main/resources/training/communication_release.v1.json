@@ -1,6 +1,6 @@
 {
   "id":"communication_release.v1", "scenario":"cross_role_communication", "title":"跨岗位沟通：周五上线协调", "rubricVersion":"communication_rubric.v1",
-  "description":"作为项目协调人，与产品、开发、测试澄清分歧，交付一份协作确认单。", "duration":"12–18 分钟",
+  "description":"作为项目协调人，与产品、开发、测试澄清分歧，交付一份协作确认单。", "duration":"12–18 分钟", "timeLimitSeconds":480,
   "materials":[
     "虚构案例：当前周三上午，校园报名系统计划周五18:00发布。你是项目协调人，无权单方面批准上线。",
     "产品小周：希望本周增加报名导出。最低需求是导出姓名、报名时间两列；复杂筛选和图表可协商后延期。",

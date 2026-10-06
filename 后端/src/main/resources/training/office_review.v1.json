@@ -1,6 +1,6 @@
 {
   "id":"office_review.v1", "scenario":"ai_assisted_office", "title":"AI 辅助办公：活动复盘与核验", "rubricVersion":"office_rubric.v1",
-  "description":"给 AI 布置任务，对照材料检查练习稿，修订复盘摘要与待办清单。", "duration":"15–20 分钟",
+  "description":"给 AI 布置任务，对照材料检查练习稿，修订复盘摘要与待办清单。", "duration":"15–20 分钟", "timeLimitSeconds":600,
   "materials":[
     "材料均为虚构。读者为活动运营负责人，交付物为简短复盘摘要及明确责任的待办清单。",
     "校园公众号：访问1000人、意向120人、报名24人；社群：访问500人、意向80人、报名20人；短视频：访问2000人、意向100人、报名10人。",
