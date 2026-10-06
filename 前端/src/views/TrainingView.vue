@@ -138,6 +138,7 @@ import TrainingArtifact from '../components/TrainingArtifact.vue'
 import TrainingOutcome from '../components/TrainingOutcome.vue'
 import { newTrainingRequestId, trainingBusy, trainingRequest, trainingStatus } from '../utils/trainingApi'
 import { stripMarkdown } from '../utils/text'
+import { nextDraftAction } from '../utils/draftSync'
 
 const difficulty = ref('standard'), useForProfile = ref(true), artifactEditor = ref(null)
 const route = useRoute()
@@ -311,10 +312,17 @@ async function loadSession(forceDraft = false) {
   const data = await read(`/sessions/${sessionId.value}`)
   if (disposed || sequence !== readSequence) return
   const previousText = session.value?.messages.map(item => item.content).join('') || ''
-  // A poll started before a draft write may arrive after it; never restore an older draft version.
-  if (forceDraft || !session.value || (!saving.value && draft.value === savedDraft.value && data.draftVersion >= draftVersion.value)) {
+  // 轮询可能带着「提交之前」的旧快照回来：只在服务端版本更高时才覆盖本地草稿（详见 utils/draftSync）
+  const draftAction = nextDraftAction({
+    force: forceDraft,
+    hasSession: !!session.value,
+    untouched: !saving.value && draft.value === savedDraft.value,
+    serverVersion: data.draftVersion,
+    localVersion: draftVersion.value
+  })
+  if (draftAction === 'use') {
     draft.value = data.draft; savedDraft.value = data.draft; draftVersion.value = data.draftVersion; draftConflict.value = false
-  } else if (!saving.value && data.draftVersion > draftVersion.value) draftConflict.value = true
+  } else if (draftAction === 'conflict') draftConflict.value = true
   session.value = data
   if (data.serverTime) serverOffset.value = new Date(data.serverTime).getTime() - Date.now()
   await nextTick()
@@ -397,8 +405,15 @@ function sendAnswer() {
     await saveDraft()
     const content = draft.value
     if (!answerRequest || answerRequest.content !== content) answerRequest = { content, clientRequestId: newTrainingRequestId() }
-    await trainingRequest(`/sessions/${sessionId.value}/turns`, { method: 'POST', body: { ...answerRequest, expectedVersion: session.value.version } })
-    answerRequest = null; draft.value = ''; savedDraft.value = ''; followingBottom = true
+    // 立即清空输入框（提交前的旧快照由 draftSync 拦掉）；提交失败再把内容还给用户，避免白写
+    draft.value = ''; savedDraft.value = ''; followingBottom = true
+    try {
+      await trainingRequest(`/sessions/${sessionId.value}/turns`, { method: 'POST', body: { ...answerRequest, expectedVersion: session.value.version } })
+      answerRequest = null
+    } catch (reason) {
+      draft.value = content; savedDraft.value = content
+      throw reason
+    }
   })
 }
 
