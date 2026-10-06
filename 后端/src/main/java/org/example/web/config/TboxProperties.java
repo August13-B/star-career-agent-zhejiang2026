@@ -56,6 +56,15 @@ public class TboxProperties {
     private String trainingToken;
     private int trainingTimeoutSeconds = 180;
 
+    /** 能力补充测评接口路径（如 /api/assessment/ability）；留空 = 未配置，客观题走题库兜底。 */
+    private String assessmentPath;
+
+    /** 测评接口令牌：平台配置 ASSESSMENT_API_TOKEN 后需带 X-Assessment-Token（未配置则不发送）。 */
+    private String assessmentToken;
+
+    /** 测评单次调用超时（秒）。 */
+    private int assessmentTimeoutSeconds = 120;
+
     public String trainingPathFor(String scenario) {
         if (scenario == null) return null;
         return switch (scenario) {

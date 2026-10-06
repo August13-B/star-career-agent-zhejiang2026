@@ -173,6 +173,7 @@ AUTO_MIGRATIONS = [
     MIGRATIONS_DIR / "011_training_workplace.sql",
     MIGRATIONS_DIR / "012_report_job_owner.sql",
     MIGRATIONS_DIR / "013_training_job.sql",
+    MIGRATIONS_DIR / "014_ability_assessment.sql",
 ]
 EXPECTED_TABLES = 31
 

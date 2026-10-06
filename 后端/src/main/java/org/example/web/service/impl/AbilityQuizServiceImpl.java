@@ -50,6 +50,9 @@ public class AbilityQuizServiceImpl implements AbilityQuizService {
     @Autowired
     private ObjectMapper objectMapper;
 
+    @Autowired
+    private org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
+
     private volatile JsonNode bank;
 
     private final Random rnd = new Random();
@@ -260,6 +263,91 @@ public class AbilityQuizServiceImpl implements AbilityQuizService {
     }
 
     /** 写/更新 student_ability 的 4 个硬实力文本字段（内部 RSA 加密） */
+    @Override
+    @org.springframework.transaction.annotation.Transactional(rollbackFor = Exception.class)
+    public Map<String, Object> saveBasic(Long userId, Map<String, Object> basic) {
+        String education = str(basic.get("education"));
+        String internship = str(basic.get("internshipMonths"));
+        String skill = str(basic.get("skillLevel"));
+        String certificate = str(basic.get("certCount"));
+        if (education.isBlank() || internship.isBlank() || skill.isBlank() || certificate.isBlank()) {
+            throw new IllegalArgumentException("请完整填写基本情况（学历 / 实习时长 / 专业技能 / 证书数量）");
+        }
+        JsonNode rules = bank().path("hardScoreRules");
+        int educationScore = rule(rules.path("education"), education, 60);
+        int internshipScore = rule(rules.path("internshipMonths"), internship, 60);
+        int professionalScore = rule(rules.path("skillLevel"), skill, 60);
+        int certificateScore = rule(rules.path("certCount"), certificate, 60);
+
+        // 保留已有软实力六维（个人中心不再测软实力；没有历史则按基线 60）
+        Map<String, Integer> soft = new LinkedHashMap<>();
+        for (StudentAbilityScore row : studentAbilityScoreService.selectByUserId(userId)) {
+            if (row.getScoreType() != null && row.getScoreType() == 1) {
+                soft.put("communication", value(row.getCommunicationScore()));
+                soft.put("teamwork", value(row.getTeamworkScore()));
+                soft.put("problem_solving", value(row.getProblemSolvingScore()));
+                soft.put("innovation", value(row.getInnovationScore()));
+                soft.put("learning", value(row.getLearningScore()));
+                soft.put("pressure", value(row.getPressureScore()));
+                break;
+            }
+        }
+        for (String dimension : List.of("communication", "teamwork", "problem_solving", "innovation", "learning", "pressure")) {
+            soft.putIfAbsent(dimension, 60);
+        }
+        int hardAverage = (educationScore + internshipScore + professionalScore + certificateScore) / 4;
+        int softAverage = (int) Math.round(soft.values().stream().mapToInt(Integer::intValue).average().orElse(60));
+        int total = (int) Math.round(hardAverage * 0.3 + softAverage * 0.7);
+
+        StudentAbility ability = upsertHardText(userId, basic);
+        try {
+            Map<String, Object> options = new LinkedHashMap<>();
+            options.put("education", education);
+            options.put("internshipMonths", internship);
+            options.put("skillLevel", skill);
+            options.put("certCount", certificate);
+            jdbcTemplate.update("UPDATE student_ability SET basic_options=? WHERE user_id=? AND is_deleted=0",
+                    objectMapper.writeValueAsString(options), userId);
+        } catch (Exception e) {
+            log.warn("写 basic_options 失败（不阻断保存）: {}", e.getMessage());
+        }
+
+        StudentAbilityScore score = new StudentAbilityScore();
+        score.setUserId(userId);
+        score.setAbilityId(ability == null ? null : ability.getId());
+        score.setEducationScore(educationScore);
+        score.setInternshipScore(internshipScore);
+        score.setProfessionalScore(professionalScore);
+        score.setCertificateScore(certificateScore);
+        score.setCommunicationScore(soft.get("communication"));
+        score.setTeamworkScore(soft.get("teamwork"));
+        score.setProblemSolvingScore(soft.get("problem_solving"));
+        score.setInnovationScore(soft.get("innovation"));
+        score.setLearningScore(soft.get("learning"));
+        score.setPressureScore(soft.get("pressure"));
+        score.setTotalScore(BigDecimal.valueOf(total));
+        score.setScoreType(1);
+        score.setScoreComment("基本情况已保存：硬实力四项按规则表换算；软实力六维保留上次测评结果（如未测评则为基线 60）。");
+        scoreWrites.replace(score);
+
+        Map<String, Object> scores = new LinkedHashMap<>();
+        scores.put("education", educationScore);
+        scores.put("internship", internshipScore);
+        scores.put("professional", professionalScore);
+        scores.put("certificate", certificateScore);
+        scores.putAll(soft);
+        scores.put("total", total);
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("scores", scores);
+        out.put("dimensions", dimensionList(scores));
+        out.put("profileReady", true);
+        return out;
+    }
+
+    private static int value(Integer score) {
+        return score == null ? 60 : score;
+    }
+
     private StudentAbility upsertHardText(Long userId, Map<String, Object> basic) {
         try {
             List<StudentAbility> existing = studentAbilityService.selectByUserId(userId);

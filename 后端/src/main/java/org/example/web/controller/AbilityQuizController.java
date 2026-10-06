@@ -35,6 +35,28 @@ public class AbilityQuizController {
     }
 
     /** 提交作答：评分并落库（10 维分 + total + 评语） */
+    /**
+     * 只保存「基本情况」（硬实力四项）——个人中心「编辑能力数据」用。
+     *
+     * <p>软实力六维不由这里产生：保留已有分数（未测评则为基线 60），六维由
+     * `/ai-score`「能力补充测评」的 AI 问答产出。
+     */
+    @PostMapping("/basic")
+    public Result<?> saveBasic(@RequestBody Map<String, Object> body,
+                               @RequestHeader(value = "Authorization", required = false) String token) {
+        Long userId;
+        try {
+            userId = Long.parseLong(String.valueOf(org.example.web.tool.JwtUtil.parseToken(token).get("id")));
+        } catch (Exception e) {
+            return Result.error("登录状态无效");
+        }
+        try {
+            return Result.success("基本情况已保存", abilityQuizService.saveBasic(userId, body));
+        } catch (IllegalArgumentException e) {
+            return Result.error(e.getMessage());
+        }
+    }
+
     @PostMapping("/submit")
     @CrossOrigin
     public Result<?> submit(@RequestBody Map<String, Object> body,
