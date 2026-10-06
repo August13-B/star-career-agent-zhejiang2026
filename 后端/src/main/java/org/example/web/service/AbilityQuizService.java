@@ -22,4 +22,12 @@ public interface AbilityQuizService {
      * @return 10 维分数 + total + 评语
      */
     Map<String, Object> submit(Long userId, Map<String, Object> body);
+
+    /**
+     * 只保存「基本情况」（硬实力四项：学历/实习/专业技能/证书）——个人中心不再做软实力测评。
+     *
+     * <p>按规则表换算硬实力四维，**保留已有软实力六维**（无则默认 60），重算总分；
+     * 原始选项写入 {@code student_ability.basic_options} 以便复算与回显。
+     */
+    java.util.Map<String, Object> saveBasic(Long userId, java.util.Map<String, Object> basic);
 }

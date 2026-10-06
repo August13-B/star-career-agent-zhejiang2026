@@ -111,6 +111,10 @@ tbox:
   training-path-ai-office: ${TBOX_TRAINING_PATH_AI_OFFICE:}
   training-token: ${TRAINING_API_TOKEN:}
   training-timeout-seconds: ${TBOX_TRAINING_TIMEOUT_SECONDS:180}
+  # ── 能力补充测评（/ai-score，应用内新增接口）──
+  assessment-path: ${ASSESSMENT_API_PATH:}                              # 如 /api/assessment/ability（留空=未配置，客观题走题库兜底）
+  assessment-token: ${ASSESSMENT_API_TOKEN:}                            # 平台配置后需带 X-Assessment-Token
+  assessment-timeout-seconds: ${ASSESSMENT_TIMEOUT_SECONDS:120}         # 测评单次调用超时（秒）
 
 # ── 日志 ──
 logging:
