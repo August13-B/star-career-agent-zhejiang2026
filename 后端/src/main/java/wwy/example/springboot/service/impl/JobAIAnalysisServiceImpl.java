@@ -72,6 +72,73 @@ public class JobAIAnalysisServiceImpl implements JobAIAnalysisService {
         log.info("岗位 {} 分析完成并保存", jobInfoId);
     }
 
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void analyzeProfileAndSave(Long profileId) {
+        analyzeProfile(profileId);
+    }
+
+    /**
+     * 批量补全缺失要求的岗位画像。
+     *
+     * <p>刻意不加 {@code @Transactional}：单个画像内部含一次 10~20s 的平台 AI 调用，
+     * 把它包进事务会长时间占用数据库连接；逐个补全、失败跳过并计数更稳。
+     */
+    @Override
+    public java.util.Map<String, Object> analyzeMissingProfiles(int limit) {
+        int max = Math.max(1, Math.min(limit, 100));
+        List<JobRequirementProfile> profiles = requirementProfileService.findAll();
+        int processed = 0, skipped = 0, failed = 0;
+        for (JobRequirementProfile profile : profiles) {
+            if (processed >= max) break;
+            if (hardRequirementService.findByJobId(profile.getId()) != null) { skipped++; continue; }
+            try {
+                analyzeProfile(profile.getId());
+                processed++;
+            } catch (Exception e) {
+                failed++;
+                log.warn("岗位画像 {} 要求补全失败：{}", profile.getId(), e.getMessage());
+            }
+        }
+        java.util.Map<String, Object> summary = new java.util.LinkedHashMap<>();
+        summary.put("total", profiles.size());
+        summary.put("processed", processed);
+        summary.put("skipped", skipped);
+        summary.put("failed", failed);
+        summary.put("remaining", Math.max(0, profiles.size() - processed - skipped - failed));
+        log.info("岗位画像要求批量补全：{}", summary);
+        return summary;
+    }
+
+    /** 单个画像的 AI 分析 + 落库（共享实现，不含事务语义）。 */
+    private void analyzeProfile(Long profileId) {
+        JobRequirementProfile profile = requirementProfileService.findById(profileId);
+        if (profile == null) {
+            throw new RuntimeException("岗位画像不存在，id=" + profileId);
+        }
+        if (hardRequirementService.findByJobId(profileId) != null) {
+            log.info("岗位画像 {} 已补全过，跳过", profileId);
+            return;
+        }
+        // 用画像自身合成分析对象（buildPrompt 会拼 null 字面量，故未使用的字段填空串）
+        JobInfo subject = new JobInfo();
+        subject.setId(profileId);
+        subject.setJobName(profile.getPositionName());
+        subject.setIndustry(profile.getIndustry() == null ? "" : profile.getIndustry());
+        subject.setJobDetail(profile.getDescription() == null || profile.getDescription().isBlank()
+                ? "岗位：" + profile.getPositionName() + "（" + (profile.getCategory() == null ? "" : profile.getCategory()) + "）。请按岗位名称给出该岗位在真实招聘中的典型要求。"
+                : profile.getDescription());
+        subject.setCompanyName("");
+        subject.setSalaryRange("");
+        subject.setCompanyDetail("");
+        String aiResponseText = callAiApi(buildPrompt(subject));
+        AiJobAnalysisResult result = parseAiResponse(aiResponseText);
+        saveHardRequirement(profileId, result);
+        saveSkillRequirement(profileId, result);
+        saveSoftRequirement(profileId, result);
+        log.info("岗位画像 {} 十维要求补全完成", profileId);
+    }
+
     private Long getOrCreateRequirementProfile(JobInfo jobInfo) {
         if (jobInfo.getJobId() != null) {
             JobRequirementProfile existing = requirementProfileService.findById(jobInfo.getJobId());

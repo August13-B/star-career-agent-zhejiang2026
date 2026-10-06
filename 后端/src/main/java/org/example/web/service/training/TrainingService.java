@@ -354,7 +354,7 @@ public class TrainingService {
         vars.put("industry", orDefault(text(job, "industry"), "目标行业"));
         vars.put("level", orDefault(text(job, "level"), "不限"));
         vars.put("company", orDefault(text(job, "companyName"), "示例企业"));
-        vars.put("skills", orDefault(text(job, "skills"), "岗位核心技能（以招聘信息为准）"));
+        vars.put("skills", orDefault(text(job, "skills"), "以招聘信息中的技能要求为准"));
         vars.put("certificate", orDefault(text(job, "certificate"), "无硬性证书要求"));
         vars.put("description", orDefault(text(job, "description"), "岗位职责以实际招聘信息为准"));
         return vars;
