@@ -40,7 +40,12 @@ public class AbilityQuizServiceImpl implements AbilityQuizService {
     private StudentAbilityService studentAbilityService;
 
     @Autowired
+    private org.example.web.service.StudentProfileService studentProfileService;
+
+    @Autowired
     private StudentAbilityScoreService studentAbilityScoreService;
+    @org.springframework.beans.factory.annotation.Autowired
+    private org.example.web.service.training.AbilityScoreWrites scoreWrites;
 
     @Autowired
     private ObjectMapper objectMapper;
@@ -128,6 +133,8 @@ public class AbilityQuizServiceImpl implements AbilityQuizService {
         for (JsonNode q : root.path("questions")) {
             byId.put(q.path("id").asText(), q);
         }
+        validateAnswers(body, byId, root.path("dimensions").size());
+        scoreWrites.lock(userId);
 
         // 1) 软维度：累加得分/满分
         Map<String, int[]> soft = new LinkedHashMap<>();
@@ -237,12 +244,39 @@ public class AbilityQuizServiceImpl implements AbilityQuizService {
         return out;
     }
 
+    private void validateAnswers(Map<String,Object> body, Map<String,JsonNode> byId, int dimensions) {
+        Object raw = body == null ? null : body.get("answers");
+        if (!(raw instanceof List<?> answers) || answers.size() < dimensions || answers.size() > dimensions * 2)
+            throw new IllegalArgumentException("请完整回答本次六维测评题目");
+        var seen = new java.util.HashSet<String>();
+        var counts = new java.util.HashMap<String,Integer>();
+        for (Object value : answers) {
+            if (!(value instanceof Map<?,?> answer)) throw new IllegalArgumentException("作答格式错误");
+            String id = String.valueOf(answer.get("id"));
+            JsonNode question = byId.get(id);
+            if (question == null || !seen.add(id)) throw new IllegalArgumentException("题目不存在或重复提交");
+            int option;
+            try { option = Integer.parseInt(String.valueOf(answer.get("k"))); }
+            catch (NumberFormatException e) { throw new IllegalArgumentException("选项格式错误"); }
+            if (option < 0 || option >= question.path("options").size()) throw new IllegalArgumentException("选项不存在");
+            if (counts.merge(question.path("dim").asText(), 1, Integer::sum) > 2)
+                throw new IllegalArgumentException("同一维度最多回答两题");
+        }
+        if (counts.size() != dimensions) throw new IllegalArgumentException("请完成所有测评维度");
+    }
+
     /** 写/更新 student_ability 的 4 个硬实力文本字段（内部 RSA 加密） */
     private StudentAbility upsertHardText(Long userId, Map<String, Object> basic) {
         try {
             List<StudentAbility> existing = studentAbilityService.selectByUserId(userId);
             StudentAbility ab = existing.isEmpty() ? new StudentAbility() : existing.get(0);
             ab.setUserId(userId);
+            // A score without its owner's profile link cannot serve as a training baseline.
+            // Re-submitting also repairs older questionnaire records with a missing link.
+            var profiles = studentProfileService.selectByUserId(userId);
+            if (profiles != null && profiles.size() == 1) {
+                ab.setProfileId(profiles.get(0).getId());
+            }
             ab.setEducationRequirement("学历：" + label("education", str(basic.get("education")))
                     + "；专业：" + defaultStr(basic.get("major"), "未填写"));
             ab.setProfessionalSkill("技能：" + defaultStr(basic.get("skillDesc"), "未填写")

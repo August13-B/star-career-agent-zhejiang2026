@@ -63,6 +63,19 @@ class ConversationStreamingTest {
 
     @ParameterizedTest
     @ValueSource(booleans = {false, true})
+    void errorEnvelopeIsForwardedWithoutPersistingAnAnswer(boolean withImage) {
+        var received = new ArrayList<String>();
+        response(withImage).subscribe(received::add);
+        upstream.tryEmitNext("{\"data\":\"unfinished\"}");
+        upstream.tryEmitNext("{\"error\":\"upstream unavailable\"}");
+        upstream.tryEmitComplete();
+        assertTrue(received.get(1).contains("upstream unavailable"));
+        verify(conversations, never()).insertMessage(argThat(m -> m.getMessageType() == 2));
+        verify(conversations, never()).updateConversationStatus(2L, 2);
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
     void pushesChunksBeforeCompletionAndThenPersistsReply(boolean withImage) {
         var received = new ArrayList<String>();
         var errors = new ArrayList<Throwable>();

@@ -1,5 +1,5 @@
 <template>
-  <div class="app-layout">
+  <div class="app-layout" :class="{ 'training-layout': $route.path.startsWith('/training') || $route.path === '/graph' }">
     
     <aside class="sidebar">
       <div class="logo-area">
@@ -28,6 +28,11 @@
           <router-link to="/multi-agent" class="nav-item">
             <AppIcon name="cpu" class="nav-icon" :size="17" />
             <span class="nav-text">多智能体中枢</span>
+          </router-link>
+
+          <router-link to="/training" class="nav-item">
+            <AppIcon name="briefcase" class="nav-icon" :size="17" />
+            <span class="nav-text">职场训练</span>
           </router-link>
 
           <router-link to="/growth" class="nav-item">
@@ -374,4 +379,13 @@ body { margin: 0; background-color: #F4F7FC; font-family: -apple-system, BlinkMa
 
 .page-fade-enter-active, .page-fade-leave-active { transition: all 0.4s cubic-bezier(0.25, 0.8, 0.25, 1); }
 .page-fade-enter-from, .page-fade-leave-to { opacity: 0; transform: translateY(15px); }
+/* Keep training usable at narrow widths while preserving the shared navigation links. */
+@media (max-width: 700px) {
+  .training-layout { flex-direction: column; }
+  .training-layout .sidebar { width:100%;min-width:0;padding:8px;flex-shrink:0; }
+  .training-layout .logo-area,.training-layout .recommend-section,.training-layout .section-title,.training-layout .user-profile-wrapper { display:none; }
+  .training-layout .nav-menu { flex-direction:row;overflow-x:auto;gap:4px; }
+  .training-layout .nav-item { flex-direction:column;min-width:62px;gap:4px;padding:8px 5px;font-size:11px;white-space:nowrap; }
+  .training-layout .main-content { min-height:0;padding:0; }
+}
 </style>

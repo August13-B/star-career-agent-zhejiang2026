@@ -20,6 +20,16 @@ public class StudentAbilityScoreServiceImpl implements StudentAbilityScoreServic
     private static final Logger logger = LoggerFactory.getLogger(StudentAbilityScoreServiceImpl.class);
     private final StudentAbilityScoreMapper studentAbilityScoreMapper;
     private final RSA_256 rsa256;
+    private final org.springframework.jdbc.core.JdbcTemplate scoreJdbc;
+    private void lockScoreUser(Long userId) {
+        if (userId == null) throw new IllegalArgumentException("评分用户不能为空");
+        scoreJdbc.queryForObject("SELECT id FROM user WHERE id=? FOR UPDATE", Long.class, userId);
+        scoreJdbc.update("UPDATE student_profile SET version=version+1 WHERE user_id=? AND is_deleted=0", userId);
+    }
+    private Long scoreOwner(Long id) {
+        var owners=scoreJdbc.queryForList("SELECT user_id FROM student_ability_score WHERE id=?", Long.class, id);
+        return owners.isEmpty() ? null : owners.get(0);
+    }
 
     @Override
     public List<StudentAbilityScore> selectAll() {
@@ -67,6 +77,7 @@ public class StudentAbilityScoreServiceImpl implements StudentAbilityScoreServic
     @Transactional(rollbackFor = Exception.class)
     public int insert(StudentAbilityScore score) {
         try {
+            lockScoreUser(score.getUserId());
             // 使用雪花算法生成分布式ID
             score.setId(org.example.web.tool.SnowIdCreater.generateId(6)); // 类别6=student_ability_score
 
@@ -95,6 +106,10 @@ public class StudentAbilityScoreServiceImpl implements StudentAbilityScoreServic
                 throw new IllegalArgumentException("评分ID不能为空且必须大于0");
             }
 
+            Long owner=scoreOwner(score.getId());
+            if (owner==null) return 0;
+            if (score.getUserId()!=null && !owner.equals(score.getUserId())) throw new IllegalArgumentException("不能变更评分所属用户");
+            lockScoreUser(owner);
             // 敏感字段更新时重新加密
             if (score.getScoreComment() != null) {
                 try {
@@ -160,6 +175,7 @@ public class StudentAbilityScoreServiceImpl implements StudentAbilityScoreServic
             if (id == null || id <= 0) {
                 throw new IllegalArgumentException("评分ID不能为空且必须大于0");
             }
+            Long owner=scoreOwner(id); if (owner==null) return 0; lockScoreUser(owner);
             return studentAbilityScoreMapper.deleteById(id);
         } catch (IllegalArgumentException e) {
             logger.warn("【评分服务】删除评分参数错误：{}", e.getMessage());
@@ -177,6 +193,7 @@ public class StudentAbilityScoreServiceImpl implements StudentAbilityScoreServic
             if (ids == null || ids.isEmpty()) {
                 throw new IllegalArgumentException("批量删除的ID列表不能为空");
             }
+            ids.stream().map(this::scoreOwner).filter(java.util.Objects::nonNull).distinct().sorted().forEach(this::lockScoreUser);
             return studentAbilityScoreMapper.batchDelete(ids);
         } catch (IllegalArgumentException e) {
             logger.warn("【评分服务】批量删除参数错误：{}", e.getMessage());

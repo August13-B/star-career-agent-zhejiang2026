@@ -702,7 +702,7 @@ const resetPassword = async () => {
 .toast-fade-leave-to { opacity: 0; transform: translate(-50%, -20px); }
 
 /* 主体样式 */
-.login-page { width: 100vw; height: 100vh; background-image: url('/your-image-name.png'); background-size: cover; background-position: center; background-repeat: no-repeat; display: flex; justify-content: center; align-items: center; position: absolute; top: 0; left: 0; z-index: 1000; overflow: hidden; }
+.login-page { width: 100vw; height: 100vh; background-color: #f1f5f9; background-size: cover; background-position: center; background-repeat: no-repeat; display: flex; justify-content: center; align-items: center; position: absolute; top: 0; left: 0; z-index: 1000; overflow: hidden; }
 .login-page::before { content: ""; position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(240, 246, 255, 0.3); backdrop-filter: blur(5px); z-index: 1; }
 .login-card { position: relative; z-index: 2; width: 100%; max-width: 440px; min-height: 580px; background: rgba(255, 255, 255, 0.92); backdrop-filter: blur(20px); border: 1px solid rgba(255, 255, 255, 0.8); border-radius: 20px; padding: 40px; box-shadow: 0 25px 50px rgba(0, 0, 0, 0.1); animation: fadeInUp 0.5s cubic-bezier(0.25, 0.8, 0.25, 1); display: flex; flex-direction: column; overflow: hidden; }
 .close-btn { position: absolute; top: 15px; right: 15px; background: transparent; border: none; color: #94A3B8; cursor: pointer; padding: 8px; border-radius: 50%; display: flex; align-items: center; justify-content: center; transition: all 0.3s ease; z-index: 10; }

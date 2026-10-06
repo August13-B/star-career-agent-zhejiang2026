@@ -27,6 +27,9 @@ import jakarta.servlet.http.HttpSession;
 @RestController
 @RequestMapping("/user")
 public class UserController {
+    @org.springframework.beans.factory.annotation.Autowired
+    private org.example.web.security.AccessGuard access;
+
 
     @Autowired
     private UserService userService;
@@ -419,6 +422,8 @@ public class UserController {
     @PostMapping("/deleteById")
     @CrossOrigin
     public Result<Void> deleteById(@RequestParam Integer start, @RequestParam Integer end) {
+        access.admin();
+
         userService.deleteById(start, end);
         return Result.success();
     }
@@ -692,6 +697,8 @@ public class UserController {
     @PutMapping("/change_password")
     @CrossOrigin
     public Result<String> changePassword(@RequestBody Map<String, String> request) throws Exception {
+        access.self(request.get("userId"));
+
         // 1. 获取参数
         String userIdStr = request.get("userId");
         String encryptedOldPassword = request.get("encryptedOldPassword");

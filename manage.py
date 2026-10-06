@@ -168,6 +168,9 @@ AUTO_MIGRATIONS = [
     MIGRATIONS_DIR / "007_grow_plan_goals.sql",
     MIGRATIONS_DIR / "008_grow_task_record.sql",
     MIGRATIONS_DIR / "009_user_nickname_unique.sql",
+    MIGRATIONS_DIR / "010_training_interview.sql",
+    MIGRATIONS_DIR / "011_training_workplace.sql",
+    MIGRATIONS_DIR / "012_report_job_owner.sql",
 ]
 EXPECTED_TABLES = 31
 
@@ -286,7 +289,7 @@ def _mysql_file(path: Path) -> bool:
 
 
 def db_seed(force: bool = False) -> bool:
-    """自动灌库（幂等）：缺表则建表，无业务数据则导入数据。
+    """空库初始化；已有但不完整的库停止启动，避免结构脚本覆盖数据。
 
     - 结构：数据库/数据库结构.sql（含 CREATE DATABASE）
     - 数据：数据库/数据库数据.sql（岗位 9958 条 + 画像/能力/用户等）
@@ -313,7 +316,11 @@ def db_seed(force: bool = False) -> bool:
         print(f"❌ 无法连接 MySQL（{p['user']}@{p['host']}:{p['port']}）。"
               f"\n    请确认 MySQL 服务已启动、账号密码与 后端/.env 的 DB_USERNAME/DB_PASSWORD 一致。")
         return False
-    if force or tables < EXPECTED_TABLES:
+    if not force and 0 < tables < EXPECTED_TABLES:
+        print(f"❌ 数据库 {db} 已有 {tables} 张表但结构不完整，已停止自动初始化以保护现有数据。")
+        print("   请先备份并核对缺失表，执行增量迁移；不要对已有数据使用 db seed --force。")
+        return False
+    if force or tables == 0:
         print(f"📦 初始化数据库 {db}（当前 {tables}/{EXPECTED_TABLES} 张表）...")
         if not _mysql_file(STRUCTURE_SQL):
             return False
@@ -332,7 +339,8 @@ def db_seed(force: bool = False) -> bool:
 
     # 灌库后自动执行幂等迁移，避免「结构漂移」导致灌库后仍报
     # Data too long / 保存成功却查不到（见 数据库/migrations/005）
-    _apply_migrations(AUTO_MIGRATIONS)
+    if not _apply_migrations(AUTO_MIGRATIONS):
+        return False
 
     ok = tables >= EXPECTED_TABLES and bool(rows)
     if ok:
@@ -342,15 +350,18 @@ def db_seed(force: bool = False) -> bool:
     return ok
 
 
-def _apply_migrations(files: list) -> None:
-    """执行幂等迁移脚本（失败仅告警，不阻断启动）。"""
+def _apply_migrations(files: list) -> bool:
+    """执行幂等迁移；缺失或失败时阻止后端带着不完整的结构启动。"""
     for path in files:
         if not path.exists():
-            continue
+            print(f"❌ 缺少迁移脚本：{path.name}")
+            return False
         if _mysql_file(path):
             print(f"🔧 已应用迁移：{path.name}")
         else:
-            print(f"⚠️  迁移执行失败（可手动执行）：{path.name}")
+            print(f"❌ 迁移执行失败，停止后续迁移：{path.name}")
+            return False
+    return True
 
 
 def cmd_db(args):
@@ -379,6 +390,9 @@ def cmd_db(args):
             "007_grow_plan_goals.sql",
             "008_grow_task_record.sql",
             "009_user_nickname_unique.sql",
+            "010_training_interview.sql",
+            "011_training_workplace.sql",
+            "012_report_job_owner.sql",
         )]
         _apply_migrations(files)
     else:

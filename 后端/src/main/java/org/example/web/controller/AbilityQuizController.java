@@ -43,7 +43,11 @@ public class AbilityQuizController {
         if (userId == null) {
             return Result.error("登录状态无效，请重新登录后再提交");
         }
-        return Result.success("测评完成", abilityQuizService.submit(userId, body));
+        try {
+            return Result.success("测评完成", abilityQuizService.submit(userId, body));
+        } catch (IllegalArgumentException e) {
+            throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.BAD_REQUEST, e.getMessage());
+        }
     }
 
     private Long currentUserId(String token) {

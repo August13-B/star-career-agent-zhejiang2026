@@ -2116,11 +2116,16 @@ public class AIConversationServiceImpl implements AIConversationService {
         // 每个订阅独立累积正文；边到达边转发，仅正常结束后保存完整回复。
         return Flux.defer(() -> {
             StringBuilder fullResponse = new StringBuilder();
+            var failed = new java.util.concurrent.atomic.AtomicBoolean(false);
             return upstream.map(chunk -> {
                 String processedChunk = chunk;
                 String text = chunk;
                 try {
                     Map<?, ?> frame = objectMapper.readValue(chunk, Map.class);
+                    if (frame.get("error") != null) {
+                        failed.set(true);
+                        return chunk;
+                    }
                     if (frame.get("data") != null) {
                         text = extractPureTextFromResponseObject(frame.get("data"));
                         processedChunk = objectMapper.writeValueAsString(Map.of("data", text));
@@ -2130,7 +2135,9 @@ public class AIConversationServiceImpl implements AIConversationService {
                 }
                 fullResponse.append(text);
                 return processedChunk;
-            }).doOnComplete(() -> onComplete.accept(fullResponse.toString()));
+            }).doOnComplete(() -> {
+                if (!failed.get() && !fullResponse.isEmpty()) onComplete.accept(fullResponse.toString());
+            });
         });
     }
 
