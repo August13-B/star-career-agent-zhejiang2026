@@ -26,6 +26,39 @@ class TrainingProtocolTest {
         return root;
     }
 
+    /** 真实坑：模型把 suggestions 放到与评分对象平级的顶层（+ 尾随多余字符）→ 应自动归位，而不是判「缺少改进建议」。 */
+    @Test void hoistsTopLevelSuggestionsInsteadOfFailing() throws Exception {
+        var definition = new TrainingTemplate(json).get("interview_backend_intern.v1");
+        ObjectNode root = validScore(json, "9007199254740993", "先核对需求");
+        ObjectNode score = (ObjectNode) root.path("scenario_score");
+        var tips = score.remove("suggestions");
+        root.set("suggestions", tips);
+        var sources = java.util.List.of(new TrainingEvidenceCatalog.Source(
+                "turn", "9007199254740993", "", "我会先核对需求，然后验证并发和回退条件。"));
+        ObjectNode validated = validator.validate(root, definition, sources, false);
+        assertEquals(1, validated.path("suggestions").size(), "顶层 suggestions 应被归位到评分对象内");
+        assertTrue(validated.path("suggestions").get(0).asText().contains("回退条件"));
+    }
+
+    /** 模型漏写评语/建议时按维度自动兜底，而不是让整份分数作废（review_required）。 */
+    @Test void missingProseFallsBackInsteadOfVoidingScore() throws Exception {
+        var definition = new TrainingTemplate(json).get("interview_backend_intern.v1");
+        ObjectNode root = validScore(json, "9007199254740993", "先核对需求");
+        ObjectNode score = (ObjectNode) root.path("scenario_score");
+        score.remove("comment");
+        score.remove("suggestions");
+        score.putArray("perQuestion").addObject().put("dimension", "professional")
+                .put("verdict", "not-a-verdict").put("comment", "答得一般").put("suggestion", "补一个可验证数字");
+        var sources = java.util.List.of(new TrainingEvidenceCatalog.Source(
+                "turn", "9007199254740993", "", "我会先核对需求，然后验证并发和回退条件。"));
+        ObjectNode validated = validator.validate(root, definition, sources, false);
+        assertFalse(validated.path("comment").asText().isBlank(), "应自动生成兜底评语");
+        assertTrue(validated.path("comment").asText().contains("自动生成"));
+        assertTrue(validated.path("suggestions").size() >= 1, "应自动生成兜底建议");
+        assertEquals(1, validated.path("perQuestion").size());
+        assertEquals("partial", validated.path("perQuestion").get(0).path("verdict").asText(), "非法 verdict 应归一为 partial");
+    }
+
     @Test void recomputesWeightedTotalInsteadOfTrustingModel() {
         var result = validator.validate(validScore(json, "9007199254740993", "先核对需求"), Map.of("9007199254740993", "我会先核对需求，然后验证并发和回退条件。"));
         assertEquals(77, result.path("total").asInt());

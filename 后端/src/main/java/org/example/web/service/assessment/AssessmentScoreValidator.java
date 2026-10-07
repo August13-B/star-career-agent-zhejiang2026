@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -72,7 +73,15 @@ public class AssessmentScoreValidator {
      * @param mustCover     必须给出证据的维度（= 本会话里有「可引用作答」的维度；超时未答的维度不强制）
      */
     public ObjectNode evaluation(JsonNode node, List<TrainingEvidenceCatalog.Source> sources, Set<String> mustCover) {
+        // 容错：模型可能把 suggestions/comment 放到与 ability_evaluation 平级的顶层 → 归位
         JsonNode score = node.path("ability_evaluation");
+        if (score.isObject()) {
+            ObjectNode merged = score.deepCopy();
+            for (String sibling : new String[]{"suggestions", "comment", "perQuestion"}) {
+                if (!merged.has(sibling) && node.has(sibling)) merged.set(sibling, node.get(sibling));
+            }
+            score = merged;
+        }
         require(score.isObject(), "评分结构无效");
         JsonNode dimensions = score.path("dimensions");
         require(dimensions.isObject(), "评分缺少 dimensions");
@@ -104,20 +113,46 @@ public class AssessmentScoreValidator {
         }
         require(covered.containsAll(mustCover), "部分维度缺少可核对的回答证据");
         String comment = score.path("comment").asText("").strip();
-        require(!comment.isBlank() && comment.length() <= 2000, "评分缺少有效评语");
+        if (comment.isBlank()) {
+            comment = "整体表现：六维得分见下。本评语为系统按各维度得分自动生成（平台未返回评语）。";
+        }
+        require(comment.length() <= 2000, "评语过长");
         JsonNode suggestions = score.path("suggestions");
-        require(suggestions.isArray() && !suggestions.isEmpty() && suggestions.size() <= 5, "评分缺少改进建议");
         ObjectNode out = json.createObjectNode();
         out.set("dimensions", dims);
         out.set("evidence", normalizedEvidence);
         out.put("comment", comment);
         ArrayNode tips = out.putArray("suggestions");
-        for (JsonNode suggestion : suggestions) {
-            String tip = suggestion.asText("").strip();
-            require(!tip.isBlank() && tip.length() <= 1000, "改进建议格式无效");
-            tips.add(tip);
+        if (suggestions.isArray() && !suggestions.isEmpty()) {
+            for (JsonNode suggestion : suggestions) {
+                String tip = suggestion.asText("").strip();
+                if (tip.isBlank() || tip.length() > 1000) continue;
+                tips.add(tip);
+                if (tips.size() >= 5) break;
+            }
+        }
+        // 建议缺失时不丢分：按最弱两维给可执行建议
+        if (tips.isEmpty()) {
+            List<String> ranked = new ArrayList<>(AssessmentStore.SOFT_DIMENSIONS);
+            ranked.sort(java.util.Comparator.comparingInt(d -> dims.path(d).asInt()));
+            for (String dimension : ranked) {
+                tips.add("针对「" + label(dimension) + "」：用一次真实（或假设）经历按「背景→我的做法→依据→结果」整理成可复述的案例，并准备一个可验证的数字。");
+                if (tips.size() >= 2) break;
+            }
         }
         return out;
+    }
+
+    private static String label(String dimension) {
+        return switch (dimension) {
+            case "communication" -> "沟通能力";
+            case "teamwork" -> "团队协作";
+            case "problem_solving" -> "问题解决";
+            case "innovation" -> "创新能力";
+            case "learning" -> "学习能力";
+            case "pressure" -> "抗压能力";
+            default -> dimension;
+        };
     }
 
     private static void require(boolean condition, String message) {

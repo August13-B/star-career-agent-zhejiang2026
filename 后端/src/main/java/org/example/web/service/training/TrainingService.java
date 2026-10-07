@@ -463,6 +463,9 @@ public class TrainingService {
         score.put("total", 0).put("comment", "简明评语，最多300字"); score.putArray("suggestions").add("可操作的改进建议");
         String timeoutNote = timeoutNote(session, definition);
         return boundary + "独立评价用户表现，只采用其回答和最终作品。不得把AI起草内容当用户成果。"
+                + "\n输出结构要求（务必遵守）：`suggestions` 必须放在 `training_evaluation` **内部**（不要放到与它平级的顶层）；"
+                + "并额外给出 `perQuestion` 数组，**每道题一条**：{\"questionNo\":1,\"dimension\":\"<维度键>\","
+                + "\"verdict\":\"correct|partial|wrong\",\"comment\":\"一句点评\",\"suggestion\":\"一条可执行的改进建议\"}。"
                 + "对技术题必须**逐题按事实判对错**：写明答对了什么、错在哪里、正确说法是什么，并在专业技能维度体现"
                 + "（技术题答错不能因为表达流畅而给高分）。"
                 + "评语与建议中**不要使用英文双引号**（如需强调请用「」），避免破坏 JSON。" + materials + timeoutNote
@@ -556,7 +559,7 @@ public class TrainingService {
                 if (root.isObject() && root.path("response").isTextual()) {
                     return json.readTree(root.path("response").asText());
                 }
-                System.err.println("平台评分 JSON 严格解析失败，已用裸引号修复兜底成功");
+                System.err.println("平台评分 JSON 严格解析失败，已用宽松解析兜底成功（常见原因：裸引号或尾随多余内容）");
                 return root;
             } catch (Exception still) {
                 System.err.println("平台评分 JSON 解析失败（修复后仍失败）: " + strict.getMessage()
