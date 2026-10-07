@@ -30,8 +30,24 @@
           <p v-else-if="selectedJobLabel" class="muted small">
             已选岗位：{{ selectedJobLabel }}（来源：{{ targets.source === 'report' ? '职业报告目标岗位' : '职业意向' }}）——将用于出题与评分对照。
           </p>
-          <label><input v-model="useForProfile" type="checkbox"> 完整训练通过证据核验后，更新已有能力画像</label>
-          <p class="muted small">无完整能力基线时只保存反馈。更新仅影响本次覆盖的维度，可能升降；阶段性反馈不更新画像。训练材料均为虚构，不要填写敏感信息。</p>
+          <div class="mode-panel">
+            <p class="mode-label">训练类型</p>
+            <label class="mode-option" :class="{ active: trainingMode === 'simulated' }">
+              <input v-model="trainingMode" type="radio" value="simulated" />
+              <span class="mode-text">
+                <strong>模拟训练</strong>
+                <em>练习为主，结果只作参考；<b>不参与个人画像更新</b></em>
+              </span>
+            </label>
+            <label class="mode-option" :class="{ active: trainingMode === 'emulated' }">
+              <input v-model="trainingMode" type="radio" value="emulated" />
+              <span class="mode-text">
+                <strong>仿真训练</strong>
+                <em>贴近真实职场考核；完整训练通过证据核验后 <b>更新个人画像</b>（只覆盖本次考到的维度）</em>
+              </span>
+            </label>
+            <p class="muted small">无完整能力基线时只保存反馈。画像更新仅影响本次覆盖的维度，可能升降；阶段性反馈不更新画像。训练材料均为虚构，不要填写敏感信息。</p>
+          </div>
         </div>
         <div class="scenario-grid">
           <article v-for="item in templates" :key="item.id" class="panel scenario-card ready">
@@ -44,10 +60,14 @@
         </div>
         <section class="panel history-panel">
           <div class="section-heading"><h2>我的训练记录</h2><button class="text-button" @click="loadHistory(false)">刷新记录</button></div>
-          <div class="history-filters"><label>训练场景<select v-model="historyTemplate" @change="loadHistory(false)"><option value="">全部场景</option><option v-for="item in templates" :key="item.id" :value="item.id">{{ item.title }}</option></select></label><label>训练状态<select v-model="historyStatus" @change="loadHistory(false)"><option value="">全部状态</option><option value="active">进行中</option><option value="completed">已完成</option><option value="review_required">待复核</option><option value="canceled">已取消</option></select></label></div>
+          <router-link v-if="activeTraining" class="resume-banner" :to="`/training/${activeTraining.id}`">
+            上次训练还没做完：{{ activeTraining.title }} · 已答 {{ activeTraining.answeredCount }}/{{ activeTraining.rounds }} 阶段 → <strong>继续</strong>
+          </router-link>
+          <p class="muted small">这里只显示已完成的训练；中途退出不计入记录，未完成的那次可从上方继续。</p>
+          <div class="history-filters"><label>训练场景<select v-model="historyTemplate" @change="loadHistory(false)"><option value="">全部场景</option><option v-for="item in templates" :key="item.id" :value="item.id">{{ item.title }}</option></select></label><label>训练状态<select v-model="historyStatus" @change="loadHistory(false)"><option value="">全部（已完成）</option><option value="active">进行中</option><option value="completed">已完成</option><option value="review_required">待复核</option><option value="canceled">已取消</option></select></label></div>
           <p v-if="!history.length" class="muted">还没有训练记录，完成第一场练习后再回顾自己的进步。</p>
           <router-link v-for="item in history" :key="item.id" class="history-row" :to="`/training/${item.id}`">
-            <div><strong>{{ item.title }}</strong><span class="muted">{{ formatTime(item.createdAt) }} · 已回答 {{ item.answeredCount }}/{{ item.rounds }} 阶段</span></div>
+            <div><strong>{{ item.title }}</strong><span class="muted">{{ formatTime(item.createdAt) }} · {{ item.trainingMode === 'emulated' ? '仿真训练' : '模拟训练' }} · 已回答 {{ item.answeredCount }}/{{ item.rounds }} 阶段</span></div>
             <span class="pill" :class="{ neutral: item.status === 'canceled' }">{{ trainingStatus(item.status) }}</span>
           </router-link>
           <button v-if="hasMore" class="secondary" :disabled="loadingHistory" @click="loadHistory(true)">加载更多</button>
@@ -59,7 +79,7 @@
           <aside class="panel brief">
             <span class="pill">{{ trainingStatus(session.status) }}</span><h2>{{ session.template.title }}</h2>
             <p>{{ session.template.description }}</p>
-            <p class="muted small">{{ session.difficulty === 'entry' ? '入门难度' : '标准难度' }} · {{ session.useForProfile ? '允许更新已有能力画像' : '仅保存练习反馈' }}</p>
+            <p class="muted small">{{ session.difficulty === 'entry' ? '入门难度' : '标准难度' }} · {{ session.trainingMode === 'emulated' ? '仿真训练（通过核验后更新画像）' : '模拟训练（不参与画像更新）' }}</p>
             <p v-if="session.job && session.job.positionName" class="muted small">目标岗位：{{ session.job.positionName }}<template v-if="session.job.industry"> · {{ session.job.industry }}</template><template v-if="session.job.salaryRange"> · {{ session.job.salaryRange }}</template><template v-if="session.job.level"> · 级别 {{ session.job.level }}</template></p>
             <details v-if="session.template.materials" open><summary>任务材料</summary><p class="material-text">{{ materialText(session.template.materials) }}</p></details>
             <details v-if="session.template.practiceDraft"><summary>用于核验练习的预设错误草稿</summary><p class="material-text">{{ materialText(session.template.practiceDraft) }}</p><small>这是预设练习材料，并非本轮 AI 实际生成结果。</small></details>
@@ -166,7 +186,9 @@ import { newTrainingRequestId, trainingBusy, trainingRequest, trainingStatus } f
 import { stripMarkdown } from '../utils/text'
 import { nextDraftAction } from '../utils/draftSync'
 
-const difficulty = ref('standard'), useForProfile = ref(true), artifactEditor = ref(null)
+const difficulty = ref('standard'), artifactEditor = ref(null)
+// 训练类型：simulated=模拟训练（不参与画像更新）｜emulated=仿真训练（更新画像，默认保留原行为）
+const trainingMode = ref('emulated')
 // 目标岗位：候选来自「职业意向 → 全库岗位搜索」（后端 /targets），意向/报告都没有时提示先去完善
 const targets = ref({ items: [], needProfile: false, message: '', source: '' })
 const jobId = ref('')
@@ -175,6 +197,7 @@ const router = useRouter()
 const sessionId = computed(() => route.params.sessionId ? String(route.params.sessionId) : '')
 const loggedIn = !!localStorage.getItem('token')
 const historyTemplate = ref(''), historyStatus = ref('')
+const activeTraining = ref(null)   // 进行中的那一次（不计入记录，单独提示继续）
 const templates = ref([]), history = ref([]), hasMore = ref(false), historyOffset = ref(0)
 const session = ref(null), loading = ref(false), loadingHistory = ref(false), pending = ref(false)
 const error = ref(''), authExpired = ref(false), messagesElement = ref(null), hasNewMessages = ref(false)
@@ -395,6 +418,7 @@ async function loadHistory(append) {
     if (disposed) return
     history.value = append ? [...history.value, ...page.items] : page.items
     hasMore.value = page.hasMore; historyOffset.value = page.nextOffset
+    if (!append) activeTraining.value = page.activeSession || null
   } catch (reason) { reportError(reason) }
   finally { loadingHistory.value = false }
 }
@@ -438,7 +462,11 @@ async function createSession(templateId) {
   if (pending.value) return
   pending.value = true; error.value = ''
   try {
-    const options = { templateId, difficulty: difficulty.value, useForProfile: useForProfile.value }
+    const options = {
+      templateId, difficulty: difficulty.value,
+      trainingMode: trainingMode.value,
+      useForProfile: trainingMode.value === 'emulated'
+    }
     // 岗位 ID 是雪花值：按字符串传给后端（Jackson 会转 Long），避免 JS Number 精度丢失
     if (jobId.value) options.jobId = String(jobId.value)
     const key = JSON.stringify(options)
@@ -514,7 +542,7 @@ onUnmounted(() => { disposed = true; confirmationResolve?.(false); window.remove
 .composer-heading{display:flex;align-items:center;justify-content:space-between;gap:12px}.composer-heading label{margin-bottom:0}.countdown{margin:0;font-size:13px;font-weight:600;color:#1d4ed8;background:#eff6ff;border:1px solid #dbeafe;border-radius:8px;padding:6px 10px;font-variant-numeric:tabular-nums}.countdown.warning{color:#b91c1c;background:#fff4f2;border-color:#fbd2c8}.answer-tools{display:flex;align-items:center;gap:14px}.mic-button{display:inline-flex;align-items:center;gap:6px;background:#eff6ff;color:#1d4ed8;padding:8px 14px;font-size:13px}.mic-button.recording{background:#fee2e2;color:#b91c1c}.voice-state{margin:8px 0 0}
 .per-question{display:flex;flex-direction:column;gap:12px;margin-bottom:8px}.pq-item{background:#F8FAFC;border:1px solid #E2E8F0;border-radius:12px;padding:14px}.pq-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.pq-no{font-weight:700;color:#1D4ED8;font-size:.9rem}.pq-verdict{margin-left:auto;font-size:12px;border-radius:20px;padding:3px 10px;background:#F1F5F9;color:#64748B}.pq-verdict.correct{background:#E9F5F0;color:#157856}.pq-verdict.partial{background:#FFF7ED;color:#B45309}.pq-verdict.wrong{background:#FEF2F2;color:#B91C1C}.pq-question{margin:8px 0 0;font-size:.85rem;line-height:1.7;color:#64748B}.pq-comment{margin:8px 0 0;font-size:.9rem;line-height:1.8;color:#334155}.pq-tip{margin:6px 0 0;font-size:.88rem;line-height:1.8;color:#1D4ED8}
 .training-page{width:100%;min-width:0;height:100%;min-height:0;overflow-y:auto;padding:28px 32px 48px;box-sizing:border-box;color:#1e293b;background:linear-gradient(145deg,#f4f8ff,#f8fafc 65%)}
-.training-header,.section-heading,.progress-heading,.composer-actions{display:flex;align-items:center;justify-content:space-between;gap:14px}.training-header{margin-bottom:24px}.eyebrow{font-size:12px;color:#64748b;letter-spacing:2px;margin:0 0 6px}h1{font-size:27px;margin:0}h2{font-size:18px;margin:0 0 12px}h3{font-size:16px;margin:22px 0 12px}p{line-height:1.7}.panel{background:#fff;border:1px solid #e2e8f0;border-radius:18px;padding:22px;box-shadow:0 5px 20px #33415505}.scenario-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px}.scenario-card{display:flex;flex-direction:column;gap:8px}.scenario-card h2{margin:8px 0 0}.scenario-card p{margin:5px 0}.scenario-card button{margin-top:auto}.upcoming{background:#fbfcfe}.tags{display:flex;flex-wrap:wrap;gap:6px}.tags span{background:#eff6ff;color:#486386;font-size:12px;padding:5px 8px;border-radius:6px}.pill{display:inline-block;align-self:flex-start;width:fit-content;padding:5px 10px;border-radius:20px;background:#e9f5f0;color:#157856;font-size:12px;white-space:nowrap}.pill.neutral{background:#f1f5f9;color:#64748b}.muted{color:#64748b}.small{font-size:12px}.empty{padding:40px;text-align:center}button,.button{font:inherit;border:0;border-radius:9px;background:#2563eb;color:white;padding:10px 16px;cursor:pointer;text-decoration:none;display:inline-block;text-align:center}button:disabled{cursor:not-allowed;background:#e2e8f0;color:#64748b}button.secondary,.button.secondary{background:#eff6ff;color:#1d4ed8}button.text-button{background:transparent;color:#2563eb;padding:6px 0;text-align:left}button.danger{color:#b91c1c}button:focus-visible,.button:focus-visible,textarea:focus-visible{outline:3px solid #93c5fd;outline-offset:2px}.history-panel{margin-top:24px}.section-heading h2{margin:0}.section-heading{margin-bottom:16px}.history-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:17px 0;border-top:1px solid #edf2f7;text-decoration:none;color:inherit}.history-row div{display:flex;flex-direction:column;gap:6px}.history-row .muted{font-size:12px}.workspace{display:grid;grid-template-columns:270px minmax(0,1fr);align-items:start;gap:20px}.brief{display:flex;flex-direction:column;gap:14px}.brief p,.brief h2{margin:0}.brief .progress-heading{font-size:13px}.dimension-list{padding:0;margin:0;list-style:none}.dimension-list li{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #f1f5f9;font-size:13px}progress{display:block;width:100%;height:9px;accent-color:#3b82f6;border:0}.conversation{min-width:0;min-height:0;display:flex;flex-direction:column}.messages{overflow-y:auto;min-height:180px;max-height:52vh;overscroll-behavior:contain;padding-right:8px}.message{background:#f6f8fc;border-radius:12px;padding:16px;margin:0 0 14px;scroll-margin:20px}.message.user{background:#edf5ff;margin-left:30px}.message strong{font-size:12px;color:#527195}.message p{white-space:pre-wrap;overflow-wrap:anywhere;margin:8px 0 0;font-size:14px}.composer{border-top:1px solid #e2e8f0;padding-top:16px;margin-top:10px}.composer label{display:block;font-size:13px;font-weight:600;margin-bottom:8px}textarea{font:inherit;font-size:14px;width:100%;min-height:110px;max-height:300px;resize:vertical;box-sizing:border-box;padding:12px;border:1px solid #cbd5e1;border-radius:9px;line-height:1.6}.composer-actions{margin-top:10px}.notice{background:#eff6ff;border:1px solid #dbeafe;border-radius:10px;padding:12px;font-size:13px;line-height:1.7;margin:0 0 14px}.notice.error{background:#fff4f2;color:#9f3020;border-color:#fbd2c8}.notice button{margin-left:8px}.evaluation{margin-top:22px}.score-summary{display:flex;align-items:center;gap:25px}.score-summary>strong{font-size:48px;color:#2563eb;white-space:nowrap}.score-summary small{font-size:17px;color:#64748b}.scores{display:grid;grid-template-columns:repeat(2,1fr);gap:20px;margin:18px 0}.scores progress{margin-top:8px}.evidence{display:flex;width:100%;flex-direction:column;gap:8px;background:#f8fafc!important;color:#334155!important;text-align:left;margin-bottom:10px;line-height:1.6;overflow-wrap:anywhere}.evidence small{color:#2563eb}.evaluation li{margin:9px 0;line-height:1.7}.evaluation>.button{margin-top:15px}.new-messages{align-self:center}
+.training-header,.section-heading,.progress-heading,.composer-actions{display:flex;align-items:center;justify-content:space-between;gap:14px}.training-header{margin-bottom:24px}.eyebrow{font-size:12px;color:#64748b;letter-spacing:2px;margin:0 0 6px}h1{font-size:27px;margin:0}h2{font-size:18px;margin:0 0 12px}h3{font-size:16px;margin:22px 0 12px}p{line-height:1.7}.panel{background:#fff;border:1px solid #e2e8f0;border-radius:18px;padding:22px;box-shadow:0 5px 20px #33415505}.scenario-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px}.scenario-card{display:flex;flex-direction:column;gap:8px}.scenario-card h2{margin:8px 0 0}.scenario-card p{margin:5px 0}.scenario-card button{margin-top:auto}.upcoming{background:#fbfcfe}.tags{display:flex;flex-wrap:wrap;gap:6px}.tags span{background:#eff6ff;color:#486386;font-size:12px;padding:5px 8px;border-radius:6px}.pill{display:inline-block;align-self:flex-start;width:fit-content;padding:5px 10px;border-radius:20px;background:#e9f5f0;color:#157856;font-size:12px;white-space:nowrap}.pill.neutral{background:#f1f5f9;color:#64748b}.muted{color:#64748b}.small{font-size:12px}.empty{padding:40px;text-align:center}button,.button{font:inherit;border:0;border-radius:9px;background:#2563eb;color:white;padding:10px 16px;cursor:pointer;text-decoration:none;display:inline-block;text-align:center}button:disabled{cursor:not-allowed;background:#e2e8f0;color:#64748b}button.secondary,.button.secondary{background:#eff6ff;color:#1d4ed8}button.text-button{background:transparent;color:#2563eb;padding:6px 0;text-align:left}button.danger{color:#b91c1c}button:focus-visible,.button:focus-visible,textarea:focus-visible{outline:3px solid #93c5fd;outline-offset:2px}.history-panel{margin-top:24px}.section-heading h2{margin:0}.section-heading{margin-bottom:16px}.history-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:17px 0;border-top:1px solid #edf2f7;text-decoration:none;color:inherit}.history-row div{display:flex;flex-direction:column;gap:6px}.history-row .muted{font-size:12px}.workspace{display:grid;grid-template-columns:270px minmax(0,1fr);align-items:start;gap:20px}.brief{display:flex;flex-direction:column;gap:14px}.brief p,.brief h2{margin:0}.brief .progress-heading{font-size:13px}.dimension-list{padding:0;margin:0;list-style:none}.dimension-list li{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #f1f5f9;font-size:13px}progress{display:block;width:100%;height:9px;accent-color:#3b82f6;border:0}.conversation{min-width:0;min-height:0;display:flex;flex-direction:column}.messages{overflow-y:auto;min-height:180px;max-height:52vh;overscroll-behavior:contain;padding-right:8px}.message{background:#f6f8fc;border-radius:12px;padding:16px;margin:0 0 14px;scroll-margin:20px}.message.user{background:#edf5ff;margin-left:30px}.message strong{font-size:12px;color:#527195}.message p{white-space:pre-wrap;overflow-wrap:anywhere;margin:8px 0 0;font-size:14px}.composer{border-top:1px solid #e2e8f0;padding-top:16px;margin-top:10px}.composer label{display:block;font-size:13px;font-weight:600;margin-bottom:8px}textarea{font:inherit;font-size:14px;width:100%;min-height:110px;max-height:300px;resize:vertical;box-sizing:border-box;padding:12px;border:1px solid #cbd5e1;border-radius:9px;line-height:1.6}.composer-actions{margin-top:10px}.notice{background:#eff6ff;border:1px solid #dbeafe;border-radius:10px;padding:12px;font-size:13px;line-height:1.7;margin:0 0 14px}.notice.error{background:#fff4f2;color:#9f3020;border-color:#fbd2c8}.notice button{margin-left:8px}.evaluation{margin-top:22px}.score-summary{display:flex;align-items:center;gap:25px}.score-summary>strong{font-size:48px;color:#2563eb;white-space:nowrap}.score-summary small{font-size:17px;color:#64748b}.scores{display:grid;grid-template-columns:repeat(2,1fr);gap:20px;margin:18px 0}.scores progress{margin-top:8px}.evidence{display:flex;width:100%;flex-direction:column;gap:8px;background:#f8fafc!important;color:#334155!important;text-align:left;margin-bottom:10px;line-height:1.6;overflow-wrap:anywhere}.evidence small{color:#2563eb}.evaluation li{margin:9px 0;line-height:1.7}.evaluation>.button{margin-top:15px}.new-messages{align-self:center}.mode-panel{margin:12px 0}.mode-label{font-size:13px;font-weight:600;margin:0 0 8px}.mode-option{display:flex;gap:10px;align-items:flex-start;border:1px solid #e2e8f0;border-radius:10px;padding:10px 12px;margin-bottom:8px;cursor:pointer;background:#fbfcfe}.mode-option.active{border-color:#93c5fd;background:#f0f7ff}.mode-option input{margin-top:2px}.mode-text{display:flex;flex-direction:column;gap:3px}.mode-text strong{font-size:.9rem;color:#1e293b}.mode-text em{font-style:normal;font-size:12px;color:#64748b;line-height:1.6}.mode-text b{color:#1d4ed8}.resume-banner{display:block;margin:0 0 12px;padding:12px 14px;background:#F0F7FF;border:1px dashed #BFDBFE;border-radius:10px;color:#1D4ED8;text-decoration:none;font-size:.9rem}
 @media(max-width:1150px){.scenario-grid{grid-template-columns:1fr}.workspace{grid-template-columns:220px minmax(0,1fr)}.training-page{padding:22px}.scenario-card button{align-self:flex-start}}
 @media(max-width:800px){.workspace{grid-template-columns:1fr}.training-page{padding:18px 12px 40px}.training-header{align-items:flex-start}h1{font-size:22px}.brief{padding:16px}.dimension-list{display:none}.messages{max-height:55vh;min-height:250px}.panel{padding:16px}.scores{grid-template-columns:1fr}.history-row,.score-summary{align-items:flex-start}.score-summary{flex-direction:column;gap:5px}.composer-actions{flex-wrap:wrap}.training-header .button{font-size:12px;padding:8px}}
 </style>

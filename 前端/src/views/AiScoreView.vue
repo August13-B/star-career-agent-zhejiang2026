@@ -44,8 +44,8 @@
         <p class="muted">已作答 {{ inProgressAnswered }} 题，可以继续；草稿已保存。</p>
         <div class="row">
           <button class="btn primary" :disabled="busy" @click="resume">{{ busy ? '载入中…' : '继续上次测评' }}</button>
-          <button class="btn ghost" :disabled="busy" @click="start">重新开始一份</button>
         </div>
+        <p class="muted small">同一个测评会继续更新（不会新增记录）；中途退出不计入测评记录。</p>
       </section>
 
       <!-- ④ 开始 -->
@@ -148,13 +148,14 @@
         <div class="row">
           <button v-if="session.evaluation?.status === 'review_required'" class="btn primary" :disabled="busy"
                   @click="retryEvaluate">{{ busy ? '重试中…' : '重试评分' }}</button>
-          <button class="btn ghost" @click="start">再测一次</button>
+          <button class="btn ghost" @click="start">再测一次（新增记录）</button>
           <router-link class="btn ghost" to="/profile">查看个人画像</router-link>
         </div>
       </section>
 
       <!-- 历史 -->
       <section class="card" v-if="history.length">
+        <!-- 只展示已完成的测评；中途退出的不计入 -->
         <div class="row between">
           <h2>测评记录</h2>
           <button class="btn ghost sm" @click="loadHistory">刷新</button>
@@ -242,8 +243,9 @@ const profileReady = computed(() => !!state.value.profileReady)
 const hardText = computed(() => state.value.hardText || {})
 const scores = computed(() => state.value.scores || {})
 const total = computed(() => (state.value.objectiveTarget || 10) + (state.value.subjectiveTarget || 4))
-const activeSessionId = computed(() => (history.value.find(item => item.status === 'active') || {}).sessionId || '')
-const inProgressAnswered = computed(() => (history.value.find(item => item.status === 'active') || {}).answeredCount || 0)
+// 进行中的测评由 /state 下发（记录列表只含已完成，不含进行中）
+const activeSessionId = computed(() => state.value.activeSessionId || '')
+const inProgressAnswered = computed(() => Number(state.value.activeAnswered || 0))
 const dimensionRows = computed(() => DIMENSIONS.map(([key, label, source]) => ({
   key, label, source, value: Number((session.value?.scores || {})[key] || 0)
 })))

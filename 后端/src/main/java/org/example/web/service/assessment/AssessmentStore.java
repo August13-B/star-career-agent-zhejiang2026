@@ -103,13 +103,26 @@ public class AssessmentStore {
                 status, sessionId);
     }
 
+    /** 测评记录：**只含已完成的**（completed/review_required）；中途退出(active)/已取消(canceled)不计入。 */
     public List<Map<String, Object>> sessions(Long userId, int offset, int limit) {
         return jdbc.queryForList("SELECT id,status,objective_target,subjective_target,answered_count,create_time,update_time"
-                + " FROM assessment_session WHERE user_id=? ORDER BY create_time DESC LIMIT ? OFFSET ?", userId, limit, offset);
+                + " FROM assessment_session WHERE user_id=? AND status IN ('completed','review_required')"
+                + " ORDER BY create_time DESC LIMIT ? OFFSET ?", userId, limit, offset);
     }
 
+    /** 该用户进行中的测评（有则「开始测评」= 继续同一个，不新增记录）。 */
+    public Map<String, Object> activeSession(Long userId) {
+        List<Map<String, Object>> rows = jdbc.queryForList(
+                "SELECT * FROM assessment_session WHERE user_id=? AND status='active'"
+                        + " ORDER BY update_time DESC, id DESC LIMIT 1", userId);
+        return rows.isEmpty() ? null : rows.get(0);
+    }
+
+    /** 记录数：与 sessions() 口径一致，只算已完成的 */
     public int sessionCount(Long userId) {
-        Integer count = jdbc.queryForObject("SELECT COUNT(*) FROM assessment_session WHERE user_id=?", Integer.class, userId);
+        Integer count = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM assessment_session WHERE user_id=? AND status IN ('completed','review_required')",
+                Integer.class, userId);
         return count == null ? 0 : count;
     }
 
