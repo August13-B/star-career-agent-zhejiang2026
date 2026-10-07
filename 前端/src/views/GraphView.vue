@@ -6,7 +6,7 @@
     <section v-if="loading" class="wb-empty" aria-live="polite"><h2>正在读取联合测评…</h2></section>
     <section v-else-if="!reports.length" class="wb-empty graph-empty"><span class="eyebrow">从联合测评开始</span><h2>{{ error ? '测评暂时无法读取，先看看星图的样子。' : '完成联合测评，点亮你的职业星图。' }}</h2><p>{{ error ? '下方仅为视觉示意；恢复连接后可重新加载测评，生成你的专属职业分支。' : '请先完成六个智能体的联合测评。职业分支将来自你的测评结论，不会凭空生成。' }}</p><router-link class="wb-button primary" to="/multi-agent">开始联合测评 →</router-link><small>下方为视觉示意，不代表你的测评结果。</small><div class="graph-preview-map"><CareerStarMap :branches="previewBranches" :selected-index="previewSelected" preview center-action="开始联合测评" @select="previewSelected = $event" @center-click="router.push('/multi-agent')" /></div></section>
     <template v-else-if="reports.length">
-      <section class="source-bar"><div><label for="report-select">测评来源</label><select id="report-select" v-model="reportId" :disabled="generating" @change="loadGraph"><option v-for="r in reports" :key="r.id" :value="String(r.id)">{{ r.name }}</option></select></div><span class="source-date">{{ selectedReport?.createdAt }}</span><button v-if="!graph" class="wb-button primary" :disabled="generating || graphLoading" @click="generate">{{ generating ? '正在提取分支…' : '根据测评绘制星图' }}</button><span v-else class="saved-mark">已保存 · 刷新可恢复</span></section>
+      <section class="source-bar"><div><label for="report-select">测评来源</label><select id="report-select" v-model="reportId" :disabled="generating" @change="loadGraph"><option v-for="r in reports" :key="r.id" :value="String(r.id)">{{ r.name }}</option></select></div><span class="source-date">{{ selectedReport?.createdAt }}</span><button v-if="!graph" class="wb-button primary" :disabled="generating || graphLoading" @click="generate()">{{ generating ? '正在提取分支…' : '根据测评绘制星图' }}</button><template v-else><span class="saved-mark">已保存 · 刷新可恢复</span><button class="wb-button" :disabled="generating || graphLoading" @click="regenerate">{{ generating ? '正在重新提取…' : '↻ 重新生成星图' }}</button></template></section>
       <section v-if="!graph" class="wb-empty"><span class="eyebrow">测评已就绪</span><h2>{{ generating ? '正在整理职业路径…' : '测评已就绪，开始探索可能性。' }}</h2><p>{{ generating ? '正在提取推荐方向、发展阶段和能力差距，请保持当前页面。' : '生成后，点击岗位节点查看测评依据、待补能力与行动建议。' }}</p></section>
       <section v-else class="atlas-layout">
         <div class="atlas-panel graph-star-panel">
@@ -15,7 +15,7 @@
           <div class="atlas-footer"><span>优先展示 {{ mapBranches.length }} 个方向 · 共 {{ graph.branches.length }} 条职业分支</span><span>点击方向查看依据与行动</span></div>
           <p class="figure-note">星线表达职业探索的连接，不代表晋升先后。{{ graph.branches.length > 4 ? '全部方向可在下方切换。' : '' }}能力详情来自联合测评报告。</p>
         </div>
-        <aside class="insight-panel"><span class="eyebrow">分支解读</span><h2>{{ active?.name || '你的测评摘要' }}</h2><p>{{ active?.reason || graph.summary }}</p><template v-if="active"><h3>推荐依据 · 测评原文</h3><blockquote>{{ active.evidence }}</blockquote><h3>需要补齐的能力</h3><ul><li v-for="(s,i) in active.skills" :key="i">{{ s }}</li></ul><h3>从这些行动开始</h3><ol><li v-for="(a,i) in active.actions" :key="i">{{ a }}</li></ol><router-link class="wb-button primary" :to="{path:'/assistant',query:{prompt:consultPrompt}}">和智能体深入讨论 →</router-link></template><p v-else>点击星图或下方岗位按钮，查看推荐依据和下一步行动。</p><router-link class="wb-button" to="/growth">查看成长行动计划</router-link><small>AI 整理自联合测评，仅供职业探索参考，不代表录用或晋升承诺。</small></aside>
+        <aside class="insight-panel"><span class="eyebrow">分支解读</span><h2>{{ active?.name || '你的测评摘要' }}</h2><p>{{ active?.reason || graph.summary }}</p><template v-if="active"><h3>推荐依据 · 测评原文</h3><blockquote>{{ active.evidence }}</blockquote><template v-if="active.skills?.length"><h3>需要补齐的能力</h3><ul><li v-for="(s,i) in active.skills" :key="i">{{ s }}</li></ul></template><template v-if="active.actions?.length"><h3>从这些行动开始</h3><ol><li v-for="(a,i) in active.actions" :key="i">{{ a }}</li></ol></template><router-link class="wb-button primary" :to="{path:'/assistant',query:{prompt:consultPrompt}}">和智能体深入讨论 →</router-link></template><p v-else>点击星图或下方岗位按钮，查看推荐依据和下一步行动。</p><router-link class="wb-button" to="/growth">查看成长行动计划</router-link><small>AI 整理自联合测评，仅供职业探索参考，不代表录用或晋升承诺。</small></aside>
       </section>
       <section v-if="graph" class="branch-list" aria-label="职业分支列表"><button v-for="(branch,i) in graph.branches" :key="i" :class="[branch.kind,{selected:active===branch}]" :aria-pressed="active===branch" @click="selectBranch(i)"><span>{{ String(i+1).padStart(2,'0') }}</span>{{ branch.name }}<small>{{ kindLabel[branch.kind] }}</small></button></section>
     </template>
@@ -58,12 +58,14 @@ const loadGraph=async()=>{
   try{const data=read(await axios.get(`/api/report-graph/${reportId.value}`,{headers:headers()}));if(current===request)graph.value=data}
   catch(e){if(current===request)error.value=e.message}finally{if(current===request)graphLoading.value=false}
 }
-const generate=async()=>{
+const generate=async(force=false)=>{
   if(generating.value)return
   const current=++request;generating.value=true;error.value=''
-  try{const data=read(await axios.post(`/api/report-graph/${reportId.value}`,{},{headers:headers(),timeout:180000}));if(current!==request)return;graph.value=data}
+  try{const url=`/api/report-graph/${reportId.value}${force?'?force=true':''}`;const data=read(await axios.post(url,{},{headers:headers(),timeout:180000}));if(current!==request)return;graph.value=data}
   catch(e){if(current===request)error.value=e.message||'生成失败，请重试'}finally{if(current===request)generating.value=false}
 }
+// 重新生成：绕过服务端缓存重新提取并覆盖已保存星图（会调用一次 AI，先确认）
+const regenerate=()=>{if(generating.value)return;if(!confirm('重新生成会用当前测评重新提取职业分支（约 1~3 分钟，会调用一次 AI），并覆盖已保存的星图。确定继续？'))return;generate(true)}
 const selectBranch=i=>{active.value=graph.value.branches[i]}
 onMounted(loadReports)
 onUnmounted(()=>{++request})
@@ -75,6 +77,7 @@ onUnmounted(()=>{++request})
 .source-bar>div{flex:1;min-width:0}.source-bar label{display:block;font-size:11px;color:var(--wb-muted);margin-bottom:6px}
 .source-bar select{width:100%;border:0;background:transparent;font:inherit;color:var(--wb-ink)}
 .source-date,.saved-mark{font-size:12px;color:var(--wb-muted)}.saved-mark{color:#557544}
+.source-bar>.wb-button,.source-bar .saved-mark{white-space:nowrap}
 .atlas-layout{display:grid;grid-template-columns:minmax(0,1fr);gap:18px}
 .atlas-panel{background:#fff;border:1px solid var(--wb-border);border-radius:12px;min-width:0;overflow:hidden}
 .atlas-toolbar{padding:24px 24px 16px;display:flex;align-items:center;justify-content:space-between;gap:16px}
