@@ -31,6 +31,9 @@ public class TrainingTemplate {
         public String rubricVersion() { return raw.path("rubricVersion").asText(); }
         public int rounds() { return raw.path("questions").size(); }
         public JsonNode weights() { return raw.path("weights"); }
+
+        /** 维度中文名（dimensionLabels），供评语/建议兜底时拼文案 */
+        public JsonNode dimensions() { return raw.path("dimensionLabels"); }
         public JsonNode rubric() { return raw.path("rubric"); }
         public String question(int index) { return raw.path("questions").get(index).asText(); }
 
