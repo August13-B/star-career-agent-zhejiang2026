@@ -9,6 +9,7 @@
 功能:
     - 一键启动 / 一键停止 / 一键重启（后端 + 前端 + Nginx）
     - 单个服务 启动 / 停止 / 重启
+    - 前端构建（npm run build）→ 实时输出构建日志 + 显示构建时间
     - 状态显示：运行状态 + PID + 启动时间（重启后时间变化，一眼可辨）
     - 操作过程中显示「处理中」过渡态 + 实时进度输出
     - 日志查看 / 清空当前日志 / 清空全部日志
@@ -61,6 +62,8 @@ class ManageGUI:
         self.M = M
 
         self.service_names = ["backend", "frontend", "nginx"]
+        # 日志下拉里的条目：服务 + 前端构建日志
+        self.log_names = self.service_names + ["build"]
         self.status_vars: dict[str, tk.Label] = {}
         self.time_vars: dict[str, tk.Label] = {}
         self._busy = False
@@ -119,6 +122,28 @@ class ManageGUI:
             self._btn(btns, "■ 停止", ACCENT_ERR, lambda n=name: self._run_one("stop", n)).pack(side="left", expand=True, padx=2)
             self._btn(btns, "↻ 重启", ACCENT_WARN, lambda n=name: self._run_one("restart", n)).pack(side="left", expand=True, padx=2)
 
+        # 前端构建卡片（不是常驻服务：没有端口 / PID，只产出 前端/dist）
+        col = len(self.service_names)
+        cards.columnconfigure(col, weight=1)
+        card = tk.Frame(cards, bg=BG_CARD, padx=12, pady=10,
+                        highlightthickness=1, highlightbackground=BG_INPUT)
+        card.grid(row=0, column=col, sticky="nsew", padx=6)
+        tk.Label(card, text=self.M.BUILD_TASK["name"], bg=BG_CARD, fg=FG_PRIMARY,
+                 font=("Microsoft YaHei", 10, "bold")).pack(anchor="w")
+        tk.Label(card, text="产物 前端/dist  ·  http://localhost", bg=BG_CARD,
+                 fg=ACCENT, font=("Consolas", 8)).pack(anchor="w", pady=(1, 4))
+        self.build_status = tk.Label(card, text="○ 未构建", bg=BG_CARD,
+                                     fg=FG_SECONDARY, font=("Consolas", 10, "bold"))
+        self.build_status.pack(anchor="w")
+        self.build_time = tk.Label(card, text="—", bg=BG_CARD,
+                                   fg=FG_SECONDARY, font=("Consolas", 8))
+        self.build_time.pack(anchor="w", pady=(1, 8))
+        btns = tk.Frame(card, bg=BG_CARD)
+        btns.pack(fill="x")
+        self._btn(btns, "🔨 构建前端", ACCENT, self._run_build).pack(side="left", expand=True, padx=2)
+        self._btn(btns, "📜 构建日志", ACCENT,
+                  lambda: (self.log_var.set("build"), self._refresh_log())).pack(side="left", expand=True, padx=2)
+
     def _setup_logs(self) -> None:
         frame = tk.Frame(self.root, bg=BG_DARK)
         frame.pack(fill="both", expand=True, padx=20, pady=(2, 10))
@@ -130,7 +155,7 @@ class ManageGUI:
 
         self.log_var = tk.StringVar(value="backend")
         # 切换服务时自动刷新日志（command 回调）
-        self.log_sel = tk.OptionMenu(bar, self.log_var, *self.service_names,
+        self.log_sel = tk.OptionMenu(bar, self.log_var, *self.log_names,
                                      command=lambda _sel: self._refresh_log())
         self.log_sel.configure(bg=BG_CARD, fg=FG_PRIMARY, activebackground=BG_INPUT,
                                highlightthickness=0, font=("Consolas", 9))
@@ -163,7 +188,7 @@ class ManageGUI:
 
     def _refresh_log(self, name: str | None = None) -> None:
         name = name or self.log_var.get()
-        log_f = self.M.SERVICES.get(name, {}).get("log")
+        log_f = self.M.log_path(name)
         try:
             text = Path(log_f).read_text(encoding="utf-8", errors="replace")[-12000:] if log_f else "(无)"
         except (FileNotFoundError, AttributeError):
@@ -186,7 +211,7 @@ class ManageGUI:
         self._append_log(f"[{datetime.now():%H:%M:%S}] 已清空 {name} 日志文件")
 
     def _clear_all_logs(self) -> None:
-        for n in self.service_names:
+        for n in self.log_names:
             self.M.clear_log(n)
         self.log_view.configure(state="normal")
         self.log_view.delete("1.0", "end")
@@ -201,6 +226,57 @@ class ManageGUI:
 
     def _run_all(self, action: str) -> None:
         self._dispatch(action, list(self.service_names))
+
+    # ── 前端构建（npm run build）────────────────────────────────────
+
+    def _run_build(self) -> None:
+        """在后台线程执行 npm run build，构建输出实时回显到日志面板。"""
+        if self._busy:
+            self.status_bar.config(text="⚠️ 上一个操作还在进行中，请稍候…")
+            return
+        self._busy = True
+        self.build_status.config(text="🔨 构建中…", fg=ACCENT_WARN)
+        self.build_time.config(text="npm run build（约 30~90 秒）", fg=FG_SECONDARY)
+        self.status_bar.config(text=f"⟳ 前端构建中… {datetime.now():%H:%M:%S}")
+
+        # 切到构建日志并清空，方便直接看这次输出
+        self.log_var.set("build")
+        self.log_view.configure(state="normal")
+        self.log_view.delete("1.0", "end")
+        self.log_view.configure(state="disabled")
+
+        def worker() -> None:
+            buf = io.StringIO()
+            ok = False
+            try:
+                with contextlib.redirect_stdout(buf):
+                    ok = self.M.build_frontend(
+                        on_line=lambda line: self.root.after(0, lambda l=line: self._append_log(l))
+                    )
+            except Exception as e:  # noqa: BLE001
+                buf.write(f"❌ 构建出错: {e}\n")
+            text = buf.getvalue()
+            self.root.after(0, lambda t=text: self._append_log(t))
+            self.root.after(0, lambda o=ok: self._build_done(o))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _build_done(self, ok: bool) -> None:
+        self._busy = False
+        self._refresh_build()
+        self.status_bar.config(
+            text=f"{'✅ 构建完成' if ok else '❌ 构建失败（详见日志）'}  {datetime.now():%H:%M:%S}")
+
+    def _refresh_build(self) -> None:
+        """构建卡片状态：以 前端/dist/index.html 的修改时间作为「构建时间」。"""
+        try:
+            mtime = datetime.fromtimestamp((self.M.BUILD_TASK["dist"] / "index.html").stat().st_mtime)
+        except OSError:
+            self.build_status.config(text="○ 未构建", fg=ACCENT_ERR)
+            self.build_time.config(text="在 前端/ 执行 npm run build", fg=FG_SECONDARY)
+            return
+        self.build_status.config(text="● 已构建", fg=ACCENT_OK)
+        self.build_time.config(text=f"构建于 {mtime:%Y-%m-%d %H:%M}", fg=FG_SECONDARY)
 
     def _dispatch(self, action: str, names: list[str]) -> None:
         if self._busy:
@@ -260,6 +336,7 @@ class ManageGUI:
             else:
                 self.status_vars[name].config(text="○ 已停止", fg=ACCENT_ERR)
                 self.time_vars[name].config(text="—", fg=FG_SECONDARY)
+        self._refresh_build()
         if not self._busy:
             self.status_bar.config(text=f"状态已刷新 {datetime.now():%H:%M:%S}")
 

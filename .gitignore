@@ -51,3 +51,7 @@ uploads/
 logs/
 __pycache__/
 *.pyc
+
+# ===== nginx 运行目录占位（仅保留 .gitkeep，日志仍由 *.log / logs/ 忽略）=====
+!nginx/logs/
+!nginx/logs/.gitkeep

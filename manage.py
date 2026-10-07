@@ -8,7 +8,8 @@
     python manage.py stop  [all|backend|frontend|nginx]   停止服务
     python manage.py restart [all|backend|frontend|nginx] 重启服务
     python manage.py status                              查看全部服务状态
-    python manage.py logs [backend|frontend|nginx] [-f]  查看日志（-f 持续跟踪）
+    python manage.py logs [backend|frontend|nginx|build] [-f]  查看日志（-f 持续跟踪）
+    python manage.py build                               构建前端（npm run build → 前端/dist）
     python manage.py gui                                 打开可视化启动界面
 
 说明:
@@ -36,6 +37,13 @@ LOG_DIR = PROJECT_DIR / "logs"
 ENV_FILE = BACKEND_DIR / ".env"
 
 IS_WINDOWS = sys.platform.startswith("win")
+
+# Nginx：Windows 版 nginx 无法使用含中文的 -p 前缀（CreateFile 报 1113:
+# No mapping for the Unicode character），因此本机使用独立的 ASCII 前缀实例；
+# 中文路径只出现在 conf 里的 root（conf 文件按 UTF-8 读取，可用）。
+# 可用环境变量 NGINX_EXE / NGINX_PREFIX 覆盖；Linux/macOS 仍走仓库内 nginx/ 目录。
+NGINX_EXE = os.environ.get("NGINX_EXE") or (r"C:\xingzhi-nginx\nginx.exe" if IS_WINDOWS else "nginx")
+NGINX_PREFIX = os.environ.get("NGINX_PREFIX") or (r"C:\xingzhi-nginx" if IS_WINDOWS else str(NGINX_DIR))
 
 PID_DIR.mkdir(exist_ok=True)
 LOG_DIR.mkdir(exist_ok=True)
@@ -70,12 +78,21 @@ SERVICES = {
     },
     "nginx": {
         "name": "Nginx（反向代理，可选）",
-        "cwd": str(NGINX_DIR),
-        "cmd": _win(["nginx", "-p", str(NGINX_DIR), "-c", "conf/nginx.conf"]),
+        "cwd": NGINX_PREFIX,
+        # nginx 的 -p 需要 Windows 风格路径且以 / 结尾
+        "cmd": _win([NGINX_EXE, "-p", NGINX_PREFIX.replace("\\", "/") + "/", "-c", "conf/nginx.conf"]),
         "log": LOG_DIR / "nginx.log",
         "pid": PID_DIR / "nginx.pid",
         "port": "80",
     },
+}
+
+# 前端构建（不是常驻服务，所以不进 SERVICES：没有端口/PID，只产出 前端/dist）
+BUILD_TASK = {
+    "name": "前端构建（npm run build）",
+    "cwd": FRONTEND_DIR,
+    "log": LOG_DIR / "build.log",
+    "dist": FRONTEND_DIR / "dist",
 }
 
 # ── .env 加载 ─────────────────────────────────────────────────────────
@@ -447,13 +464,78 @@ def _auto_java_home() -> str | None:
     return jh if jh else None
 
 
+def log_path(name: str) -> Path | None:
+    """服务 / 构建任务的日志文件路径（build 不是常驻服务，单独放 BUILD_TASK）。"""
+    if name in SERVICES:
+        return SERVICES[name]["log"]
+    if name == "build":
+        return BUILD_TASK["log"]
+    return None
+
+
 def clear_log(name: str) -> bool:
-    """清空指定服务的日志文件。"""
+    """清空指定服务 / 构建任务的日志文件。"""
+    log_f = log_path(name)
+    if log_f is None:
+        return False
     try:
-        Path(SERVICES[name]["log"]).write_text("", encoding="utf-8")
+        log_f.write_text("", encoding="utf-8")
         return True
     except OSError:
         return False
+
+
+def build_frontend(on_line=None) -> bool:
+    """构建前端：在 前端/ 目录执行 npm run build，产物写到 前端/dist。
+
+    on_line: 可选回调，逐行接收构建输出（GUI 用来实时刷新日志面板）。
+
+    注意：按项目约定，前端构建在 **Windows 侧** 执行（WSL 里 Node 环境不同、
+    中文目录下性能差），本函数只负责把命令跑起来并把输出落到 logs/build.log。
+    """
+    log_f = BUILD_TASK["log"]
+    dist = BUILD_TASK["dist"]
+    log_f.parent.mkdir(exist_ok=True)
+
+    if not (FRONTEND_DIR / "node_modules").exists():
+        print("⚠️  前端依赖未安装，先执行 npm install"
+              "（或 python manage.py start frontend，会自动安装）")
+        return False
+
+    cmd = _win(["npm", "run", "build"])
+    print(f"🔨 构建前端：{' '.join(cmd)}")
+    print(f"   目录：{FRONTEND_DIR}")
+    print(f"   日志：{log_f}")
+
+    env = {**os.environ, "PYTHONUTF8": "1", "NO_COLOR": "1"}
+    rc = 1
+    with open(log_f, "wb") as f:
+        f.write(f"=== npm run build @ {time.strftime('%Y-%m-%d %H:%M:%S')} ===\n".encode("utf-8"))
+        try:
+            proc = subprocess.Popen(
+                cmd, cwd=str(FRONTEND_DIR), env=env,
+                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                creationflags=subprocess.CREATE_NO_WINDOW if IS_WINDOWS else 0,
+            )
+        except (FileNotFoundError, OSError) as exc:
+            print(f"❌ 无法执行 npm（{exc}）。请确认 Node.js 已安装并在 PATH 中。")
+            return False
+        assert proc.stdout is not None
+        for raw in proc.stdout:
+            f.write(raw)
+            f.flush()
+            if on_line:
+                on_line(raw.decode("utf-8", errors="replace").rstrip("\n"))
+        rc = proc.wait()
+
+    if rc != 0:
+        print(f"❌ 构建失败（退出码 {rc}），详见日志：{log_f}")
+        return False
+    if not (dist / "index.html").exists():
+        print(f"⚠️  构建命令成功但未发现 {dist / 'index.html'}，请检查 vite 的 outDir 配置")
+        return False
+    print(f"✅ 构建完成：{dist}（刷新 http://localhost 即可看到新版本）")
+    return True
 
 
 def start_service(name: str) -> bool:
@@ -483,10 +565,12 @@ def start_service(name: str) -> bool:
     log_f = open(svc["log"], "wb")
 
     # Nginx 未安装时优雅跳过（不阻塞一键启动）
+    # 注意：用解析后的 NGINX_EXE（Windows 下为 C:\xingzhi-nginx\nginx.exe），
+    # 不能只看 PATH 里的 nginx —— 本机实例装在 ASCII 路径且未必加进 PATH。
     if name == "nginx":
-        probe = _run_cmd(_win(["nginx", "-v"]), capture_output=True, text=True)
+        probe = _run_cmd(_win([NGINX_EXE, "-v"]), capture_output=True, text=True)
         if probe.returncode != 0:
-            print("⚠️  未检测到已安装的 nginx，跳过该服务"
+            print(f"⚠️  未检测到可用的 nginx（{NGINX_EXE}），跳过该服务"
                   "（安装见 nginx/README.md，安装后可单独启动）")
             log_f.close()
             return False
@@ -574,13 +658,65 @@ def _pid_alive(pid: int) -> bool:
         return False
 
 
+def _stop_nginx(svc: dict) -> bool:
+    """停止 Nginx。
+
+    Windows 版 nginx 启动后会自我 daemon 化，PID 文件里记的只是启动器进程，
+    直接 taskkill 那个 PID 杀不掉真正的 master；因此优先走 nginx 自带的
+    `-s quit`（优雅退出），再用端口占用兜底强杀。
+    """
+    prefix = NGINX_PREFIX.replace("\\", "/") + "/"
+    try:
+        _run_cmd([NGINX_EXE, "-p", prefix, "-c", "conf/nginx.conf", "-s", "quit"],
+                 capture_output=True, text=True, timeout=15)
+    except Exception as exc:  # nginx 不在或已退出
+        print(f"ℹ️  nginx -s quit 未执行成功：{exc}")
+    time.sleep(1)
+
+    # 兜底：Windows 上 -s quit 常因事件跨会话/pid 文件过期而失效，
+    # 因此再按 nginx.pid（master）与端口占用（worker）各杀一次
+    masters = []
+    pid_file = Path(NGINX_PREFIX) / "logs" / "nginx.pid"
+    if pid_file.exists():
+        try:
+            masters.append(int(pid_file.read_text(encoding="utf-8").strip()))
+        except ValueError:
+            pass
+    if _port_listening(svc["port"]):
+        port_pid = _pid_on_port(svc["port"])
+        if port_pid:
+            masters.append(port_pid)
+
+    for pid in dict.fromkeys(masters):
+        print(f"🛑 强制结束 nginx (PID {pid}) ...")
+        if IS_WINDOWS:
+            _run_cmd(["taskkill", "/F", "/T", "/PID", str(pid)], capture_output=True, text=True)
+        else:
+            try:
+                os.kill(pid, signal.SIGTERM)
+            except OSError:
+                pass
+    if masters:
+        time.sleep(1)
+
+    stopped = not _port_listening(svc["port"])
+    print("✅ 已停止" if stopped else "⚠️  端口仍被占用，请检查是否有其他程序使用该端口")
+    svc["pid"].unlink(missing_ok=True)
+    return stopped
+
+
 def is_running(name: str) -> bool:
+    # Nginx 会自我 daemon 化（PID 文件记的是启动器），以端口监听为准
+    if name == "nginx":
+        return _port_listening(SERVICES["nginx"]["port"])
     pid = _read_pid(name)
     return pid is not None and _pid_alive(pid)
 
 
 def stop_service(name: str) -> bool:
     svc = SERVICES[name]
+    if name == "nginx":
+        return _stop_nginx(svc)
     pid = _read_pid(name)
     if pid is None:
         print(f"ℹ️  {svc['name']} 无 PID 记录")
@@ -640,11 +776,22 @@ def cmd_status(_args):
         mark = "● 运行中" if alive else "○ 已停止"
         pid_str = f"PID {pid}" if alive else "—"
         print(f"  {mark}  {svc['name']:<22} 端口 {svc['port']:<6} {pid_str}")
+    dist_index = BUILD_TASK["dist"] / "index.html"
+    try:
+        built = f"已构建 {time.strftime('%Y-%m-%d %H:%M', time.localtime(dist_index.stat().st_mtime))}"
+    except OSError:
+        built = "未构建（python manage.py build）"
+    print(f"  ○  {BUILD_TASK['name']:<22} {built}")
     print("═" * 46)
 
 
+def cmd_build(_args):
+    """构建前端（npm run build）。"""
+    build_frontend()
+
+
 def cmd_logs(args):
-    svc = SERVICES.get(args.service)
+    svc = SERVICES.get(args.service) or (BUILD_TASK if args.service == "build" else None)
     if not svc:
         print("服务不存在")
         return
@@ -683,8 +830,10 @@ def main():
 
     sub.add_parser("status", help="查看状态")
     p_logs = sub.add_parser("logs", help="查看日志")
-    p_logs.add_argument("service", choices=["backend", "frontend", "nginx"])
+    p_logs.add_argument("service", choices=["backend", "frontend", "nginx", "build"])
     p_logs.add_argument("-f", "--follow", action="store_true", help="持续跟踪")
+
+    sub.add_parser("build", help="构建前端（npm run build，产物 前端/dist）")
 
     sub.add_parser("gui", help="打开可视化界面")
 
@@ -711,6 +860,8 @@ def main():
         cmd_status(args)
     elif args.command == "logs":
         cmd_logs(args)
+    elif args.command == "build":
+        cmd_build(args)
     elif args.command == "gui":
         from manage_gui import run_gui
         run_gui()

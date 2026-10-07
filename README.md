@@ -146,9 +146,10 @@ cp .env.example .env     # 填写数据库/邮件/RSA/AES 等真实值
 
 ```bash
 python manage.py start all     # 启动 后端 + 前端 + nginx
-python manage.py status        # 查看状态
-python manage.py logs backend  # 查看日志
-python manage.py gui           # 可视化管理器（Tkinter）
+python manage.py status        # 查看状态（含前端构建时间）
+python manage.py build         # 构建前端（npm run build → 前端/dist）
+python manage.py logs backend  # 查看日志（也可 logs build 看构建日志）
+python manage.py gui           # 可视化管理器（Tkinter，含「🔨 构建前端」按钮）
 ```
 
 ### 手动启动
@@ -157,9 +158,11 @@ python manage.py gui           # 可视化管理器（Tkinter）
 |---|---|---|---|
 | 后端 | 8080 | `cd 后端 && mvnw spring-boot:run` | MySQL（youthpath）、`.env` |
 | 前端 | 5173 | `cd 前端 && npm install && npm run dev` | — |
-| Nginx（生产） | 80 | `python manage.py start nginx` | `前端/dist` 构建产物 |
+| 前端构建 | — | `python manage.py build`（或 `cd 前端 && npm run build`） | Node.js；产物 `前端/dist` |
+| Nginx（生产） | 80 | `python manage.py start nginx` | `前端/dist` 构建产物；Windows 实例在 `C:\xingzhi-nginx` |
 
 > ⚠️ 生产部署：先在 Windows 侧执行 `npm run build` 生成 `前端/dist`，再由 Nginx 托管静态文件并反代 `/api/*` 到后端（详见 `nginx/README.md`）。
+> ⚠️ Windows 版 nginx **不能用中文 `-p` 前缀**（报 1113），因此本机实例放在 `C:\xingzhi-nginx`（ASCII），中文路径只出现在 conf 的 `root` 里；`manage.py` 已自动适配。
 
 > 🗄️ **数据库自动灌库**：`manage.py` 启动后端前会检查数据库；空库初始化，已有库执行幂等增量迁移。已有但不完整的库不会自动覆盖，请先备份核查。
 > 也可手动执行：`python manage.py db`（灌库）/ `python manage.py db status`（查看）。
@@ -167,7 +170,7 @@ python manage.py gui           # 可视化管理器（Tkinter）
 
 ### 职场模拟训练与评分
 
-登录后从侧栏进入「职场训练与评分」或打开 `/training`，可选择目标岗位，完成模拟面试、跨岗位沟通或 AI 辅助办公练习。训练结束后由百宝箱生成分维度评分、回答证据和改进建议；只有通过证据校验的完整训练，且用户主动勾选并已有能力基线时，才会更新个人画像。训练分与能力画像总分是不同指标。
+登录后从侧栏进入「职场训练」或打开 `/training`，可选择目标岗位，完成模拟面试、跨岗位沟通或 AI 辅助办公练习。训练结束后由百宝箱生成分维度评分、回答证据和改进建议；只有通过证据校验的完整训练，且用户主动勾选并已有能力基线时，才会更新个人画像。训练分与能力画像总分是不同指标。
 
 首次启动后端时，`manage.py` 会增量执行 `数据库/migrations/010` 至 `013`；已有数据不会被清空。平台已部署独立训练接口时，在 `后端/.env` 配置 `TBOX_TRAINING_PATH_MOCK_INTERVIEW`、`TBOX_TRAINING_PATH_CROSS_ROLE`、`TBOX_TRAINING_PATH_AI_OFFICE`，如需专用令牌再配置 `TRAINING_API_TOKEN`。未配置训练接口路径时回退现有 WebSocket 对话链路，真实 AI 评分仍取决于百宝箱侧训练场景与评分提示词是否就绪。
 
