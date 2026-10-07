@@ -535,11 +535,11 @@ onUnmounted(() => { stopTimer(); stopVoice() })
 .build-tag { color: #1D4ED8; font-weight: 700; }
 /* 纯 CSS 动画：JS 主线程被冻结时它仍会转 —— 用来区分"代码没更新"和"页面卡死" */
 .js-spinner { display: inline-block; width: 12px; height: 12px; margin-left: 8px; vertical-align: -1px;
-  border: 2px solid #BFDBFE; border-top-color: #2563EB; border-radius: 50%; animation: js-spin .8s linear infinite; }
+  border: 2px solid #BFDBFE; border-top-color: #4A90E2; border-radius: 50%; animation: js-spin .8s linear infinite; }
 @keyframes js-spin { to { transform: rotate(360deg); } }
 h1 { margin: 0 0 8px; font-size: 26px; }
 .sub { margin: 0; color: #64748B; font-size: 0.9rem; line-height: 1.7; max-width: 720px; }
-.link { color: #2563EB; text-decoration: none; font-size: 0.9rem; }
+.link { color: #4A90E2; text-decoration: none; font-size: 0.9rem; }
 .card { background: #fff; border: 1px solid #E2E8F0; border-radius: 16px; padding: 22px; margin-bottom: 18px; box-shadow: 0 4px 18px rgba(51,65,85,.04); }
 .card h2 { margin: 0 0 12px; font-size: 1.05rem; }
 .muted { color: #64748B; }
@@ -547,7 +547,7 @@ h1 { margin: 0 0 8px; font-size: 26px; }
 .notice { background: #EFF6FF; border: 1px solid #DBEAFE; border-radius: 10px; padding: 12px; font-size: 13px; line-height: 1.7; }
 .notice.error { background: #FFF4F2; border-color: #FBD2C8; color: #9F3020; }
 .btn { font: inherit; border: 0; border-radius: 9px; padding: 10px 18px; cursor: pointer; text-decoration: none; display: inline-block; }
-.btn.primary { background: #2563EB; color: #fff; }
+.btn.primary { background: #4A90E2; color: #fff; }
 .btn.primary:disabled { background: #E2E8F0; color: #94A3B8; cursor: not-allowed; }
 .btn.ghost { background: #EFF6FF; color: #1D4ED8; }
 .btn.sm { padding: 6px 12px; font-size: 0.85rem; }
@@ -568,14 +568,14 @@ progress { display: block; width: 100%; height: 9px; accent-color: #3B82F6; bord
 .options { display: flex; flex-direction: column; gap: 10px; }
 .option { display: flex; gap: 10px; align-items: flex-start; text-align: left; background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 12px; padding: 14px; font: inherit; cursor: pointer; line-height: 1.7; }
 .option:hover { border-color: #93C5FD; background: #F0F7FF; }
-.option b { color: #2563EB; }
+.option b { color: #4A90E2; }
 textarea { font: inherit; width: 100%; box-sizing: border-box; padding: 12px; border: 1px solid #CBD5E1; border-radius: 10px; line-height: 1.7; }
 .answer-tools { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .voice-line { margin: 8px 0 0; }
 .btn.ghost.recording { background: #FEE2E2; color: #B91C1C; }
 .q-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 10px; }
 .score-total { display: flex; align-items: baseline; gap: 10px; margin-bottom: 16px; }
-.score-total strong { font-size: 44px; color: #2563EB; }
+.score-total strong { font-size: 44px; color: #4A90E2; }
 .dim-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 22px; }
 .dim-head { display: flex; align-items: baseline; gap: 8px; font-size: 0.9rem; }
 .dim-head b { margin-left: auto; color: #1D4ED8; }
