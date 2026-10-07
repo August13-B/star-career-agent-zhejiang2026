@@ -25,6 +25,8 @@ public class TrainingController {
 
     public record Create(@NotBlank @Size(max=80) String templateId,
                          @Pattern(regexp="entry|standard") String difficulty, Boolean useForProfile,
+                         /** 训练类型：simulated=模拟训练（不更新画像）/ emulated=仿真训练（更新画像）；优先于 useForProfile */
+                         @Pattern(regexp="simulated|emulated") String trainingMode,
                          @Pattern(regexp="(profile|job):[0-9]{1,20}") String jobId,
                          @NotBlank @Pattern(regexp="[A-Za-z0-9_-]{8,80}") String clientRequestId) {}
     public record Answer(@NotBlank @Size(max=4000) String content, Boolean skip,
@@ -52,7 +54,12 @@ public class TrainingController {
     @PostMapping("/sessions")
     @ResponseStatus(HttpStatus.CREATED)
     public Result<?> create(@RequestHeader("Authorization") String token, @Valid @RequestBody Create body) {
-        return Result.success(service.create(user(token), body.templateId(), body.clientRequestId(), body.difficulty() == null ? "standard" : body.difficulty(), Boolean.TRUE.equals(body.useForProfile()), body.jobId()));
+        // trainingMode 优先：模拟训练=不更新画像；仿真训练=更新画像（useForProfile 保留兼容）
+        boolean useForProfile = body.trainingMode() != null
+                ? "emulated".equals(body.trainingMode())
+                : Boolean.TRUE.equals(body.useForProfile());
+        return Result.success(service.create(user(token), body.templateId(), body.clientRequestId(),
+                body.difficulty() == null ? "standard" : body.difficulty(), useForProfile, body.jobId()));
     }
 
     @GetMapping("/sessions")

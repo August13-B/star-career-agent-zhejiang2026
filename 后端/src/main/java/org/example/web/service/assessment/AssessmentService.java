@@ -82,6 +82,10 @@ public class AssessmentService {
         result.put("hardText", hardText);
         result.put("scores", currentScores(userId));
         result.put("assessmentCount", store.sessionCount(userId));
+        // 进行中的测评：前端据此显示「继续上次测评」；「开始测评」也会复用它（同一个测评=更新，不新增记录）
+        Map<String, Object> active = store.activeSession(userId);
+        result.put("activeSessionId", active == null ? null : String.valueOf(active.get("id")));
+        result.put("activeAnswered", active == null ? 0 : number(active.get("answered_count")));
         return result;
     }
 
@@ -108,6 +112,11 @@ public class AssessmentService {
         Map<String, Object> previous = store.requestedSession(userId, requestId);
         if (previous != null) {
             return snapshot(userId, ((Number) previous.get("id")).longValue());
+        }
+        // 同一个测评就更新：已有进行中的测评 → 直接继续它，不新增记录（中途退出/刷新都不会产生重复记录）
+        Map<String, Object> active = store.activeSession(userId);
+        if (active != null) {
+            return snapshot(userId, ((Number) active.get("id")).longValue());
         }
         List<Map<String, Object>> scores = jdbc.queryForList(
                 "SELECT * FROM student_ability_score WHERE user_id=? AND is_deleted=0 AND score_type=1"

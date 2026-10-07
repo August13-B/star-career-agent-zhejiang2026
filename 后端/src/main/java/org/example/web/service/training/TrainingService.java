@@ -105,7 +105,14 @@ public class TrainingService {
         if (status != null && !Set.of("active", "scoring", "completed", "review_required", "canceled").contains(status)) throw error(422, "STATUS_INVALID", "状态筛选无效");
         List<Session> rows = db.filteredSessions(userId, limit + 1, offset, templateId, status);
         boolean more = rows.size() > limit;
-        return Map.of("items", rows.stream().limit(limit).map(this::sessionView).toList(), "hasMore", more, "nextOffset", offset + Math.min(rows.size(), limit));
+        // 不传 status 时列表只含已完成；这里额外把「进行中的一次」单独返回，供前端提示"继续上次训练"
+        Session active = status != null ? null : db.activeSession(userId);
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("items", rows.stream().limit(limit).map(this::sessionView).toList());
+        result.put("hasMore", more);
+        result.put("nextOffset", offset + Math.min(rows.size(), limit));
+        result.put("activeSession", active == null ? null : sessionView(active));
+        return result;
     }
 
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
@@ -300,7 +307,9 @@ public class TrainingService {
             db.insertEvaluation(evaluation);
             Config config = workspace.config(session.getId());
             String status = "valid".equals(evaluation.getStatus()) && config != null && config.getUseForProfile() ? "pending" : "skipped";
-            workspace.applicationQueued(session.getId(), status, "pending".equals(status) ? "等待更新能力画像" : "仅保存练习反馈：未选择更新画像，或训练未完整通过证据核验");
+            workspace.applicationQueued(session.getId(), status, "pending".equals(status)
+                    ? "仿真训练：等待更新能力画像"
+                    : "仅保存练习反馈：模拟训练不参与画像更新，或本次训练未完整通过证据核验");
         } else {
             if (output.text().isBlank()) throw error(502, "PLATFORM_EMPTY", "平台没有返回可用的训练回复");
             db.updateTurn(run.getResponseMessageId(), cipher.encrypt(replyText(output.text())), "complete");
@@ -616,7 +625,10 @@ public class TrainingService {
         view.put("title", definition(session).title()); view.put("rounds", definition(session).rounds());
         view.put("answeredCount", session.getAnsweredCount()); view.put("version", session.getVersion());
         view.put("createdAt", session.getCreateTime()); view.put("updatedAt", session.getUpdateTime());
-        view.put("job", jobView(workspace.config(session.getId())));
+        Config config = workspace.config(session.getId());
+        view.put("useForProfile", config != null && Boolean.TRUE.equals(config.getUseForProfile()));
+        view.put("trainingMode", config != null && Boolean.TRUE.equals(config.getUseForProfile()) ? "emulated" : "simulated");
+        view.put("job", jobView(config));
         return view;
     }
     private Map<String, Object> runView(Run run) {

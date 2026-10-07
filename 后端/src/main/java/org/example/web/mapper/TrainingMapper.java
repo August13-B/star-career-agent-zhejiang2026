@@ -21,10 +21,17 @@ public interface TrainingMapper {
     @Select("SELECT * FROM training_session WHERE user_id=#{userId} AND client_request_id=#{requestId}")
     Session createdRequest(@Param("userId") Long userId, @Param("requestId") String requestId);
 
+    /** 该用户进行中的训练（供「继续上次训练」） */
+    @Select("SELECT * FROM training_session WHERE user_id=#{userId} AND status IN ('active','scoring') ORDER BY update_time DESC,id DESC LIMIT 1")
+    Session activeSession(@Param("userId") Long userId);
+
     @Select("SELECT * FROM training_session WHERE user_id=#{userId} ORDER BY create_time DESC,id DESC LIMIT #{limit} OFFSET #{offset}")
     List<Session> sessions(@Param("userId") Long userId, @Param("limit") int limit, @Param("offset") int offset);
 
-    @Select("SELECT * FROM training_session WHERE user_id=#{userId} AND (#{templateId} IS NULL OR template_id=#{templateId}) AND (#{status} IS NULL OR status=#{status}) ORDER BY create_time DESC,id DESC LIMIT #{limit} OFFSET #{offset}")
+    /** 列表：显式传 status 时按其筛选；**不传时只返回已完成**（进行中/已取消不计入训练记录）。 */
+    @Select("SELECT * FROM training_session WHERE user_id=#{userId} AND (#{templateId} IS NULL OR template_id=#{templateId})"
+            + " AND ((#{status} IS NOT NULL AND status=#{status}) OR (#{status} IS NULL AND status IN ('completed','review_required')))"
+            + " ORDER BY create_time DESC,id DESC LIMIT #{limit} OFFSET #{offset}")
     List<Session> filteredSessions(@Param("userId") Long userId, @Param("limit") int limit, @Param("offset") int offset, @Param("templateId") String templateId, @Param("status") String status);
 
     @Insert("""
