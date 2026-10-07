@@ -124,6 +124,13 @@ public class AssessmentStore {
         return rows.isEmpty() ? null : rows.get(0);
     }
 
+    /** 读取指定轮次（无锁；answer/自愈路径已不依赖行锁） */
+    public Map<String, Object> turn(Long sessionId, Long turnId) {
+        List<Map<String, Object>> rows = jdbc.queryForList(
+                "SELECT * FROM assessment_turn WHERE id=? AND session_id=?", turnId, sessionId);
+        return rows.isEmpty() ? null : rows.get(0);
+    }
+
     public Map<String, Object> lockCurrentTurn(Long sessionId, Long turnId) {
         List<Map<String, Object>> rows = jdbc.queryForList(
                 "SELECT * FROM assessment_turn WHERE id=? AND session_id=? FOR UPDATE", turnId, sessionId);
@@ -181,7 +188,11 @@ public class AssessmentStore {
     }
 
     public void insertEvaluation(Long sessionId, String status, JsonNode result, JsonNode objective, String message) {
-        jdbc.update("INSERT INTO assessment_evaluation(id,session_id,status,result_json,objective_json,message) VALUES(?,?,?,?,?,?)",
+        // upsert：允许「重试评分」覆盖上一次结果（表上有 UNIQUE(session_id)）
+        jdbc.update("INSERT INTO assessment_evaluation(id,session_id,status,result_json,objective_json,message)"
+                        + " VALUES(?,?,?,?,?,?)"
+                        + " ON DUPLICATE KEY UPDATE status=VALUES(status),result_json=VALUES(result_json),"
+                        + " objective_json=VALUES(objective_json),message=VALUES(message),create_time=CURRENT_TIMESTAMP(3)",
                 id(), sessionId, status, cipher.encrypt(result.toString()),
                 objective == null ? null : cipher.encrypt(objective.toString()), message);
     }

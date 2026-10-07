@@ -64,7 +64,8 @@ public class AssessmentService {
         List<Map<String, Object>> abilities = jdbc.queryForList(
                 "SELECT * FROM student_ability WHERE user_id=? AND is_deleted=0 ORDER BY id LIMIT 1", userId);
         Map<String, Object> ability = abilities.isEmpty() ? null : abilities.get(0);
-        ObjectNode basics = ability == null ? null : (ObjectNode) store.read((String) ability.get("basic_options"));
+        JsonNode basicsNode = ability == null ? null : store.read((String) ability.get("basic_options"));
+        ObjectNode basics = basicsNode != null && basicsNode.isObject() ? (ObjectNode) basicsNode : null;
         result.put("profileReady", basics != null && basics.size() > 0);
         result.put("basics", basics == null ? store.read("{}") : basics);
         result.put("objectiveTarget", OBJECTIVE_TARGET);
@@ -102,9 +103,8 @@ public class AssessmentService {
 
     // ====================== 创建会话（并出第 1 题） ======================
 
-    @Transactional(rollbackFor = Exception.class)
+    /** 开始测评（含出第 1 题）；同样**不加事务**：出题要调平台 AI，不能占着锁。 */
     public Map<String, Object> create(Long userId, String requestId) {
-        jdbc.queryForObject("SELECT id FROM user WHERE id=? FOR UPDATE", Long.class, userId);
         Map<String, Object> previous = store.requestedSession(userId, requestId);
         if (previous != null) {
             return snapshot(userId, ((Number) previous.get("id")).longValue());
@@ -173,10 +173,15 @@ public class AssessmentService {
 
     // ====================== 答题与推进 ======================
 
-    @Transactional(rollbackFor = Exception.class)
+    /**
+     * 提交作答并推进。
+     *
+     * <p>⚠️ **刻意不加事务**：推进过程中会调用平台 AI（单次最长 120s），若放在事务里会长时间占着
+     * 会话行与 user 行的锁 → 草稿自动保存/轮询会 `Lock wait timeout`（真实踩过）。
+     * 会话状态以 assessment_turn 为准，且用 version + current_turn_id 防重复提交，无需长事务。
+     */
     public Map<String, Object> answer(Long userId, Long sessionId, Integer chosen, String text, Integer expectedVersion) {
-        jdbc.queryForObject("SELECT id FROM user WHERE id=? FOR UPDATE", Long.class, userId);
-        Map<String, Object> session = store.lockOwnedSession(sessionId, userId);
+        Map<String, Object> session = store.ownedSession(sessionId, userId);
         if (session == null) {
             throw new AssessmentException(404, "ASSESSMENT_NOT_FOUND", "测评不存在或无权访问");
         }
@@ -218,7 +223,9 @@ public class AssessmentService {
         store.answerTurn(((Number) turn.get("id")).longValue(),
                 objective ? null : (text == null || text.isBlank() ? null : text.strip()),
                 objective && validChosen ? chosen : null, status);
-        store.touchSession(sessionId, "active", 1, null);
+        // answered_count 记「已答题数」：追问轮不计入（否则界面会出现"已答 18/14"）
+        int counted = number(turn.get("follow_up")) == 1 ? 0 : 1;
+        store.touchSession(sessionId, "active", counted, null);
         store.clearDraft(sessionId);
         advance(store.session(sessionId));
         return snapshot(userId, sessionId);
@@ -230,24 +237,47 @@ public class AssessmentService {
      * <p>用途：前端定时器会因**切后台/休眠/关页面**而冻结，靠前端"到点自动提交"并不可靠；
      * 每次拉快照前先做这一步，保证限时在服务端一定生效（用户回来就是下一题）。
      */
-    @Transactional(rollbackFor = Exception.class)
-    public void expireIfTimedOut(Long userId, Long sessionId) {
-        Map<String, Object> session = store.lockOwnedSession(sessionId, userId);
+    /**
+     * 服务端自愈（拉快照前调用；不加事务，理由同 {@link #answer}）：
+     * <ol>
+     *   <li>当前题已超时（含宽限）→ 记为 {@code timeout} 并推进（前端定时器可能被切后台/休眠冻结）</li>
+     *   <li>没有当前题但计划还没做完（上次推进中途失败，例如平台报错）→ **补出下一题**，让页面不卡住</li>
+     * </ol>
+     */
+    public void ensureProgress(Long userId, Long sessionId) {
+        Map<String, Object> session = store.ownedSession(sessionId, userId);
         if (session == null || !"active".equals(session.get("status"))) {
             return;
         }
         Object currentTurnId = session.get("current_turn_id");
-        if (currentTurnId == null) {
-            return;
+        if (currentTurnId != null) {
+            Map<String, Object> turn = store.turn(sessionId, ((Number) currentTurnId).longValue());
+            if (turn == null || !"asking".equals(turn.get("status"))) {
+                return;
+            }
+            if (!timedOut(turn)) {
+                return;
+            }
+            store.answerTurn(((Number) turn.get("id")).longValue(), null, null, "timeout");
+            int counted = number(turn.get("follow_up")) == 1 ? 0 : 1;
+            store.touchSession(sessionId, "active", counted, null);
+            store.clearDraft(sessionId);
+            System.err.println("测评自愈：第 " + turn.get("question_no") + " 题超时，自动推进 session=" + sessionId);
         }
-        Map<String, Object> turn = store.lockCurrentTurn(sessionId, ((Number) currentTurnId).longValue());
-        if (turn == null || !"asking".equals(turn.get("status")) || !timedOut(turn)) {
-            return;
-        }
-        store.answerTurn(((Number) turn.get("id")).longValue(), null, null, "timeout");
-        store.touchSession(sessionId, "active", 1, null);
-        store.clearDraft(sessionId);
         advance(store.session(sessionId));
+    }
+
+    /** 重新评分（评分失败进入 review_required 后的重试入口；评分表为 upsert，可覆盖）。 */
+    public Map<String, Object> evaluateAgain(Long userId, Long sessionId) {
+        Map<String, Object> session = store.ownedSession(sessionId, userId);
+        if (session == null) {
+            throw new AssessmentException(404, "ASSESSMENT_NOT_FOUND", "测评不存在或无权访问");
+        }
+        if ("active".equals(session.get("status"))) {
+            throw new AssessmentException(409, "ASSESSMENT_NOT_FINISHED", "测评还没答完，无需重新评分");
+        }
+        evaluate(session);
+        return snapshot(userId, sessionId);
     }
 
     /** 服务端限时判定（含宽限，避免前端准点提交被判超时）。 */
@@ -282,7 +312,10 @@ public class AssessmentService {
         long followUps = turns.stream().filter(t -> number(t.get("question_no")) == currentQuestionNo
                 && number(t.get("follow_up")) == 1).count();
         // 刚答完的轮次属于「当前主问句」→ 请平台判断是否需要追问（同题最多 2 轮）
-        if (last != null && number(last.get("question_no")) == currentQuestionNo && followUps < MAX_FOLLOW_UP) {
+        // ⚠️ 仅**主观题**可追问：客观题是单轮知识题，曾因未判题型而对最后一道客观题追问，
+        //    凭空多出 2 轮且题号与客观题重复（"14 题却答了 17 轮"）
+        boolean lastIsSubjective = last != null && "subjective".equals(last.get("kind"));
+        if (lastIsSubjective && number(last.get("question_no")) == currentQuestionNo && followUps < MAX_FOLLOW_UP) {
             String dimension = String.valueOf(last.get("dimension"));
             if (generateSubjective(session, dimension, true, (int) (MAX_FOLLOW_UP - followUps))) {
                 return;
@@ -336,6 +369,7 @@ public class AssessmentService {
         if (decideFollowUp && !followUp) {
             return false;
         }
+        // 追问沿用母题题号；新题用「已完成题数 + 1」
         int questionNo = decideFollowUp
                 ? number(turns.get(turns.size() - 1).get("question_no"))
                 : countNewQuestions(turns) + 1;
@@ -510,7 +544,7 @@ public class AssessmentService {
         view.put("sessionId", String.valueOf(sessionId));
         view.put("status", session.get("status"));
         view.put("version", number(session.get("version")));
-        view.put("answeredCount", number(session.get("answered_count")));
+        view.put("answeredCount", number(session.get("answered_count")));   // 已答题数（不含追问轮）
         view.put("objectiveTarget", number(session.get("objective_target")));
         view.put("subjectiveTarget", number(session.get("subjective_target")));
         view.put("draft", store.decrypt((String) session.get("draft")));
@@ -518,7 +552,13 @@ public class AssessmentService {
         List<Map<String, Object>> turns = new ArrayList<>();
         Map<String, Object> current = null;
         long currentId = session.get("current_turn_id") == null ? -1 : ((Number) session.get("current_turn_id")).longValue();
+        int answeredTurns = 0, followUpTurns = 0;
         for (Map<String, Object> turn : store.turns(sessionId)) {
+            boolean answered = !"asking".equals(turn.get("status"));
+            if (answered) {
+                answeredTurns++;
+                if (number(turn.get("follow_up")) == 1) followUpTurns++;
+            }
             boolean isCurrent = ((Number) turn.get("id")).longValue() == currentId;
             turns.add(store.turnView(turn, true));
             if (isCurrent) {
@@ -526,6 +566,8 @@ public class AssessmentService {
                 current.put("remainingSeconds", remainingSeconds(turn));
             }
         }
+        view.put("answeredTurns", answeredTurns);      // 已作答轮次（含追问）
+        view.put("followUpTurns", followUpTurns);      // 其中追问轮
         view.put("turns", turns);
         view.put("current", current);
         view.put("evaluation", store.evaluationView(store.evaluation(sessionId)));
@@ -552,6 +594,10 @@ public class AssessmentService {
             item.put("sessionId", String.valueOf(row.get("id")));
             item.put("status", row.get("status"));
             item.put("answeredCount", number(row.get("answered_count")));
+            List<Map<String, Object>> turns = store.turns(((Number) row.get("id")).longValue());
+            item.put("answeredTurns", (int) turns.stream().filter(t -> !"asking".equals(t.get("status"))).count());
+            item.put("followUpTurns", (int) turns.stream().filter(t -> number(t.get("follow_up")) == 1
+                    && !"asking".equals(t.get("status"))).count());
             item.put("questionTotal", number(row.get("objective_target")) + number(row.get("subjective_target")));
             item.put("createdAt", String.valueOf(row.get("create_time")));
             item.put("updatedAt", String.valueOf(row.get("update_time")));

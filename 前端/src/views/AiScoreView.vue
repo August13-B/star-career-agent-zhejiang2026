@@ -2,7 +2,7 @@
   <div class="assess-page">
     <header class="page-head">
       <div>
-        <p class="eyebrow">职业旅程 / 能力补充</p>
+        <p class="eyebrow">职业旅程 / 能力补充 · <b class="build-tag">构建 {{ BUILD_TAG }}</b></p>
         <h1>能力补充测评</h1>
         <p class="sub">
           AI 出题 → 你作答 → 按回答追问 → 六维评分。硬实力四项来自「基本情况」，与本页软实力六维合成
@@ -12,10 +12,18 @@
       <router-link class="link" to="/profile">返回个人中心</router-link>
     </header>
 
-    <p v-if="error" class="notice error" role="alert">{{ error }}</p>
+    <p v-if="error" class="notice error" role="alert">
+      {{ error }}
+      <button class="btn ghost sm" style="margin-left:10px" @click="retry">重试</button>
+    </p>
 
     <!-- ① 加载中 -->
-    <p v-if="loading" class="notice">正在读取测评状态…</p>
+    <p v-if="loading" class="notice">
+      正在读取测评状态…（已等待 {{ loadingSeconds }}s，超过 15s 会自动报错）
+      <span class="js-spinner" aria-hidden="true"></span>
+      <button class="btn ghost sm" style="margin-left:10px" @click="retry">手动重试</button>
+      <button class="btn ghost sm" @click="reloadPage">强制重载页面</button>
+    </p>
 
     <template v-else>
       <!-- ② 前置：未填基本情况 -->
@@ -138,7 +146,9 @@
           </p>
         </template>
         <div class="row">
-          <button class="btn primary" @click="start">再测一次</button>
+          <button v-if="session.evaluation?.status === 'review_required'" class="btn primary" :disabled="busy"
+                  @click="retryEvaluate">{{ busy ? '重试中…' : '重试评分' }}</button>
+          <button class="btn ghost" @click="start">再测一次</button>
           <router-link class="btn ghost" to="/profile">查看个人画像</router-link>
         </div>
       </section>
@@ -151,7 +161,10 @@
         </div>
         <div v-for="item in history" :key="item.sessionId" class="history-row" @click="openSession(item.sessionId)">
           <span>{{ formatTime(item.createdAt) }}</span>
-          <span class="muted">{{ statusText(item.status) }} · 已答 {{ item.answeredCount }}/{{ item.questionTotal }}</span>
+          <span class="muted">
+            {{ statusText(item.status) }} · 已答 {{ answeredQuestionsOf(item) }}/{{ item.questionTotal }} 题
+            <template v-if="item.followUpTurns">（含 {{ item.followUpTurns }} 轮追问）</template>
+          </span>
           <span class="link">查看</span>
         </div>
       </section>
@@ -176,6 +189,11 @@ const DIMENSIONS = [
   ['learning', '学习能力', 'soft'], ['pressure', '抗压能力', 'soft']
 ]
 
+/** 构建标记：用来确认浏览器跑的是不是最新代码（每次改动递增即可） */
+const BUILD_TAG = '2026-10-07-7'
+const loadingSeconds = ref(0)
+let loadingTick = null
+
 const state = ref({}), session = ref(null), history = ref([])
 const loading = ref(true), busy = ref(false), error = ref('')
 const draft = ref(''), showBasic = ref(false), remaining = ref(0)
@@ -196,7 +214,8 @@ const headers = () => {
   const token = localStorage.getItem('token') || ''
   return { Authorization: token.startsWith('Bearer ') ? token : `Bearer ${token}` }
 }
-const api = axios.create({ baseURL: `${API_CONFIG.BASE_URL}/api/assessment`, timeout: 180000, headers: { 'Content-Type': 'application/json' } })
+// 最终评分要调平台 AI（最长 120s，后端还会有一次重试）→ 超时给足 300s
+const api = axios.create({ baseURL: `${API_CONFIG.BASE_URL}/api/assessment`, timeout: 300000, headers: { 'Content-Type': 'application/json' } })
 api.interceptors.request.use(config => { config.headers = { ...config.headers, ...headers() }; return config })
 
 /** 非安全上下文（http://IP）下 crypto.randomUUID 不存在，做兜底，避免点击后静默失败 */
@@ -237,9 +256,17 @@ const statusText = status => ({ active: '进行中', completed: '已完成', rev
 const format = seconds => `${Math.floor(seconds / 60)}:${String(Math.max(0, seconds % 60)).padStart(2, '0')}`
 const formatTime = value => (value ? String(value).replace('T', ' ').slice(0, 16) : '')
 
+/** 已答题数：优先用「已作答轮次 − 追问轮」推算，避免旧数据里 answered_count 被追问轮撑大 */
+function answeredQuestionsOf(item) {
+  const turns = Number(item?.answeredTurns || 0)
+  const followUps = Number(item?.followUpTurns || 0)
+  return turns > 0 ? Math.max(0, turns - followUps) : Number(item?.answeredCount || 0)
+}
+
 async function loadState() {
   try {
-    state.value = await call({ url: '/state' }) || {}
+    // 状态查询是轻量接口：短超时，避免后端没起/网络不通时页面一直转
+    state.value = await call({ url: '/state', timeout: 20000 }) || {}
   } catch (e) {
     error.value = e.response?.data?.message || e.message || '读取测评状态失败，请稍后重试'
     console.error('[能力补充测评] 读取状态失败:', e)
@@ -248,7 +275,7 @@ async function loadState() {
 
 async function loadHistory() {
   try {
-    const data = await call({ url: '/sessions', params: { offset: 0, limit: 10 } })
+    const data = await call({ url: '/sessions', params: { offset: 0, limit: 10 }, timeout: 20000 })
     history.value = data?.items || []
   } catch (e) { /* 历史读取失败不影响主流程 */ }
 }
@@ -419,6 +446,22 @@ function stopVoice() {
 
 function onDraftInput() { if (recognizing.value && !voiceWriting) stopVoice(); scheduleDraft() }
 
+/** 评分失败（review_required）后重试：重新调用平台评分并应用结果 */
+async function retryEvaluate() {
+  if (busy.value || !session.value) return
+  busy.value = true
+  error.value = ''
+  try {
+    applySession(await call({ url: `/sessions/${session.value.sessionId}/evaluate`, method: 'post' }))
+    await Promise.all([loadState(), loadHistory()])
+  } catch (e) {
+    error.value = e.response?.data?.message || e.message || '重新评分失败，请稍后再试'
+    console.error('[能力补充测评] 重新评分失败:', e)
+  } finally {
+    busy.value = false
+  }
+}
+
 function scheduleDraft() {
   clearTimeout(draftTimer)
   draftTimer = setTimeout(async () => {
@@ -432,13 +475,52 @@ function scheduleDraft() {
   }, 700)
 }
 
+/** 强制重载页面：带时间戳绕过 HTML 缓存（模板里不能直接用 location，需走方法） */
+function reloadPage() {
+  const url = new URL(window.location.href)
+  url.searchParams.set('_r', String(Date.now()))
+  window.location.replace(url.toString())
+}
+
+/** 手动重试：重新拉状态与历史（失败时页面不再卡在 loading） */
+async function retry() {
+  loading.value = true
+  loadingSeconds.value = 0
+  error.value = ''
+  const tick = setInterval(() => { loadingSeconds.value += 1 }, 1000)
+  try {
+    await Promise.allSettled([loadState(), loadHistory()])
+  } finally {
+    clearInterval(tick)
+    loading.value = false
+  }
+}
+
 async function onBasicSaved() {
   await Promise.all([loadState(), loadHistory()])
 }
 
 onMounted(async () => {
-  await Promise.all([loadState(), loadHistory()])
-  loading.value = false
+  // 无论成功/失败/超时，都必须退出 loading —— 曾因 Promise.all 抛错导致页面一直显示"正在读取测评状态…"
+  // 再加一道保险：即使请求永不返回（代理/网络挂住），15 秒后也强制结束 loading 并给出可重试的提示
+  loadingSeconds.value = 0
+  loadingTick = setInterval(() => { loadingSeconds.value += 1 }, 1000)
+  const guard = setTimeout(() => {
+    if (loading.value) {
+      loading.value = false
+      if (!error.value) error.value = '加载超时（15 秒内没有收到后端响应）：请确认后端已启动（8080）、代理/网络正常，然后点「重试」。'
+      console.warn('[能力补充测评] 初始化超时，已强制退出 loading')
+    }
+  }, 15000)
+  try {
+    await Promise.allSettled([loadState(), loadHistory()])
+  } catch (e) {
+    console.error('[能力补充测评] 初始化失败:', e)
+  } finally {
+    clearTimeout(guard)
+    clearInterval(loadingTick)
+    loading.value = false
+  }
 })
 
 onUnmounted(() => { stopTimer(); stopVoice() })
@@ -448,6 +530,11 @@ onUnmounted(() => { stopTimer(); stopVoice() })
 .assess-page { max-width: 1080px; margin: 0 auto; padding: 28px 24px 60px; color: #1E293B; }
 .page-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 20px; }
 .eyebrow { margin: 0 0 6px; font-size: 12px; letter-spacing: 2px; color: #64748B; }
+.build-tag { color: #1D4ED8; font-weight: 700; }
+/* 纯 CSS 动画：JS 主线程被冻结时它仍会转 —— 用来区分"代码没更新"和"页面卡死" */
+.js-spinner { display: inline-block; width: 12px; height: 12px; margin-left: 8px; vertical-align: -1px;
+  border: 2px solid #BFDBFE; border-top-color: #2563EB; border-radius: 50%; animation: js-spin .8s linear infinite; }
+@keyframes js-spin { to { transform: rotate(360deg); } }
 h1 { margin: 0 0 8px; font-size: 26px; }
 .sub { margin: 0; color: #64748B; font-size: 0.9rem; line-height: 1.7; max-width: 720px; }
 .link { color: #2563EB; text-decoration: none; font-size: 0.9rem; }

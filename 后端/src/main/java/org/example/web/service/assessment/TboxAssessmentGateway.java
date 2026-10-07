@@ -53,8 +53,14 @@ public class TboxAssessmentGateway implements AssessmentGateway {
                             "测评接口鉴权失败：请核对 ASSESSMENT_API_TOKEN 与 X-Assessment-Token 是否一致")))
                     .onStatus(status -> status.value() == 400, response -> Mono.error(new AssessmentException(502, "ASSESSMENT_BAD_REQUEST",
                             "测评接口拒绝了本次请求：请核对接口路径与 mode")))
-                    .onStatus(status -> status.isError(), response -> Mono.error(new AssessmentException(502, "ASSESSMENT_UNAVAILABLE",
-                            "测评接口返回错误，请稍后重试")))
+                    .onStatus(status -> status.isError(), response -> response.bodyToMono(String.class).defaultIfEmpty("")
+                            .flatMap(body -> {
+                                String preview = body.length() > 300 ? body.substring(0, 300) : body;
+                                System.err.println("测评接口返回错误: mode=" + mode + " HTTP " + response.statusCode().value()
+                                        + " | body 前 300 字: " + preview);
+                                return Mono.error(new AssessmentException(502, "ASSESSMENT_UNAVAILABLE",
+                                        "测评接口返回错误（HTTP " + response.statusCode().value() + "），请稍后重试"));
+                            }))
                     .bodyToMono(String.class)
                     .block(Duration.ofSeconds(Math.max(30, properties.getAssessmentTimeoutSeconds())));
         } catch (AssessmentException e) {

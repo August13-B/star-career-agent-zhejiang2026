@@ -61,8 +61,8 @@ public class AssessmentController {
     @GetMapping("/sessions/{id}")
     public Result<?> snapshot(@RequestHeader("Authorization") String token, @PathVariable Long id) {
         Long userId = user(token);
-        // 服务端自愈：若当前题已超时（前端定时器可能因切后台/关页面冻结），先记为超时并推进
-        service.expireIfTimedOut(userId, id);
+        // 服务端自愈：当前题超时 → 自动推进；上次推进中途失败（无当前题）→ 补出下一题
+        service.ensureProgress(userId, id);
         return Result.success(service.snapshot(userId, id));
     }
 
@@ -72,6 +72,12 @@ public class AssessmentController {
                             @RequestBody Answer body) {
         return Result.success(service.answer(user(token), id, body.chosen(),
                 body.answer() == null ? null : body.answer().strip(), body.expectedVersion()));
+    }
+
+    /** 重新评分：评分失败（review_required）后的重试入口。 */
+    @PostMapping("/sessions/{id}/evaluate")
+    public Result<?> evaluateAgain(@RequestHeader("Authorization") String token, @PathVariable Long id) {
+        return Result.success("已重新评分", service.evaluateAgain(user(token), id));
     }
 
     /** 草稿自动保存（断点续答）。 */
