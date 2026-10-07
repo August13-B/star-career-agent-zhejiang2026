@@ -62,9 +62,12 @@ public class TboxAssessmentGateway implements AssessmentGateway {
         } catch (Exception e) {
             throw new AssessmentException(502, "ASSESSMENT_UNAVAILABLE", "测评接口连接失败或超时，请重试");
         }
-        JsonNode node = parse(unwrap(raw));
+        String payload = unwrap(raw);
+        JsonNode node = parse(payload);
         if (node == null || !node.isObject()) {
-            throw new AssessmentException(502, "ASSESSMENT_INVALID", "测评接口没有返回合法 JSON，请重试");
+            String preview = payload == null ? "null" : payload.substring(0, Math.min(300, payload.length()));
+            System.err.println("测评接口返回无法解析（前 300 字）: " + preview);
+            throw new AssessmentException(502, "ASSESSMENT_INVALID", "测评接口没有返回合法 JSON，请重试（原文已打印到后端日志）");
         }
         return node;
     }
@@ -90,6 +93,7 @@ public class TboxAssessmentGateway implements AssessmentGateway {
             try {
                 return mapper.readTree(org.example.web.tool.JsonRepair.repairUnescapedQuotes(text));
             } catch (Exception still) {
+                System.err.println("测评 JSON 解析失败（裸引号修复后仍失败）: " + strict.getMessage());
                 return null;
             }
         }
