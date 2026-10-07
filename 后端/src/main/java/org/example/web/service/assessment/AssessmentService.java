@@ -341,13 +341,16 @@ public class AssessmentService {
         long sessionId = ((Number) session.get("id")).longValue();
         List<TrainingEvidenceCatalog.Source> sources = sources(session);
         Set<String> mustCover = coveredDimensions(session);
+        JsonNode node = null;
         try {
-            JsonNode node = gateway.execute("evaluate", promptEvaluate(session, sources));
+            node = gateway.execute("evaluate", promptEvaluate(session, sources));
             ObjectNode normalized = validator.evaluation(node, sources, mustCover);
             store.insertEvaluation(sessionId, "valid", normalized, objectiveAudit(sessionId),
                     "评分证据已核对，仅作为本次测评观察");
             store.finishSession(sessionId, "completed");
         } catch (AssessmentException e) {
+            String preview = node == null ? "null" : node.toString().substring(0, Math.min(300, node.toString().length()));
+            System.err.println("测评评分未通过校验: " + e.getMessage() + " | 平台评分 JSON 前 300 字: " + preview);
             store.insertEvaluation(sessionId, "review_required", store.json().createObjectNode(), objectiveAudit(sessionId),
                     e.getMessage() == null ? "评分未通过结构或证据校验" : e.getMessage());
             store.finishSession(sessionId, "review_required");
