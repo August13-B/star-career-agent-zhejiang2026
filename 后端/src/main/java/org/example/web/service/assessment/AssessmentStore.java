@@ -154,7 +154,7 @@ public class AssessmentStore {
         for (Map<String, Object> row : jdbc.queryForList(
                 "SELECT options,chosen FROM assessment_turn WHERE session_id=? AND kind='objective' AND dimension=?",
                 sessionId, dimension)) {
-            JsonNode options = read((String) row.get("options"));
+            JsonNode options = options(row);
             Object chosen = row.get("chosen");
             if (options == null || !options.isArray() || options.isEmpty() || !(chosen instanceof Number number)) {
                 continue;
@@ -209,6 +209,21 @@ public class AssessmentStore {
     }
 
     /** 面向接口/前端的轮次视图（数值型 id 一律转字符串，避免前端精度丢失；客观题**不下发选项分值**）。 */
+    /**
+     * 读取轮次选项：库里是 **AES-GCM 密文**，必须先解密再解析。
+     *
+     * <p>曾因这里漏解密（直接当 JSON 解析）导致：前端**客观题没有选项**、提交时校验失败、
+     * 客观题维度分复算与证据目录全部拿不到选项。
+     */
+    public JsonNode options(Map<String, Object> row) {
+        Object raw = row == null ? null : row.get("options");
+        if (raw == null) {
+            return null;
+        }
+        String text = String.valueOf(raw);
+        return read(text.startsWith("g1:") ? decrypt(text) : text);
+    }
+
     public Map<String, Object> turnView(Map<String, Object> row, boolean withAnswer) {
         Map<String, Object> view = new LinkedHashMap<>();
         view.put("turnId", String.valueOf(row.get("id")));
@@ -221,7 +236,7 @@ public class AssessmentStore {
         view.put("status", row.get("status"));
         view.put("limitSeconds", ((Number) row.get("limit_seconds")).intValue());
         view.put("startedAt", String.valueOf(row.get("started_at")));
-        JsonNode options = read((String) row.get("options"));
+        JsonNode options = options(row);
         if (options != null && options.isArray()) {
             List<Map<String, Object>> safe = new ArrayList<>();
             for (int i = 0; i < options.size(); i++) {
