@@ -1735,7 +1735,9 @@ public class AIConversationServiceImpl implements AIConversationService {
         try {
             com.fasterxml.jackson.databind.JsonNode n = objectMapper.readTree(frame);
             if (n.has("delta")) {
-                String delta = n.path("delta").asText("");
+                // 平台有时把换行转义成字面量下发（一层 \n 或两层 \\n）→ 面向用户的出口统一还原，
+                // 否则前端会直接显示「...行情。\n\n### 一、...」，Markdown 结构也会全乱。
+                String delta = org.example.web.tool.PlainText.unescapeEscapes(n.path("delta").asText(""));
                 fullResponse.append(delta);
                 Map<String, Object> out = new HashMap<>();
                 out.put("data", delta);

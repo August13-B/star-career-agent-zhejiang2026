@@ -40,3 +40,29 @@ test('空值与无标记文本', () => {
   assert.equal(stripMarkdown(''), '')
   assert.equal(stripMarkdown('普通回答，没有标记。'), '普通回答，没有标记。')
 })
+
+// ── 平台把换行转义成字面量 \n 的还原 ──────────────────────────────
+import { unescapeNewlines } from './text.js'
+
+test('字面量 \\n / \\r\\n / \\t 还原成真实字符', () => {
+  assert.equal(unescapeNewlines('行情。\\n\\n### 一、说明'), '行情。\n\n### 一、说明')
+  assert.equal(unescapeNewlines('a\\r\\nb'), 'a\nb')
+  assert.equal(unescapeNewlines('列1\\t列2'), '列1\t列2')
+})
+
+test('两层转义（平台偶尔下发 \\n）也还原成真实换行', () => {
+  assert.equal(unescapeNewlines('行情。\\\\n\\\\n### 一、说明'), '行情。\n\n### 一、说明')
+  assert.equal(unescapeNewlines('a\\\\nb'), 'a\nb')
+})
+
+test('未知转义与普通反斜杠保持原样（不影响 C# / 正则 / 路径）', () => {
+  assert.equal(unescapeNewlines('C:\\Users\\me'), 'C:\\Users\\me')
+  assert.equal(unescapeNewlines('正则 \\d+ 与 \\w'), '正则 \\d+ 与 \\w')
+  assert.equal(unescapeNewlines('引用 \\"x\\"'), '引用 "x"')
+  assert.equal(unescapeNewlines('没有转义的正文'), '没有转义的正文')
+})
+
+test('空值安全', () => {
+  assert.equal(unescapeNewlines(null), '')
+  assert.equal(unescapeNewlines(undefined), '')
+})
