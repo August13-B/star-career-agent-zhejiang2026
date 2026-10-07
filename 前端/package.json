@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "test": "node --test src/utils/sse.test.js src/utils/chatMarkdown.test.js src/utils/careerGraph.test.js src/utils/trainingApi.test.js src/utils/text.test.js src/utils/draftSync.test.js src/utils/templateIdentifiers.test.js",
+    "test": "node --test",
     "build": "vite build",
     "preview": "vite preview"
   },
