@@ -178,8 +178,28 @@ const headers = () => {
   const token = localStorage.getItem('token') || ''
   return { Authorization: token.startsWith('Bearer ') ? token : `Bearer ${token}` }
 }
-const api = axios.create({ baseURL: `${API_CONFIG.BASE_URL}/api/assessment`, timeout: 180000 })
+const api = axios.create({ baseURL: `${API_CONFIG.BASE_URL}/api/assessment`, timeout: 180000, headers: { 'Content-Type': 'application/json' } })
 api.interceptors.request.use(config => { config.headers = { ...config.headers, ...headers() }; return config })
+
+/** 非安全上下文（http://IP）下 crypto.randomUUID 不存在，做兜底，避免点击后静默失败 */
+const uuid = () => (globalThis.crypto?.randomUUID ? crypto.randomUUID() : `req-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`)
+
+/**
+ * 统一调用：后端统一返回 {code,message,data}，且**异常可能被全局处理器包成 HTTP 200**，
+ * 所以必须显式校验 code —— 否则就是"点了没反应、控制台不红"。
+ */
+async function call(config) {
+  const res = await api.request(config)
+  const body = res.data || {}
+  const ok = body.code === 10001 || body.code === 200 || body.code === 0 || body.success === true
+  if (!ok) {
+    const failure = new Error(body.message || '测评请求失败，请稍后重试')
+    failure.code = body.data?.errorCode
+    console.error('[能力补充测评] 接口返回失败:', res.status, body)
+    throw failure
+  }
+  return body.data
+}
 
 const profileReady = computed(() => !!state.value.profileReady)
 const hardText = computed(() => state.value.hardText || {})
@@ -201,17 +221,17 @@ const formatTime = value => (value ? String(value).replace('T', ' ').slice(0, 16
 
 async function loadState() {
   try {
-    const res = await api.get('/state')
-    state.value = res.data?.data || {}
+    state.value = await call({ url: '/state' }) || {}
   } catch (e) {
-    error.value = e.response?.data?.message || '读取测评状态失败，请稍后重试'
+    error.value = e.response?.data?.message || e.message || '读取测评状态失败，请稍后重试'
+    console.error('[能力补充测评] 读取状态失败:', e)
   }
 }
 
 async function loadHistory() {
   try {
-    const res = await api.get('/sessions', { params: { offset: 0, limit: 10 } })
-    history.value = res.data?.data?.items || []
+    const data = await call({ url: '/sessions', params: { offset: 0, limit: 10 } })
+    history.value = data?.items || []
   } catch (e) { /* 历史读取失败不影响主流程 */ }
 }
 
@@ -220,12 +240,13 @@ async function start() {
   busy.value = true
   error.value = ''
   try {
-    const res = await api.post('/sessions', { clientRequestId: crypto.randomUUID() })
-    applySession(res.data?.data)
+    const data = await call({ url: '/sessions', method: 'post', data: { clientRequestId: uuid() } })
+    applySession(data)
   } catch (e) {
     const body = e.response?.data || {}
-    error.value = body.message || '开始测评失败，请稍后重试'
-    if (body.data?.errorCode === 'PROFILE_REQUIRED') {
+    error.value = body.message || e.message || '开始测评失败，请稍后重试'
+    console.error('[能力补充测评] 开始测评失败:', e)
+    if (body.data?.errorCode === 'PROFILE_REQUIRED' || e.code === 'PROFILE_REQUIRED') {
       state.value = { ...state.value, profileReady: false }
     }
   } finally {
@@ -237,10 +258,10 @@ async function resume() {
   if (!activeSessionId.value) return
   busy.value = true
   try {
-    const res = await api.get(`/sessions/${activeSessionId.value}`)
-    applySession(res.data?.data)
+    applySession(await call({ url: `/sessions/${activeSessionId.value}` }))
   } catch (e) {
-    error.value = e.response?.data?.message || '载入上次测评失败'
+    error.value = e.response?.data?.message || e.message || '载入上次测评失败'
+    console.error('[能力补充测评] 载入上次测评失败:', e)
   } finally {
     busy.value = false
   }
@@ -249,10 +270,10 @@ async function resume() {
 async function openSession(sessionId) {
   busy.value = true
   try {
-    const res = await api.get(`/sessions/${sessionId}`)
-    applySession(res.data?.data)
+    applySession(await call({ url: `/sessions/${sessionId}` }))
   } catch (e) {
-    error.value = e.response?.data?.message || '载入测评记录失败'
+    error.value = e.response?.data?.message || e.message || '载入测评记录失败'
+    console.error('[能力补充测评] 载入测评记录失败:', e)
   } finally {
     busy.value = false
   }
@@ -293,12 +314,14 @@ async function submit(chosen, answer) {
   busy.value = true
   error.value = ''
   try {
-    const res = await api.post(`/sessions/${session.value.sessionId}/turns`, {
-      chosen, answer, expectedVersion: session.value.version
+    const data = await call({
+      url: `/sessions/${session.value.sessionId}/turns`, method: 'post',
+      data: { chosen, answer, expectedVersion: session.value.version }
     })
-    applySession(res.data?.data)
+    applySession(data)
   } catch (e) {
-    error.value = e.response?.data?.message || '提交失败，请重试'
+    error.value = e.response?.data?.message || e.message || '提交失败，请重试'
+    console.error('[能力补充测评] 提交作答失败:', e)
   } finally {
     busy.value = false
   }
@@ -308,8 +331,9 @@ function scheduleDraft() {
   clearTimeout(draftTimer)
   draftTimer = setTimeout(async () => {
     try {
-      await api.put(`/sessions/${session.value.sessionId}/draft`, {
-        content: draft.value, expectedVersion: session.value.draftVersion
+      await call({
+        url: `/sessions/${session.value.sessionId}/draft`, method: 'put',
+        data: { content: draft.value, expectedVersion: session.value.draftVersion }
       })
       session.value.draftVersion += 1
     } catch (e) { /* 草稿冲突：下次快照会带回最新值 */ }
