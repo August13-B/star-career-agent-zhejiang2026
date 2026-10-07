@@ -224,6 +224,32 @@ public class AssessmentService {
         return snapshot(userId, sessionId);
     }
 
+    /**
+     * 服务端自愈：当前题已超时（含宽限）且仍是 {@code asking} → 记为 {@code timeout} 并推进到下一题/评分。
+     *
+     * <p>用途：前端定时器会因**切后台/休眠/关页面**而冻结，靠前端"到点自动提交"并不可靠；
+     * 每次拉快照前先做这一步，保证限时在服务端一定生效（用户回来就是下一题）。
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public void expireIfTimedOut(Long userId, Long sessionId) {
+        Map<String, Object> session = store.lockOwnedSession(sessionId, userId);
+        if (session == null || !"active".equals(session.get("status"))) {
+            return;
+        }
+        Object currentTurnId = session.get("current_turn_id");
+        if (currentTurnId == null) {
+            return;
+        }
+        Map<String, Object> turn = store.lockCurrentTurn(sessionId, ((Number) currentTurnId).longValue());
+        if (turn == null || !"asking".equals(turn.get("status")) || !timedOut(turn)) {
+            return;
+        }
+        store.answerTurn(((Number) turn.get("id")).longValue(), null, null, "timeout");
+        store.touchSession(sessionId, "active", 1, null);
+        store.clearDraft(sessionId);
+        advance(store.session(sessionId));
+    }
+
     /** 服务端限时判定（含宽限，避免前端准点提交被判超时）。 */
     private boolean timedOut(Map<String, Object> turn) {
         LocalDateTime started = (LocalDateTime) turn.get("started_at");

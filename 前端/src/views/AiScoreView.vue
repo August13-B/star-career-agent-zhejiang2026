@@ -77,9 +77,16 @@
         <template v-else>
           <textarea v-model="draft" rows="5" maxlength="2000" :disabled="busy"
                     placeholder="请给出具体做法、依据和结果（越具体越容易被评分）"
-                    @input="scheduleDraft"></textarea>
+                    @input="onDraftInput"></textarea>
+          <p v-if="recognizing" class="muted small voice-line">正在听写，边说边转文字…{{ voiceInterim ? '（' + voiceInterim + '）' : '' }}</p>
+          <p v-else-if="voiceHint" class="muted small voice-line">{{ voiceHint }}</p>
+          <p v-else-if="!speechSupported" class="muted small voice-line">{{ speechUnsupportedHint }}</p>
           <div class="q-foot">
-            <span class="muted small">草稿自动保存 · {{ draft.length }}/2000</span>
+            <div class="answer-tools">
+              <button v-if="speechSupported" type="button" class="btn ghost sm" :class="{ recording: recognizing }"
+                      :disabled="busy" @click="toggleVoice">{{ recognizing ? '■ 停止语音' : '🎤 语音输入' }}</button>
+              <span class="muted small">草稿自动保存 · {{ draft.length }}/2000</span>
+            </div>
             <button class="btn primary" :disabled="busy || !draft.trim()" @click="submit(null, draft)">
               {{ busy ? '提交中…' : '提交回答' }}
             </button>
@@ -172,7 +179,18 @@ const DIMENSIONS = [
 const state = ref({}), session = ref(null), history = ref([])
 const loading = ref(true), busy = ref(false), error = ref('')
 const draft = ref(''), showBasic = ref(false), remaining = ref(0)
-let tick = null, draftTimer = null
+let tick = null, draftTimer = null, lastAutoAttempt = 0
+
+// ===== 语音输入（浏览器原生 Web Speech API；与训练工作台同一套行为）=====
+const SpeechRecognitionImpl = typeof window === 'undefined' ? null : (window.SpeechRecognition || window.webkitSpeechRecognition)
+const speechApiAvailable = typeof SpeechRecognitionImpl === 'function'
+const speechSecureContext = typeof window === 'undefined' || window.isSecureContext !== false
+const speechSupported = speechApiAvailable && speechSecureContext
+const recognizing = ref(false), voiceInterim = ref(''), voiceHint = ref('')
+let recognition = null, voiceBase = '', voiceWriting = false, voiceIntent = false, voiceRestarts = 0
+const speechUnsupportedHint = speechApiAvailable
+  ? `语音输入需要 HTTPS 或 localhost（当前是 ${typeof location === 'undefined' ? '非安全来源' : location.origin}），可直接打字`
+  : '当前浏览器不支持语音输入（建议 Chrome / Edge）；直接打字同样可以完成测评' 
 
 const headers = () => {
   const token = localStorage.getItem('token') || ''
@@ -294,13 +312,21 @@ function applySession(data) {
 function startTimer() {
   stopTimer()
   remaining.value = Number(session.value?.current?.remainingSeconds || 0)
+  lastAutoAttempt = 0
   if (session.value?.status !== 'active' || !session.value?.current) return
   tick = setInterval(() => {
-    remaining.value = Math.max(0, remaining.value - 1)
-    if (remaining.value === 0) {
-      clearInterval(tick)
-      submit(null, null) // 超时自动跳下一题（服务端已判定超时）
+    if (remaining.value > 0) {
+      remaining.value = Math.max(0, remaining.value - 1)
+      return
     }
+    // 到点：自动提交（服务端按超时判定）。**不因一次失败就停**：每 3 秒重试，直到推进到下一题。
+    // 另外后端在拉快照时也会自愈超时题，所以即使浏览器休眠过也能追上进度。
+    if (!session.value?.current?.turnId || busy.value) return
+    if (Date.now() - lastAutoAttempt < 3000) return
+    lastAutoAttempt = Date.now()
+    // 主观题：把已输入的草稿一并提交（不丢已写内容，服务端仍标记为「超时」）；客观题：空提交=超时跳过
+    const autoAnswer = session.value?.current?.kind === 'subjective' && draft.value.trim() ? draft.value : null
+    submit(null, autoAnswer, true)
   }, 1000)
 }
 
@@ -309,10 +335,10 @@ function stopTimer() {
   tick = null
 }
 
-async function submit(chosen, answer) {
+async function submit(chosen, answer, auto = false) {
   if (busy.value || !session.value?.current) return
   busy.value = true
-  error.value = ''
+  if (!auto) error.value = ''
   try {
     const data = await call({
       url: `/sessions/${session.value.sessionId}/turns`, method: 'post',
@@ -320,12 +346,78 @@ async function submit(chosen, answer) {
     })
     applySession(data)
   } catch (e) {
-    error.value = e.response?.data?.message || e.message || '提交失败，请重试'
-    console.error('[能力补充测评] 提交作答失败:', e)
+    const code = e.response?.data?.data?.errorCode || e.code
+    const retriable = ['OPTION_REQUIRED', 'ANSWER_REQUIRED', 'VERSION_CONFLICT', 'NO_ACTIVE_TURN'].includes(code)
+    if (auto && retriable) {
+      // 自动提交时还没到服务端宽限/版本刚好过期 → 静默等待下一次重试，不打扰用户
+      console.warn('[能力补充测评] 超时自动提交暂未成功，将重试:', code, e.message)
+    } else {
+      error.value = e.response?.data?.message || e.message || '提交失败，请重试'
+      console.error('[能力补充测评] 提交作答失败:', e)
+    }
   } finally {
     busy.value = false
   }
 }
+
+function toggleVoice() { return recognizing.value ? stopVoice() : startVoice() }
+
+function startVoice() {
+  if (!speechSupported || recognizing.value || busy.value) return
+  voiceHint.value = ''
+  voiceIntent = true
+  voiceRestarts = 0
+  launchRecognition()
+}
+
+function launchRecognition() {
+  try { recognition = new SpeechRecognitionImpl() } catch (e) { voiceIntent = false; voiceHint.value = '语音输入初始化失败，请改用打字输入。'; return }
+  recognition.lang = 'zh-CN'
+  recognition.continuous = true
+  recognition.interimResults = true
+  voiceBase = draft.value
+  recognition.onresult = event => {
+    let interim = ''
+    for (let index = event.resultIndex; index < event.results.length; index += 1) {
+      const result = event.results[index]
+      const text = result[0]?.transcript || ''
+      if (result.isFinal) voiceBase += text
+      else interim += text
+    }
+    voiceWriting = true
+    draft.value = voiceBase + interim
+    voiceWriting = false
+    voiceInterim.value = interim
+    scheduleDraft()
+  }
+  recognition.onerror = event => {
+    voiceInterim.value = ''
+    if (event.error === 'no-speech' || event.error === 'aborted') return
+    voiceIntent = false; recognizing.value = false
+    voiceHint.value = ['not-allowed', 'service-not-allowed'].includes(event.error)
+      ? '麦克风被拒绝或被服务器策略禁用：请检查地址栏麦克风权限；若通过 nginx 访问，需允许 Permissions-Policy microphone=(self)。'
+      : event.error === 'network'
+        ? '浏览器的语音识别服务连接失败（Chrome 需访问其云端识别）：请检查系统代理/网络，或改用打字输入。'
+        : event.error === 'audio-capture' ? '未检测到可用麦克风设备。'
+          : `语音识别中断（${event.error}），可以继续打字输入。`
+  }
+  recognition.onend = () => {
+    voiceInterim.value = ''
+    if (!voiceIntent || busy.value) { voiceIntent = false; recognizing.value = false; return }
+    if (voiceRestarts >= 30) { voiceIntent = false; recognizing.value = false; voiceHint.value = '语音识别多次中断，已停止；可以重新点击按钮或直接打字。'; return }
+    voiceRestarts += 1
+    setTimeout(() => { if (voiceIntent) launchRecognition() }, 250)
+  }
+  try { recognition.start(); recognizing.value = true } catch (e) { voiceIntent = false; recognizing.value = false; voiceHint.value = '语音识别无法启动，请改用打字输入。' }
+}
+
+function stopVoice() {
+  voiceIntent = false
+  try { recognition?.stop() } catch (e) { /* 停止时的异常可忽略 */ }
+  recognition = null; recognizing.value = false; voiceInterim.value = ''
+}
+
+function onDraftInput() { if (recognizing.value && !voiceWriting) stopVoice(); scheduleDraft() }
 
 function scheduleDraft() {
   clearTimeout(draftTimer)
@@ -349,7 +441,7 @@ onMounted(async () => {
   loading.value = false
 })
 
-onUnmounted(stopTimer)
+onUnmounted(() => { stopTimer(); stopVoice() })
 </script>
 
 <style scoped>
@@ -389,6 +481,9 @@ progress { display: block; width: 100%; height: 9px; accent-color: #3B82F6; bord
 .option:hover { border-color: #93C5FD; background: #F0F7FF; }
 .option b { color: #2563EB; }
 textarea { font: inherit; width: 100%; box-sizing: border-box; padding: 12px; border: 1px solid #CBD5E1; border-radius: 10px; line-height: 1.7; }
+.answer-tools { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.voice-line { margin: 8px 0 0; }
+.btn.ghost.recording { background: #FEE2E2; color: #B91C1C; }
 .q-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 10px; }
 .score-total { display: flex; align-items: baseline; gap: 10px; margin-bottom: 16px; }
 .score-total strong { font-size: 44px; color: #2563EB; }
