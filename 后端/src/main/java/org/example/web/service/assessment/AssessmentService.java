@@ -197,7 +197,7 @@ public class AssessmentService {
         boolean objective = "objective".equals(turn.get("kind"));
         boolean expired = timedOut(turn);
         if (objective) {
-            JsonNode options = store.read((String) turn.get("options"));
+            JsonNode options = store.options(turn);
             int count = options == null ? 0 : options.size();
             boolean valid = chosen != null && chosen >= 0 && chosen < count;
             // 允许「超时未作答」的空提交（服务端已判定超时）；否则必须选一个选项
@@ -388,7 +388,7 @@ public class AssessmentService {
                 if (!(chosen instanceof Number number)) {
                     continue;
                 }
-                JsonNode options = store.read((String) turn.get("options"));
+                JsonNode options = store.options(turn);
                 if (options == null || number.intValue() >= options.size()) {
                     continue;
                 }
@@ -461,7 +461,7 @@ public class AssessmentService {
             item.put("追问", number(turn.get("follow_up")) == 1);
             item.put("问", store.decrypt((String) turn.get("question")));
             if ("objective".equals(turn.get("kind"))) {
-                JsonNode options = store.read((String) turn.get("options"));
+                JsonNode options = store.options(turn);
                 Object chosen = turn.get("chosen");
                 item.put("答", options != null && chosen instanceof Number number && number.intValue() < options.size()
                         ? options.get(number.intValue()).path("text").asText("") : "（超时未作答）");
