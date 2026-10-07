@@ -447,7 +447,14 @@ public class TrainingService {
                     + "\n技术深度要求（仅面试场景且岗位已知时适用）：整场至少一半题目必须是**该岗位的技术题**——"
                     + "结合目标岗位的关键技能（" + jobVariables(config).get("skills") + "）与职责描述提问，"
                     + "并要求作答者讲清【具体做法 → 背后原理/机制 → 替代方案与取舍 → 如何验证】，不要只问泛泛的流程、态度或协作问题。";
-            return boundary + task + "\n难度=" + (config == null ? "standard" : config.getDifficulty()) + "（entry可给结构提示但不能代写用户最终成果；standard需用户自主分析）。一次只问当前阶段，不输出评分或JSON。" + materials;
+            return boundary + task + "\n难度=" + (config == null ? "standard" : config.getDifficulty())
+                    + "（standard=全程不给提示；entry=仅在用户明确表示不会并求助后，给一句话方向性提示）。"
+                    + "\n提问纪律（必须严格遵守）：只提问，像真实面试官那样一两句话直接问，最多补一句必要背景；"
+                    + "题目里**不得出现**任何提示、答题结构、要点清单、\"请按…展开\"、\"建议/提示\"、示例答案、"
+                    + "评分标准或考察点说明。只有评分阶段才允许出现 rubric、评分依据、改进建议与参考答案对照。"
+                    + "\n技术题要求：整场至少一半题目必须是**有明确答案的技术题**——围绕目标岗位的关键技能与职责提问，"
+                    + "考查原理/机制、关键参数或边界、以及某种情形下的正确做法，作答后能按事实判定对错；其余可为经历题或情境题。"
+                    + "一次只问当前阶段，不输出评分或JSON。" + materials;
         }
         var root = json.createObjectNode(); var score = root.putObject("training_evaluation");
         score.put("scenario", definition.scenario()).put("templateVersion", definition.id()).put("rubricVersion", definition.rubricVersion());
@@ -456,6 +463,8 @@ public class TrainingService {
         score.put("total", 0).put("comment", "简明评语，最多300字"); score.putArray("suggestions").add("可操作的改进建议");
         String timeoutNote = timeoutNote(session, definition);
         return boundary + "独立评价用户表现，只采用其回答和最终作品。不得把AI起草内容当用户成果。"
+                + "对技术题必须**逐题按事实判对错**：写明答对了什么、错在哪里、正确说法是什么，并在专业技能维度体现"
+                + "（技术题答错不能因为表达流畅而给高分）。"
                 + "评语与建议中**不要使用英文双引号**（如需强调请用「」），避免破坏 JSON。" + materials + timeoutNote
                 + (jobBound(config) ? "\n对照岗位要求说差异：按目标岗位的关键技能与证书要求，逐项说明用户当前差距（哪些能胜任、哪些缺证据、该怎么补）——但维度分数与权重仍按本场景固定口径，不因岗位调整。" : "")
                 + "\n通过已有response文本通道返回：外层{\"response\":\"内部JSON字符串\"}。response必须是完整合法JSON序列化文本，不加围栏说明。内部根必须training_evaluation，不要使用外层scenario_score卡片（它会丢失版本和证据）。"
