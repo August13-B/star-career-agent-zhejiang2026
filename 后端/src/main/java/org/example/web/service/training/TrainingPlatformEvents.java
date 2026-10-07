@@ -26,7 +26,13 @@ public final class TrainingPlatformEvents {
                 case "CUSTOM" -> {
                     JsonNode value = event.has("value") ? event.get("value") : event;
                     JsonNode data = value.path("data");
-                    if (data.isTextual()) data = mapper.readTree(data.asText());
+                    if (data.isTextual()) {
+                        try {
+                            data = mapper.readTree(data.asText());
+                        } catch (Exception broken) {
+                            data = mapper.readTree(org.example.web.tool.JsonRepair.repairUnescapedQuotes(data.asText()));
+                        }
+                    }
                     if (data.has("scenario_score")) score = data.deepCopy();
                     else if (data.has("scenario") && data.has("dimensions")) {
                         score = mapper.createObjectNode().set("scenario_score", data);

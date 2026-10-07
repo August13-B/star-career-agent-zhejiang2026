@@ -85,8 +85,13 @@ public class TboxAssessmentGateway implements AssessmentGateway {
     private JsonNode parse(String text) {
         try {
             return mapper.readTree(text);
-        } catch (Exception e) {
-            return null;
+        } catch (Exception strict) {
+            // 兜底：修复字符串值里的裸引号（模型在评语里加英文双引号时会出现）
+            try {
+                return mapper.readTree(org.example.web.tool.JsonRepair.repairUnescapedQuotes(text));
+            } catch (Exception still) {
+                return null;
+            }
         }
     }
 }

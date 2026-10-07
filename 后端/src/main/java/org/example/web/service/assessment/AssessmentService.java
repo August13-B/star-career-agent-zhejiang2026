@@ -428,6 +428,7 @@ public class AssessmentService {
                 + "\n本轮任务=独立评价该学生的软实力六维（communication/teamwork/problem_solving/innovation/learning/pressure，"
                 + "0–100 整数、基线 60；客观题维度分可参考后端复算结果=" + objectiveAudit(sessionId).toString() + "）。"
                 + "只输出 ability_evaluation（不输出 total；硬实力四项由后端按基本情况得出，不要评）。"
+                + "评语与建议中**不要使用英文双引号**（如需强调请用「」），避免破坏 JSON。"
                 + "\n冻结证据目录=" + store.write(TrainingEvidenceCatalog.fromSources(sources));
     }
 

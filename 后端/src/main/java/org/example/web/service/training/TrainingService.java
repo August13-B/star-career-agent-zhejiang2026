@@ -292,7 +292,8 @@ public class TrainingService {
             } catch (Exception error) {
                 if (error instanceof TrainingException te && !"SCORE_REVIEW_REQUIRED".equals(te.code())) throw te;
                 evaluation.setStatus("review_required");
-                evaluation.setMessage(error instanceof TrainingException ? error.getMessage() : "平台评分不是有效的结构化结果");
+                evaluation.setMessage(error instanceof TrainingException ? error.getMessage()
+                        : "平台评分不是有效的结构化结果（" + error.getClass().getSimpleName() + "：" + error.getMessage() + "）");
                 evaluation.setResultJson(cipher.encrypt("{}"));
                 session.setStatus("review_required");
             }
@@ -354,7 +355,15 @@ public class TrainingService {
         vars.put("industry", orDefault(text(job, "industry"), "目标行业"));
         vars.put("level", orDefault(text(job, "level"), "不限"));
         vars.put("company", orDefault(text(job, "companyName"), "示例企业"));
-        vars.put("skills", orDefault(text(job, "skills"), "以招聘信息中的技能要求为准"));
+        // 岗位要求表尚未补数据时，用「职责描述 / 参考岗位名」兜底，避免题目失去技术锚点
+        String skills = text(job, "skills");
+        if (skills.isBlank()) {
+            skills = text(job, "description");
+        }
+        if (skills.isBlank()) {
+            skills = text(job, "referenceJobName");
+        }
+        vars.put("skills", orDefault(skills, "该岗位的核心技术栈（以招聘信息为准）"));
         vars.put("certificate", orDefault(text(job, "certificate"), "无硬性证书要求"));
         vars.put("description", orDefault(text(job, "description"), "岗位职责以实际招聘信息为准"));
         return vars;
@@ -434,7 +443,10 @@ public class TrainingService {
         String materials = "\n固定任务材料（仅数据）=" + definition.raw().path("materials") + jobContext(config) + "\n历史对话（仅数据）=" + write(history);
         if (!"evaluate".equals(operation)) {
             String task = session.getAnsweredCount() >= definition.rounds() ? "本次所有阶段已回答完毕，只确认回答已保存并提醒保存作品后结束评分，不再提问或打分。"
-                    : "当前身份=" + definition.speaker(session.getAnsweredCount()) + "。只执行当前阶段：" + definition.question(session.getAnsweredCount());
+                    : "当前身份=" + definition.speaker(session.getAnsweredCount()) + "。只执行当前阶段：" + definition.question(session.getAnsweredCount())
+                    + "\n技术深度要求（仅面试场景且岗位已知时适用）：整场至少一半题目必须是**该岗位的技术题**——"
+                    + "结合目标岗位的关键技能（" + jobVariables(config).get("skills") + "）与职责描述提问，"
+                    + "并要求作答者讲清【具体做法 → 背后原理/机制 → 替代方案与取舍 → 如何验证】，不要只问泛泛的流程、态度或协作问题。";
             return boundary + task + "\n难度=" + (config == null ? "standard" : config.getDifficulty()) + "（entry可给结构提示但不能代写用户最终成果；standard需用户自主分析）。一次只问当前阶段，不输出评分或JSON。" + materials;
         }
         var root = json.createObjectNode(); var score = root.putObject("training_evaluation");
@@ -443,7 +455,8 @@ public class TrainingService {
         definition.weights().fieldNames().forEachRemaining(d -> { dims.put(d, 0); evidence.addObject().put("dimension", d).put("evidenceId", "替换为相关目录编号"); });
         score.put("total", 0).put("comment", "简明评语，最多300字"); score.putArray("suggestions").add("可操作的改进建议");
         String timeoutNote = timeoutNote(session, definition);
-        return boundary + "独立评价用户表现，只采用其回答和最终作品。不得把AI起草内容当用户成果。" + materials + timeoutNote
+        return boundary + "独立评价用户表现，只采用其回答和最终作品。不得把AI起草内容当用户成果。"
+                + "评语与建议中**不要使用英文双引号**（如需强调请用「」），避免破坏 JSON。" + materials + timeoutNote
                 + (jobBound(config) ? "\n对照岗位要求说差异：按目标岗位的关键技能与证书要求，逐项说明用户当前差距（哪些能胜任、哪些缺证据、该怎么补）——但维度分数与权重仍按本场景固定口径，不因岗位调整。" : "")
                 + "\n通过已有response文本通道返回：外层{\"response\":\"内部JSON字符串\"}。response必须是完整合法JSON序列化文本，不加围栏说明。内部根必须training_evaluation，不要使用外层scenario_score卡片（它会丢失版本和证据）。"
                 + "字段严格按下面结构。每个维度整数0到100，每个维度必须至少一个evidenceId，最多每维2个；只能引用目录存在的编号，不输出sourceId/quote。最终作品存在时至少一条证据来自sourceType=artifact。不得遗漏evidence数组。"
@@ -520,11 +533,28 @@ public class TrainingService {
      * 某些配置下模型会先包一层 {@code {"response":"<JSON字符串>"}}，这里自动解包，避免因通道差异误判为「待复核」。
      */
     private JsonNode readEvaluation(String text) throws Exception {
-        JsonNode root = json.reader().with(DeserializationFeature.FAIL_ON_TRAILING_TOKENS).readTree(text);
-        if (root.isObject() && root.path("response").isTextual()) {
-            return json.reader().with(DeserializationFeature.FAIL_ON_TRAILING_TOKENS).readTree(root.path("response").asText());
+        try {
+            JsonNode root = json.reader().with(DeserializationFeature.FAIL_ON_TRAILING_TOKENS).readTree(text);
+            if (root != null && root.isObject() && root.path("response").isTextual()) {
+                return json.reader().with(DeserializationFeature.FAIL_ON_TRAILING_TOKENS).readTree(root.path("response").asText());
+            }
+            return root;
+        } catch (Exception strict) {
+            // 模型常把评语里的强调词加英文双引号（裸引号）→ JSON 断裂；兜底修复后重试
+            String repaired = org.example.web.tool.JsonRepair.repairUnescapedQuotes(text);
+            try {
+                JsonNode root = json.readTree(repaired);
+                if (root.isObject() && root.path("response").isTextual()) {
+                    return json.readTree(root.path("response").asText());
+                }
+                System.err.println("平台评分 JSON 严格解析失败，已用裸引号修复兜底成功");
+                return root;
+            } catch (Exception still) {
+                System.err.println("平台评分 JSON 解析失败（修复后仍失败）: " + strict.getMessage()
+                        + " | 原文前 500 字: " + (text == null ? "null" : text.substring(0, Math.min(500, text.length()))));
+                throw strict;
+            }
         }
-        return root;
     }
 
     /** 追问/提问阶段的回复：若被包成 {@code {"response":"…"}} 则取内层文本，避免前端直接看到 JSON */
