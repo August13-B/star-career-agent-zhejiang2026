@@ -29,10 +29,12 @@ public class ReportGraphController {
         catch (IllegalArgumentException e) { return Result.error(e.getMessage()); }
     }
     @PostMapping("/{id}")
-    public Result<?> generate(@PathVariable Long id, @RequestHeader(value="Authorization", required=false) String token) {
+    public Result<?> generate(@PathVariable Long id,
+            @RequestParam(value = "force", required = false, defaultValue = "false") boolean force,
+            @RequestHeader(value="Authorization", required=false) String token) {
         Long userId = user(token);
         if (userId == null) return Result.unauthorized("请先登录");
-        try { return Result.success(graphs.generate(userId, id)); }
+        try { return Result.success(graphs.generate(userId, id, force)); }
         catch (IllegalArgumentException e) { return Result.error(e.getMessage()); }
         catch (Exception e) { return Result.error("星图生成暂时失败，请重试；已保存的测评不受影响"); }
     }
