@@ -35,8 +35,9 @@ public class AssessmentStore {
         this.cipher = cipher;
     }
 
+    /** 雪花 ID 类别必须落在 0–31（20 已被训练模块占用，这里用 21）。 */
     public static long id() {
-        return SnowIdCreater.generateId(40);
+        return SnowIdCreater.generateId(21);
     }
 
     // ====================== 会话 ======================

@@ -96,6 +96,18 @@ public class AssessmentController {
                 .body(Result.error(error.getMessage(), Map.of("errorCode", error.code())));
     }
 
+    /**
+     * 兜底：测评链路里未预期的异常也要以**真实错误状态**返回，不要被全局处理器包成 HTTP 200「网络错误」——
+     * 否则前端只会「点了没反应」。
+     */
+    @ExceptionHandler(Exception.class)
+    public ResponseEntity<Result<?>> unexpected(Exception error) {
+        System.err.println("测评链路未预期异常: " + error);
+        String message = error.getMessage() == null ? error.getClass().getSimpleName() : error.getMessage();
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(Result.error("测评服务异常：" + message, Map.of("errorCode", "ASSESSMENT_FAILED")));
+    }
+
     private Long user(String token) {
         try {
             return Long.parseLong(String.valueOf(JwtUtil.parseToken(token).get("id")));

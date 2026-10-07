@@ -155,4 +155,11 @@ class TrainingProtocolTest {
         assertEquals("回答中的个人经历", cipher.decrypt(first));
         assertThrows(TrainingException.class, () -> cipher.decrypt(first.substring(0, first.length() - 5) + "AAAAA"));
     }
+
+    /** 雪花类别必须 0–31：曾因 generateId(40) 抛 IllegalArgumentException 被全局处理器吞成 HTTP 200「网络错误」。 */
+    @Test void assessmentIdsUseValidSnowflakeCategory() {
+        assertDoesNotThrow(org.example.web.service.assessment.AssessmentStore::id);
+        assertTrue(org.example.web.service.assessment.AssessmentStore.id() > 0);
+        assertThrows(IllegalArgumentException.class, () -> org.example.web.tool.SnowIdCreater.generateId(40));
+    }
 }
