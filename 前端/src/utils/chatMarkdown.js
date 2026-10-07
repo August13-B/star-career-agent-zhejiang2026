@@ -1,3 +1,5 @@
+import { unescapeNewlines } from './text.js'
+
 const escapeHtml = (text) => text.replace(/&/g, '&amp;').replace(/</g, '&lt;')
   .replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;')
 
@@ -14,6 +16,9 @@ function inline(text) {
 
 export function renderChatMarkdown(text) {
   if (!text) return ''
+  // 平台偶尔把换行转义成字面量 `\n` 下发 → 先还原（围栏代码块内的字面量保留，那是代码内容）
+  const restored = String(text).split(/(```[\s\S]*?(?:```|$))/g)
+    .map((part, index) => (index % 2 === 1 ? part : unescapeNewlines(part))).join('')
   const html = []
   let paragraph = []
   let list = null
@@ -24,7 +29,7 @@ export function renderChatMarkdown(text) {
   }
   const closeList = () => { if (list) html.push(`</${list}>`); list = null }
   const flushCode = () => html.push(`<pre class="md-pre"><code class="md-code-block">${escapeHtml(code.join('\n'))}</code></pre>`)
-  for (const original of String(text).replace(/\r\n?/g, '\n').split('\n')) {
+  for (const original of restored.replace(/\r\n?/g, '\n').split('\n')) {
     if (/^\s*```/.test(original)) {
       flushParagraph(); closeList()
       if (code === null) code = []

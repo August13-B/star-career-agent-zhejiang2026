@@ -153,6 +153,7 @@ import AppIcon from '../components/AppIcon.vue'
 import { generateAesKeyAndIv, rsaEncrypt } from '../utils/crypto'
 import { readSseData } from '../utils/sse'
 import { renderChatMarkdown as renderMarkdown } from '../utils/chatMarkdown'
+import { unescapeNewlines } from '../utils/text'
 import { useRouter, useRoute } from 'vue-router'
 const route = useRoute()
 const router = useRouter()
@@ -470,6 +471,10 @@ const sendMessage = async () => {
             chunkText = parsed.data ?? parsed.response ?? parsed.delta ?? '';
          }
          if (typeof chunkText !== 'string') continue;
+
+         // 平台有时把换行转义成字面量 `\n` 下发：先还原，避免打字机阶段先显出一串「\n」
+         // （跨分块被拆开的极端情况由渲染层 renderChatMarkdown 托底，两层都不会漏）
+         chunkText = unescapeNewlines(chunkText);
 
          // 核心修复点 1：使用 Array.from() 拆分，完美保留 Emoji 图标不乱码！
          charQueue.push(...Array.from(chunkText));

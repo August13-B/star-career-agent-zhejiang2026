@@ -236,9 +236,7 @@ class ManageGUI:
             self.status_bar.config(text="⚠️ 上一个操作还在进行中，请稍候…")
             return
         self._busy = True
-        self.build_status.config(text="🔨 构建中…", fg=ACCENT_WARN)
-        self.build_time.config(text="npm run build（约 30~90 秒）", fg=FG_SECONDARY)
-        self.status_bar.config(text=f"⟳ 前端构建中… {datetime.now():%H:%M:%S}")
+        self._mark_building()
 
         # 切到构建日志并清空，方便直接看这次输出
         self.log_var.set("build")
@@ -262,6 +260,12 @@ class ManageGUI:
 
         threading.Thread(target=worker, daemon=True).start()
 
+    def _mark_building(self) -> None:
+        """把构建卡片切成「构建中」（单独立按钮与「全部重启 + 构建」共用）。"""
+        self.build_status.config(text="🔨 构建中…", fg=ACCENT_WARN)
+        self.build_time.config(text="npm run build（约 30~90 秒）", fg=FG_SECONDARY)
+        self.status_bar.config(text=f"⟳ 前端构建中… {datetime.now():%H:%M:%S}")
+
     def _build_done(self, ok: bool) -> None:
         self._busy = False
         self._refresh_build()
@@ -281,6 +285,7 @@ class ManageGUI:
 
     def _build_frontend_inline(self) -> None:
         """在当前工作线程内执行前端构建（供「全部重启」复用，不自己动 _busy）。"""
+        self.root.after(0, self._mark_building)
         self.root.after(0, lambda: (self.log_var.set("build"), self._refresh_log("build")))
         buf = io.StringIO()
         ok = False

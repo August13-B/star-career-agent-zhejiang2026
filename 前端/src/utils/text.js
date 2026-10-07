@@ -6,7 +6,8 @@
  */
 export function stripMarkdown(value) {
   if (value === null || value === undefined) return ''
-  let text = String(value)
+  // 平台可能把换行转义成字面量 \n 下发：先还原，再按纯文本展示
+  let text = unescapeNewlines(value)
 
   // 代码块/行内代码：保留内容，去掉围栏与反引号
   text = text.replace(/```[^\n]*\n?([\s\S]*?)```/g, '$1')
@@ -35,4 +36,48 @@ export function stripMarkdown(value) {
   text = text.replace(/^[ \t]+|[ \t]+$/gm, '')
   text = text.replace(/\n{3,}/g, '\n\n')
   return text.trim()
+}
+
+/**
+ * 平台偶尔把换行“转义”后下发：正文里出现的是**字面量** `\n`（两个字符），
+ * 于是聊天窗口直接显示「……行情。\n\n### 一、……」而不是换行。
+ *
+ * 这里把常见转义序列还原成真实字符：
+ *   `\n` / `\r\n` / `\r` → 换行    `\t` → 制表符    `\"` → 双引号    `\\` → 反斜杠
+ * 其它未知转义**原样保留**（如 C# 的 `\d`、正则 `\w`、Windows 路径 `C:\Users` 不受影响）。
+ */
+export function unescapeNewlines(value) {
+  if (value === null || value === undefined) return ''
+  let text = String(value)
+  if (!text.includes('\\')) return text
+  // 平台偶尔下发两层转义（\\n）→ 反复还原到稳定，上限 3 轮
+  for (let pass = 0; pass < 3; pass++) {
+    const next = unescapeOnce(text)
+    if (next === text) return next
+    text = next
+  }
+  return text
+}
+
+function unescapeOnce(text) {
+  let out = ''
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i]
+    if (ch !== '\\' || i + 1 >= text.length) { out += ch; continue }
+    const next = text[++i]
+    if (next === 'n' || next === 'r') {
+      // \r\n 视作一个换行
+      if (next === 'r' && text[i + 1] === '\\' && text[i + 2] === 'n') i += 2
+      out += '\n'
+    } else if (next === 't') {
+      out += '\t'
+    } else if (next === '"') {
+      out += '"'
+    } else if (next === '\\') {
+      out += '\\'
+    } else {
+      out += '\\' + next
+    }
+  }
+  return out
 }
