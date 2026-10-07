@@ -20,6 +20,9 @@
 
 ```bash
 python manage.py start all     # 后端(8080)+前端(5173)+nginx
+python manage.py start nginx   # nginx 单独启动（Windows 实例：C:\xingzhi-nginx，日志 logs/access.log）
+python manage.py build         # 构建前端（npm run build → 前端/dist，日志 logs/build.log）
+python manage.py gui           # 可视化界面（含「🔨 构建前端」卡片）
 python manage.py db            # 幂等灌库（仅职业数据；缺表建表/无数据导入，之后自动跑幂等迁移）
 python manage.py db --force    # 重建表并重新导入（会清空现有数据）
 python manage.py db migrate    # 对已有库执行幂等迁移（加宽加密列 / 修 is_deleted）
