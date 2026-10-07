@@ -5,6 +5,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.example.web.service.training.TrainingContentCipher;
+import org.example.web.service.profile.ProfileChangeDetail;
+import org.example.web.service.profile.ProfileScorePolicy;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
@@ -59,7 +61,7 @@ public class AssessmentOutcomeService {
         List<Map<String, Object>> active = scores.stream()
                 .filter(row -> number(row.get("is_deleted")) == 0 && number(row.get("score_type")) == 1).toList();
         if (profiles.size() != 1 || abilities.size() != 1 || active.size() != 1) {
-            return Map.of("status", "skipped", "message", "当前能力基线不唯一或不存在，请先在个人中心补全基本情况");
+            return Map.of("status", "skipped", "message", "请先在个人中心补全基本情况");
         }
         Map<String, Object> profile = profiles.get(0), ability = abilities.get(0), old = active.get(0);
         Long baselineId = session.get("baseline_score_id") == null ? null : ((Number) session.get("baseline_score_id")).longValue();
@@ -67,15 +69,19 @@ public class AssessmentOutcomeService {
                 ? null : ((Number) session.get("baseline_profile_version")).intValue();
         if (baselineId != null && (!baselineId.equals(numberLong(old.get("id")))
                 || (baselineVersion != null && baselineVersion != number(profile.get("version"))))) {
-            return Map.of("status", "skipped", "message", "测评期间能力基线或画像已更新，本次保留反馈、避免覆盖较新的数据");
+            return Map.of("status", "skipped", "message", "本次测评反馈已保存");
         }
 
         Map<String, Object> before = new LinkedHashMap<>();
         Map<String, Object> after = new LinkedHashMap<>();
+        // 画像更新幅度策略（B）：首次评估 ±35（25~95）；再次单维 ≤10，降低需理由
+        boolean firstTime = ProfileScorePolicy.isFirstTime((String) old.get("change_source"));
+        String changeReason = "能力补充测评更新（软实力六维）";
         for (String dimension : ALL) {
             int value = number(old.get(dimension + "_score"));
             before.put(dimension, value);
-            after.put(dimension, SOFT.contains(dimension) ? scored.path("dimensions").path(dimension).asInt(value) : value);
+            int proposed = SOFT.contains(dimension) ? scored.path("dimensions").path(dimension).asInt(value) : value;
+            after.put(dimension, ProfileScorePolicy.clamp(firstTime, value, proposed, changeReason));
         }
         double hardAverage = HARD.stream().mapToInt(d -> number(after.get(d))).average().orElse(60);
         double softAverage = SOFT.stream().mapToInt(d -> number(after.get(d))).average().orElse(60);
@@ -98,9 +104,11 @@ public class AssessmentOutcomeService {
         values.add(ability.get("id"));
         ALL.forEach(d -> values.add(after.get(d)));
         values.add(total);
-        values.add("能力补充测评更新：本次只覆盖软实力六维，硬实力四项保持原有值");
-        jdbc.update("INSERT INTO student_ability_score(id,user_id,ability_id," + columns + ",total_score,score_comment,score_type)"
-                + " VALUES(" + placeholders + ",?,?,1)", values.toArray());
+        values.add("能力补充测评更新");
+        values.add(ProfileScorePolicy.SOURCE_ASSESSMENT);
+        values.add(write(ProfileChangeDetail.of(firstTime, ProfileScorePolicy.SOURCE_ASSESSMENT, changeReason, before, after)));
+        jdbc.update("INSERT INTO student_ability_score(id,user_id,ability_id," + columns + ",total_score,score_comment,score_type,change_source,change_detail)"
+                + " VALUES(" + placeholders + ",?,?,1,?,?)", values.toArray());
         jdbc.update("UPDATE student_profile SET version=?,update_time=CURRENT_TIMESTAMP WHERE id=?", version, profile.get("id"));
         Map<String, Object> snapshot = new LinkedHashMap<>(profile);
         snapshot.put("version", version);
@@ -117,7 +125,11 @@ public class AssessmentOutcomeService {
         result.put("version", version);
         result.put("before", before);
         result.put("after", after);
-        result.put("message", "已更新本次覆盖的软实力六维（硬实力四项保持原值），总分 " + total);
+        result.put("firstTime", firstTime);
+        result.put("source", ProfileScorePolicy.SOURCE_ASSESSMENT);
+        result.put("reason", changeReason);
+        result.put("deltas", ProfileChangeDetail.deltas(before, after));
+        result.put("message", "本次测评结果已同步到能力画像，总分 " + total);
         return result;
     }
 

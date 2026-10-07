@@ -8,6 +8,7 @@
 
 功能:
     - 一键启动 / 一键停止 / 一键重启（后端 + 前端 + Nginx）
+    - 「全部重启」会顺带执行前端构建（npm run build → 前端/dist）
     - 单个服务 启动 / 停止 / 重启
     - 前端构建（npm run build）→ 实时输出构建日志 + 显示构建时间
     - 状态显示：运行状态 + PID + 启动时间（重启后时间变化，一眼可辨）
@@ -87,7 +88,7 @@ class ManageGUI:
         btns.pack(side="left", padx=24)
         self._btn(btns, "⚡ 一键启动", ACCENT_OK, lambda: self._run_all("start"), bold=True).pack(side="left", padx=3)
         self._btn(btns, "■ 全部停止", ACCENT_ERR, lambda: self._run_all("stop")).pack(side="left", padx=3)
-        self._btn(btns, "↻ 全部重启", ACCENT_WARN, lambda: self._run_all("restart")).pack(side="left", padx=3)
+        self._btn(btns, "↻ 全部重启 + 构建", ACCENT_WARN, lambda: self._run_all("restart", build=True)).pack(side="left", padx=3)
         self._btn(btns, "🗑 清空全部日志", FG_SECONDARY, self._clear_all_logs).pack(side="left", padx=12)
 
         self.status_bar = tk.Label(header, text="", bg=BG_DARK, fg=FG_SECONDARY,
@@ -224,8 +225,8 @@ class ManageGUI:
     def _run_one(self, action: str, name: str) -> None:
         self._dispatch(action, [name])
 
-    def _run_all(self, action: str) -> None:
-        self._dispatch(action, list(self.service_names))
+    def _run_all(self, action: str, build: bool = False) -> None:
+        self._dispatch(action, list(self.service_names), build=build)
 
     # ── 前端构建（npm run build）────────────────────────────────────
 
@@ -278,7 +279,25 @@ class ManageGUI:
         self.build_status.config(text="● 已构建", fg=ACCENT_OK)
         self.build_time.config(text=f"构建于 {mtime:%Y-%m-%d %H:%M}", fg=FG_SECONDARY)
 
-    def _dispatch(self, action: str, names: list[str]) -> None:
+    def _build_frontend_inline(self) -> None:
+        """在当前工作线程内执行前端构建（供「全部重启」复用，不自己动 _busy）。"""
+        self.root.after(0, lambda: (self.log_var.set("build"), self._refresh_log("build")))
+        buf = io.StringIO()
+        ok = False
+        try:
+            with contextlib.redirect_stdout(buf):
+                ok = self.M.build_frontend(
+                    on_line=lambda line: self.root.after(0, lambda l=line: self._append_log(l))
+                )
+        except Exception as e:  # noqa: BLE001
+            buf.write(f"❌ 构建出错: {e}\n")
+        text = buf.getvalue()
+        self.root.after(0, lambda t=text: self._append_log(t))
+        self.root.after(0, self._refresh_build)
+        self.root.after(0, lambda o=ok: self.status_bar.config(
+            text=f"{'✅ 构建完成' if o else '❌ 构建失败（详见日志）'}  {datetime.now():%H:%M:%S}"))
+
+    def _dispatch(self, action: str, names: list[str], build: bool = False) -> None:
         if self._busy:
             self.status_bar.config(text="⚠️ 上一个操作还在进行中，请稍候…")
             return
@@ -305,6 +324,11 @@ class ManageGUI:
                 self.root.after(0, lambda t=text: self._append_log(t))
                 self.root.after(0, self._refresh_status)
                 self.root.after(0, lambda nn=n: (self.log_var.set(nn), self._refresh_log(nn)))
+            # 「全部重启」附带前端构建：重启完服务后自动 npm run build（产物 前端/dist）
+            if build:
+                self.root.after(0, lambda: self._append_log(
+                    f"[{datetime.now():%H:%M:%S}] 🔨 服务已重启，开始构建前端（npm run build）…"))
+                self._build_frontend_inline()
             self.root.after(0, self._done)
 
         threading.Thread(target=worker, daemon=True).start()
