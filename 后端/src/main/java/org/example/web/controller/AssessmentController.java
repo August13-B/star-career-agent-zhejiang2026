@@ -60,7 +60,10 @@ public class AssessmentController {
 
     @GetMapping("/sessions/{id}")
     public Result<?> snapshot(@RequestHeader("Authorization") String token, @PathVariable Long id) {
-        return Result.success(service.snapshot(user(token), id));
+        Long userId = user(token);
+        // 服务端自愈：若当前题已超时（前端定时器可能因切后台/关页面冻结），先记为超时并推进
+        service.expireIfTimedOut(userId, id);
+        return Result.success(service.snapshot(userId, id));
     }
 
     /** 提交当前题作答（客观题传 chosen，主观题传 answer），并自动推进到下一题或评分。 */
