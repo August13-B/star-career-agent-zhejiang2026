@@ -327,7 +327,7 @@ public class AbilityQuizServiceImpl implements AbilityQuizService {
         score.setPressureScore(soft.get("pressure"));
         score.setTotalScore(BigDecimal.valueOf(total));
         score.setScoreType(1);
-        score.setScoreComment("基本情况已保存：硬实力四项按规则表换算；软实力六维保留上次测评结果（如未测评则为基线 60）。");
+        score.setScoreComment("基本情况已保存");
         scoreWrites.replace(score);
 
         Map<String, Object> scores = new LinkedHashMap<>();

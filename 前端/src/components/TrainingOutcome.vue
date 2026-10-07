@@ -26,9 +26,10 @@
   </section>
 </template>
 <script setup>
-import { onMounted, ref } from 'vue'
+import { onMounted, ref, watch } from 'vue'
 import { trainingRequest } from '../utils/trainingApi'
 import { stripMarkdown } from '../utils/text'
+import { notifyProfileChange } from '../utils/profileChange'
 const props = defineProps({ session: { type: Object, required: true } }), emit = defineEmits(['updated'])
 const labels = { education: '学历背景', internship: '实习经历', professional: '专业技能', certificate: '证书资质', innovation: '创新能力', learning: '学习能力', pressure: '抗压能力', communication: '沟通能力', problem_solving: '问题解决', teamwork: '团队协作' }
 const plans = ref([]), planId = ref(''), suggestion = ref(0), pending = ref(false), error = ref('')
@@ -36,6 +37,10 @@ async function loadPlans() { try { plans.value = await trainingRequest('/growth/
 async function mutate(path, body) { if (pending.value) return; pending.value = true; error.value = ''; try { await trainingRequest(`/sessions/${props.session.id}${path}`, { method: 'POST', body }); emit('updated') } catch (e) { error.value = e.message } finally { pending.value = false } }
 function link() { return mutate('/growth-task', { planId: planId.value, suggestionIndex: suggestion.value }) }
 function apply() { return mutate('/profile/retry') }
+// 仿真训练结果已计入画像时（服务端自动或点重试）→ 提示画像已更新
+watch(() => props.session?.profileApplication?.status, status => {
+  if (status === 'applied') notifyProfileChange()
+}, { immediate: true })
 onMounted(loadPlans)
 </script>
 <style scoped>

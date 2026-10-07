@@ -153,6 +153,11 @@
         </div>
       </section>
 
+      <!-- ⑧ 能力雷达（10 维）：有测评结果后默认展示；无结果时显示引导态 -->
+      <section v-if="!session || session.status !== 'active'" class="radar-block">
+        <AbilityRadar :scores="radarScores" :total="radarTotal" />
+      </section>
+
       <!-- 历史 -->
       <section class="card" v-if="history.length">
         <!-- 只展示已完成的测评；中途退出的不计入 -->
@@ -177,10 +182,15 @@
 
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import axios from 'axios'
 import API_CONFIG from '../config/api'
 import AbilityBasicModal from '../components/AbilityBasicModal.vue'
+import AbilityRadar from '../components/AbilityRadar.vue'
 import { stripMarkdown } from '../utils/text'
+import { notifyProfileChange } from '../utils/profileChange'
+
+const router = useRouter()
 
 const DIMENSIONS = [
   ['education', '学历背景', 'hard'], ['internship', '实习经历', 'hard'],
@@ -253,6 +263,15 @@ const objectiveText = computed(() => Object.entries(session.value?.evaluation?.o
   .map(([key, value]) => `${dimensionText(key)} ${value}`).join(' · '))
 
 const dimensionText = key => (DIMENSIONS.find(item => item[0] === key) || [, key])[1]
+
+// 能力雷达数据：优先用本次/当前画像的 10 维（组件在拿不到时自行读取当前画像）
+const radarScores = computed(() => {
+  const has10 = source => source && DIMENSIONS.every(([key]) => Number.isFinite(Number(source[key])))
+  if (has10(session.value?.scores)) return session.value.scores
+  if (has10(state.value?.scores)) return state.value.scores
+  return null
+})
+const radarTotal = computed(() => session.value?.scores?.total ?? state.value?.scores?.total ?? null)
 const kindText = kind => (kind === 'objective' ? '客观题' : '主观题')
 const statusText = status => ({ active: '进行中', completed: '已完成', review_required: '评分待复核' }[status] || status)
 const format = seconds => `${Math.floor(seconds / 60)}:${String(Math.max(0, seconds % 60)).padStart(2, '0')}`
@@ -335,6 +354,8 @@ function applySession(data) {
     stopTimer()
     loadState()
     loadHistory()
+    // 测评完成后：提示画像已自动更新（无变化则不提示）
+    notifyProfileChange(router)
   }
 }
 
@@ -586,4 +607,7 @@ textarea { font: inherit; width: 100%; box-sizing: border-box; padding: 12px; bo
 .history-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 0; border-top: 1px solid #F1F5F9; cursor: pointer; font-size: 0.9rem; }
 .history-row:hover { color: #1D4ED8; }
 @media (max-width: 720px) { .dim-grid { grid-template-columns: 1fr; } .page-head { flex-direction: column; } }
+/* 能力雷达区块（组件自身样式保持不变，仅控制外边距） */
+.radar-block { margin-top: 18px; }
+.radar-block :deep(.radar-glass-panel) { min-height: 460px; }
 </style>

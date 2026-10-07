@@ -166,6 +166,15 @@
             <h4>💪 我的核心能力模型</h4>
             <button class="text-btn" @click="openAbilityModal">编辑基本情况</button>
           </div>
+
+          <!-- 画像最近一次自动更新的来源与变化（数据来自 /api/profile/change/latest） -->
+          <div v-if="latestChange && latestChange.available && latestChange.source" class="profile-change">
+            <span class="pc-dot"></span>
+            <span class="pc-title">画像已自动更新</span>
+            <span class="pc-meta">{{ latestChange.sourceLabel }} · {{ formatTime(latestChange.updatedAt) }}</span>
+            <span v-if="changeSummary" class="pc-summary">{{ changeSummary }}</span>
+            <span v-if="latestChange.reason" class="pc-reason" :title="latestChange.reason">{{ latestChange.reason }}</span>
+          </div>
           
           <div v-if="!myAbility.id && !hasScore" class="empty-ability">
             <span class="empty-icon">📊</span>
@@ -228,9 +237,30 @@
         <div class="data-card">
           <div class="card-header">
             <h4>📄 简历附件库</h4>
-            <button class="upload-btn" disabled title="简历上传和解析服务尚未接入">上传解析待接入</button>
+            <button class="upload-btn" :disabled="resumeBusy" :title="resumeBusy ? '正在解析…' : '上传文字版 PDF 简历，自动补充个人资料'" @click="pickResume">{{ resumeBusy ? '解析中…' : '上传 PDF 简历解析' }}</button>
+            <input ref="resumeInput" class="hidden-file" type="file" accept="application/pdf,.pdf" @change="onResumePicked" />
           </div>
-          <p class="empty-inline">当前版本暂不支持上传解析简历。请在基本信息和能力测评中填写个人经历。</p>
+          <p v-if="!resumeResult" class="empty-inline">
+            上传「文字版 PDF 简历」，自动读取学历 / 专业 / 技能 / 证书 / 实习与项目经历，
+            补全个人资料并同步更新能力画像。已填写的内容不会被覆盖。
+            扫描件（图片型 PDF）无法识别，请手动填写。
+          </p>
+          <div v-else class="resume-result">
+            <p class="resume-msg" :class="{ warn: resumeResult.status !== 'applied' }">{{ resumeResult.message }}</p>
+            <div v-if="resumeResult.filledFields && resumeResult.filledFields.length" class="resume-fields">
+              <span class="rf-title">已补充资料</span>
+              <span v-for="f in resumeResult.filledFields" :key="f" class="rf-item">{{ fieldLabel(f) }}</span>
+            </div>
+            <div v-if="resumeDeltas.length" class="resume-deltas">
+              <span v-for="d in resumeDeltas" :key="d.key" class="rd-item">
+                {{ d.name }} <b>{{ d.before }}</b> → <b class="up">{{ d.after }}</b>
+                <i>({{ d.delta > 0 ? '+' : '' }}{{ d.delta }})</i>
+              </span>
+            </div>
+            <p v-if="resumeReasons" class="resume-reason">评分依据：{{ resumeReasons }}</p>
+            <button class="text-btn" @click="resumeResult = null">收起结果</button>
+          </div>
+          <p v-if="resumeError" class="resume-error">{{ resumeError }}</p>
         </div>
 
         <div class="data-card">
@@ -511,6 +541,7 @@ onMounted(async () => {
   // 2. 拉取档案和能力
   fetchMyProfile()
   fetchMyAbility()
+  fetchLatestChange()
   fetchReports()
   fetchMyScore()
   // 首次进入个人中心时补做初步问卷；联合测评仍是登录后的第一站。
@@ -665,6 +696,60 @@ const levelText = (v) => {
   if (n >= 70) return '中等'
   if (n >= 60) return '及格'
   return '待提升'
+}
+
+// ===== 简历 PDF 解析（Stage 2：上传 → 解析 → 补资料 → 硬实力加分）=====
+const resumeInput = ref(null)
+const resumeBusy = ref(false)
+const resumeResult = ref(null)
+const resumeError = ref('')
+
+const DIM_NAMES = { education: '学历背景', internship: '实习经历', professional: '专业技能', certificate: '证书资质', innovation: '创新能力', learning: '学习能力', pressure: '抗压能力', communication: '沟通能力', problem_solving: '问题解决', teamwork: '团队协作' }
+const FIELD_NAMES = { education: '学历', major: '专业', skill: '技能', certificate: '证书', work_experience: '实习/工作经历', project_experience: '项目经历' }
+const fieldLabel = (key) => FIELD_NAMES[key] || key
+const dimName = (key) => DIM_NAMES[key] || key
+
+const resumeDeltas = computed(() => Object.entries(resumeResult.value?.deltas || {})
+  .map(([key, v]) => ({ key, name: dimName(key), before: v.before, after: v.after, delta: (v.after || 0) - (v.before || 0) })))
+const resumeReasons = computed(() => Object.entries(resumeResult.value?.reasons || {})
+  .map(([key, text]) => `${dimName(key)}：${text}`).join('；'))
+
+const pickResume = () => { resumeError.value = ''; resumeInput.value?.click() }
+
+const onResumePicked = async (event) => {
+  const file = event.target.files && event.target.files[0]
+  if (!file) return
+  resumeBusy.value = true; resumeError.value = ''; resumeResult.value = null
+  try {
+    const form = new FormData()
+    form.append('file', file)
+    const res = await userApi.post('/api/resume/parse', form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 180000   // AI 解析约 20~60 秒
+    })
+    if (res.data.code !== 200) throw new Error(res.data.message || '解析失败')
+    resumeResult.value = res.data.data
+    await Promise.all([fetchMyProfile(), fetchMyAbility(), fetchMyScore(), fetchLatestChange()])
+  } catch (e) {
+    resumeError.value = e.message || '简历解析失败，请重试'
+  } finally {
+    resumeBusy.value = false
+    if (resumeInput.value) resumeInput.value.value = ''   // 允许重复选同一个文件
+  }
+}
+
+// ===== 画像最近一次自动更新（供个人中心展示；其它页面操作后也可调用）=====
+const latestChange = ref(null)
+const changeSummary = computed(() => {
+  const deltas = latestChange.value?.deltas || {}
+  const parts = Object.entries(deltas).map(([key, v]) => `${dimName(key)} ${v.before}→${v.after}`)
+  return parts.join('，')
+})
+const fetchLatestChange = async () => {
+  try {
+    const res = await studentApi.get('/api/profile/change/latest')
+    if (res.data.code === 200) latestChange.value = res.data.data || null
+  } catch (e) { /* 未登录或尚无画像时忽略 */ }
 }
 
 const fetchMyScore = async () => {
@@ -1127,4 +1212,28 @@ const changePassword = async () => {
 .modal-fade-enter-from, .modal-fade-leave-to { opacity: 0; }
 .modal-fade-enter-active .modal-content, .modal-fade-leave-active .modal-content { transition: transform 0.3s cubic-bezier(0.25, 0.8, 0.25, 1); }
 .modal-fade-enter-from .modal-content, .modal-fade-leave-to .modal-content { transform: scale(0.95) translateY(20px); }
+
+/* ===== 简历 PDF 解析结果 ===== */
+.hidden-file { display: none; }
+.resume-result { display: flex; flex-direction: column; gap: 10px; margin-top: 4px; }
+.resume-msg { margin: 0; font-size: 0.88rem; color: #1E7A46; background: #EAF7F0; border: 1px solid #BFE3D0; border-radius: 8px; padding: 10px 12px; }
+.resume-msg.warn { color: #8A5A12; background: #FDF6E7; border-color: #EDDCB4; }
+.resume-fields { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.rf-title { font-size: 0.82rem; color: #64748B; }
+.rf-item { font-size: 0.8rem; color: #1D4ED8; background: #F0F7FF; border: 1px solid #DBEAFE; border-radius: 20px; padding: 2px 10px; }
+.resume-deltas { display: flex; flex-wrap: wrap; gap: 8px; }
+.rd-item { font-size: 0.82rem; color: #334155; background: #F8FAFC; border: 1px solid #E4EAF2; border-radius: 8px; padding: 6px 10px; }
+.rd-item b { color: #64748B; }
+.rd-item b.up { color: #1E7A46; }
+.rd-item i { font-style: normal; color: #1E7A46; font-size: 0.76rem; }
+.resume-reason { margin: 0; font-size: 0.82rem; line-height: 1.8; color: #59677B; }
+.resume-error { margin: 8px 0 0; font-size: 0.85rem; color: #B91C1C; }
+
+/* ===== 画像最近一次自动更新 ===== */
+.profile-change { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 10px 0 2px; padding: 9px 12px; border: 1px solid #DBEAFE; background: #F0F7FF; border-radius: 10px; }
+.pc-dot { width: 7px; height: 7px; border-radius: 50%; background: #4A90E2; flex: 0 0 auto; }
+.pc-title { font-size: 0.82rem; font-weight: 600; color: #1D4ED8; }
+.pc-meta { font-size: 0.78rem; color: #64748B; }
+.pc-summary { font-size: 0.8rem; color: #334155; }
+.pc-reason { font-size: 0.78rem; color: #64748B; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 </style>

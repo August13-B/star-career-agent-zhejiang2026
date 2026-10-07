@@ -21,6 +21,12 @@ spring:
   application:
     name: xingzhi-backend
 
+  # 简历 PDF 上传（默认单文件 1MB 不够，简历往往 1~5MB）
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 12MB
+
   # 原生导入 .env（报名/config 密钥放在这里，不入库）
   # 无论用 mvnw / IDE / manage.py 启动都能读到
   config:

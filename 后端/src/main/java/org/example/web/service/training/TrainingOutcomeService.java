@@ -6,6 +6,8 @@ import java.util.*;
 import org.example.web.mapper.TrainingMapper;
 import org.example.web.mapper.TrainingWorkspaceMapper;
 import org.example.web.service.GrowPlanService;
+import org.example.web.service.profile.ProfileChangeDetail;
+import org.example.web.service.profile.ProfileScorePolicy;
 import org.example.web.tool.RSA_256;
 import org.example.web.tool.SnowIdCreater;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -36,21 +38,24 @@ public class TrainingOutcomeService {
         var application=workspace.application(sessionId);
         if(application==null || !Set.of("pending","failed").contains(application.getStatus())) return;
         var config=workspace.config(sessionId); var evaluation=db.evaluation(sessionId);
-        if(config==null || !config.getUseForProfile() || evaluation==null || !"valid".equals(evaluation.getStatus())) { skip(application,"训练尚未满足画像更新条件"); return; }
-        if(config.getBaselineScoreId()==null) { skip(application,"训练开始时尚无完整能力基线；请先完善个人画像并完成能力测评，再开始新训练"); return; }
+        if(config==null || !config.getUseForProfile() || evaluation==null || !"valid".equals(evaluation.getStatus())) { skip(application,"本次训练反馈已保存"); return; }
+        if(config.getBaselineScoreId()==null) { skip(application,"请先完善个人画像并完成一次能力补充测评，再开始新训练"); return; }
         var profiles=jdbc.queryForList("SELECT * FROM student_profile WHERE user_id=? AND is_deleted=0 FOR UPDATE",user);
         var abilities=jdbc.queryForList("SELECT * FROM student_ability WHERE user_id=? AND is_deleted=0 FOR UPDATE",user);
         // Lock the user's whole score range, including its insertion gap, before reading the baseline.
         var scores=jdbc.queryForList("SELECT * FROM student_ability_score WHERE user_id=? ORDER BY update_time DESC,id DESC FOR UPDATE",user);
         var active=scores.stream().filter(s->number(s.get("is_deleted"))==0 && number(s.get("score_type"))==1).toList();
-        if(profiles.size()!=1 || abilities.size()!=1 || active.size()!=1) { skip(application,"当前画像或系统能力基线不唯一/不存在，请先完成能力测评"); return; }
+        if(profiles.size()!=1 || abilities.size()!=1 || active.size()!=1) { skip(application,"请先完成一次能力补充测评"); return; }
         var profile=profiles.get(0); var ability=abilities.get(0); var old=active.get(0);
         if(!Objects.equals(numberLong(ability.get("profile_id")),numberLong(profile.get("id"))) || !Objects.equals(numberLong(old.get("ability_id")),numberLong(ability.get("id")))) { skip(application,"能力记录与个人画像关联不完整，请先完善画像"); return; }
-        if(!Objects.equals(numberLong(old.get("id")),config.getBaselineScoreId()) || number(profile.get("version"))!=config.getBaselineProfileVersion()) { skip(application,"训练期间能力基线或画像已更新，本次保留练习反馈，避免覆盖较新数据"); return; }
-        for(String dimension:DIMENSIONS) if(!(old.get(dimension+"_score") instanceof Number) || number(old.get(dimension+"_score"))<0 || number(old.get(dimension+"_score"))>100) { skip(application,"能力基线包含缺失或无效维度，请先重新测评"); return; }
+        if(!Objects.equals(numberLong(old.get("id")),config.getBaselineScoreId()) || number(profile.get("version"))!=config.getBaselineProfileVersion()) { skip(application,"本次练习反馈已保存"); return; }
+        for(String dimension:DIMENSIONS) if(!(old.get(dimension+"_score") instanceof Number) || number(old.get(dimension+"_score"))<0 || number(old.get(dimension+"_score"))>100) { skip(application,"请先完成一次能力补充测评"); return; }
         JsonNode result=read(cipher.decrypt(evaluation.getResultJson()));
         Map<String,Object> before=scoresView(old), after=new LinkedHashMap<>(before);
-        result.path("dimensions").fields().forEachRemaining(e->{ if(!DIMENSIONS.contains(e.getKey())) throw new IllegalStateException("Unexpected training dimension"); after.put(e.getKey(),e.getValue().asInt()); });
+        // 画像更新幅度策略（B）：首次评估 ±35（25~95）；再次单维 ≤10，且降低需理由
+        boolean firstTime=ProfileScorePolicy.isFirstTime((String)old.get("change_source"));
+        String changeReason="职场训练（仿真）本次观察 "+sessionId;
+        result.path("dimensions").fields().forEachRemaining(e->{ if(!DIMENSIONS.contains(e.getKey())) throw new IllegalStateException("Unexpected training dimension"); after.put(e.getKey(),ProfileScorePolicy.clamp(firstTime,number(before.get(e.getKey())),e.getValue().asInt(),changeReason)); });
         double hard=DIMENSIONS.subList(0,4).stream().mapToInt(d->number(after.get(d))).average().orElseThrow();
         double soft=DIMENSIONS.subList(4,10).stream().mapToInt(d->number(after.get(d))).average().orElseThrow();
         double total=Math.round((hard*.3+soft*.7)*10)/10.0; after.put("total",total);
@@ -66,15 +71,18 @@ public class TrainingOutcomeService {
         long scoreId=id(); String comment=rsa.rsaEncrypt("职场模拟训练更新，仅代表本次练习观察");
         List<Object> values=new ArrayList<>(List.of(scoreId,user,ability.get("id")));
         DIMENSIONS.forEach(d->values.add(after.get(d))); values.add(total); values.add(comment);
+        values.add(ProfileScorePolicy.SOURCE_TRAINING);
+        values.add(write(ProfileChangeDetail.of(firstTime,ProfileScorePolicy.SOURCE_TRAINING,changeReason,before,after)));
+        int placeholderCount=values.size()-2;   // 前 14 个占位对应 id/user/ability/10 维/total/comment
         jdbc.update("UPDATE student_ability_score SET is_deleted=1 WHERE id=?",old.get("id"));
         String columns=String.join(",",DIMENSIONS.stream().map(d->d+"_score").toList());
-        jdbc.update("INSERT INTO student_ability_score(id,user_id,ability_id,"+columns+",total_score,score_comment,score_type) VALUES("+String.join(",",Collections.nCopies(values.size(),"?"))+",1)",values.toArray());
+        jdbc.update("INSERT INTO student_ability_score(id,user_id,ability_id,"+columns+",total_score,score_comment,score_type,change_source,change_detail) VALUES("+String.join(",",Collections.nCopies(placeholderCount,"?"))+",1,?,?)",values.toArray());
         jdbc.update("UPDATE student_profile SET version=?,update_time=CURRENT_TIMESTAMP WHERE id=?",version,profile.get("id"));
         profile.put("version",version);
         var saved=jdbc.queryForMap("SELECT * FROM student_ability_score WHERE id=?",scoreId);
         long historyId=history(user,profile,saved,version,"职场训练 "+sessionId+" · latest_observation_v1");
         application.setStatus("applied"); application.setAttempt(Math.addExact(application.getAttempt(),1)); application.setBeforeScores(cipher.encrypt(write(before))); application.setAfterScores(cipher.encrypt(write(after)));
-        application.setProfileVersion(version); application.setScoreHistoryId(historyId); application.setMessage("已更新本次覆盖的能力维度，并保留更新前后历史；未覆盖维度保持原值"); workspace.updateApplication(application);
+        application.setProfileVersion(version); application.setScoreHistoryId(historyId); application.setMessage("本次仿真训练结果已同步到能力画像"); workspace.updateApplication(application);
     }
 
     private long history(Long user, Map<String,Object> profile, Map<String,Object> score, int version, String reason) {

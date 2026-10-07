@@ -93,6 +93,7 @@ import { ref, onMounted, nextTick, computed, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import axios from 'axios'
 import AppIcon from '../components/AppIcon.vue'
+import { notifyProfileChange, syncReportToProfile } from '../utils/profileChange'
 import '../styles/careerWorkbench.css'
 
 // 组件名：供 App.vue 的 <keep-alive :include="['MultiAgentView']"> 命中，
@@ -407,6 +408,10 @@ const startPolling = (jobId) => {
         partialMsg.value = d.partial
           ? '报告整合环节未完成（平台超时或异常），已为你整理并保存已完成的分析部分，可在个人中心查看/导出。'
           : ''
+        // 完整报告：自动同步到能力画像（幂等），并提示画像已更新
+        if (!d.partial && reportId.value) {
+          syncReportToProfile(reportId.value).then(() => notifyProfileChange(router))
+        }
         localStorage.removeItem('reportJobId')
         stopPolling()
         const list = d.content && Array.isArray(d.content.agents) ? d.content.agents : []
