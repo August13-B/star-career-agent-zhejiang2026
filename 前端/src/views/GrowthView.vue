@@ -76,6 +76,14 @@
                     </button>
                     <button class="link danger" @click="deleteTask(item.task)">删除</button>
                   </span>
+                  <span class="col-submit">
+                    <span v-if="submittedFile(item.task)" class="submit-file" :title="submittedFile(item.task)">
+                      📎 {{ submittedFile(item.task) }}
+                    </span>
+                    <button class="btn ghost sm" :disabled="uploading === item.task.id" @click="pickFile(item.task)">
+                      {{ uploading === item.task.id ? '提交中…' : (submittedFile(item.task) ? '再传一个' : '提交文件') }}
+                    </button>
+                  </span>
                 </div>
 
                 <div v-if="openRecords[item.task.id]" class="timeline">
@@ -103,19 +111,113 @@
               <button class="btn primary sm" :disabled="!String(taskDraft[p.plan.id] || '').trim()"
                       @click="addTask(p.plan.id)">＋ 添加任务</button>
             </div>
+
+            <!-- 下一周期：只在最下面一个大目标上出现，且其全部任务完成后才能评价难度并生成 -->
+            <div v-if="pi === plans.length - 1" class="plan-cycle">
+              <p class="cycle-progress">
+                本计划任务完成 <b>{{ doneCount(p) }}</b> / {{ p.tasks.length }}
+                <span v-if="!allDone(p)">· 完成该大目标下的全部任务后，可评价本次难度并生成下一周期计划</span>
+              </p>
+              <div v-if="allDone(p)" class="cycle-actions">
+                <select class="diff-select" v-model="planDifficulty[p.plan.id]">
+                  <option value="">本次完成难度</option>
+                  <option value="太简单">太简单</option>
+                  <option value="中等">中等</option>
+                  <option value="困难">困难</option>
+                </select>
+                <button class="btn primary sm" :disabled="nextBusy === p.plan.id" @click="nextCycle(p)">
+                  {{ nextBusy === p.plan.id ? '生成中…' : '生成下一周期计划' }}
+                </button>
+              </div>
+            </div>
           </div>
         </article>
       </section>
+
+      <p v-if="cycleNotice" class="cycle-notice" role="status">
+        {{ cycleNotice }}
+        <button class="link" @click="cycleNotice = ''">知道了</button>
+      </p>
+      <input ref="fileInput" class="hidden-file" type="file"
+             accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.md,.png,.jpg,.jpeg,.zip" @change="onFilePicked" />
+
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, nextTick } from 'vue'
 import axios from 'axios'
 import AppIcon from '../components/AppIcon.vue'
 
 const userId = ref(localStorage.getItem('userId') || '')
+// ── 任务文件提交 / 难度自评 / 下一周期计划 ──────────────────────────
+const fileInput = ref(null)
+const pendingTask = ref(null)
+const uploading = ref(null)
+const nextBusy = ref(null)
+const cycleNotice = ref('')
+
+const DIFFICULTY_OF_SCORE = { 5: '太简单', 3: '中等', 1: '困难' }
+// 计划级难度（下一周期）与完成度判断
+const planDifficulty = ref({})
+const doneCount = plan => plan.tasks.filter(item => item.task.status === 2).length
+const allDone = plan => plan.tasks.length > 0 && plan.tasks.every(item => item.task.status === 2)
+/** 已提交文件：后端把「已提交任务文件：X」写进完成说明，这里取出来展示。 */
+const submittedFile = task => {
+  const detail = String(task?.completionDetail || task?.completion_detail || '')
+  const match = detail.match(/已提交任务文件：(.+)/)
+  return match ? match[1].trim() : ''
+}
+const difficultyOf = task => DIFFICULTY_OF_SCORE[Number(task?.effectScore ?? task?.effect_score)] || ''
+
+const pickFile = task => { pendingTask.value = task; fileInput.value?.click() }
+const onFilePicked = async event => {
+  const file = event.target.files && event.target.files[0]
+  const task = pendingTask.value
+  if (event.target) event.target.value = ''
+  if (!file || !task) return
+  uploading.value = task.id
+  cycleNotice.value = ''
+  try {
+    const form = new FormData()
+    form.append('file', file)
+    const res = await axios.post(`/api/grow/tasks/${task.id}/resource`, form, {
+      headers: headers(), timeout: 120000
+    })
+    if (res.data.code !== 200 && res.data.code !== 0 && res.data.code !== 10001) throw new Error(res.data.message || '提交失败')
+    cycleNotice.value = `已提交「${file.name}」，该任务标记为完成。可以继续选择「本次完成难度」，再生成下一周期计划。`
+    await keepScroll(() => load())
+  } catch (e) {
+    cycleNotice.value = e.response?.data?.message || e.message || '文件提交失败，请重试'
+  } finally {
+    uploading.value = null
+    pendingTask.value = null
+  }
+}
+
+const nextCycle = async (plan) => {
+  const difficulty = planDifficulty.value[plan.plan.id] || ''
+  if (!difficulty) { cycleNotice.value = '请先选择本次完成难度（太简单 / 中等 / 困难），再生成下一周期计划。'; return }
+  if (!allDone(plan)) { cycleNotice.value = '请先完成该大目标下的全部任务。'; return }
+  nextBusy.value = plan.plan.id
+  cycleNotice.value = ''
+  try {
+    const res = await axios.post(`/api/grow/plans/${plan.plan.id}/next-cycle`,
+      { difficulty }, { headers: headers(), timeout: 180000 })
+    if (res.data.code !== 200 && res.data.code !== 0 && res.data.code !== 10001) throw new Error(res.data.message || '生成失败')
+    const data = res.data.data || {}
+    cycleNotice.value = data.message || '已生成下一周期计划'
+    planDifficulty.value[plan.plan.id] = ''
+    await keepScroll(() => load())
+  } catch (e) {
+    cycleNotice.value = e.response?.data?.message || e.message || '下一周期计划生成失败，请稍后重试'
+  } finally {
+    nextBusy.value = null
+  }
+}
+
+
 const plans = ref([])
 const loading = ref(true)
 const expanded = ref({})
@@ -190,11 +292,23 @@ const deleteTask = async (task) => {
   }
 }
 
+/** 包一层"记住并恢复滚动位置"：重新拉取列表会重建 DOM、改变页面高度，导致视角跳到最上方。 */
+const keepScroll = async (action) => {
+  const scroller = document.scrollingElement || document.documentElement
+  const top = scroller ? scroller.scrollTop : 0
+  try {
+    return await action()
+  } finally {
+    await nextTick()
+    if (scroller) scroller.scrollTop = top
+  }
+}
+
 const toggleDone = async (task) => {
   const next = task.status === 2 ? 0 : 2
   try {
     await axios.patch(`/api/grow/tasks/${task.id}`, { status: next }, { headers: headers() })
-    await load()
+    await keepScroll(() => load())
   } catch (e) {
     alert('更新失败，请重试')
   }
@@ -227,7 +341,7 @@ const addTask = async (planId) => {
   }
 }
 
-const horizonLabel = (t) => ({ 1: '1 年', 2: '3 年', 3: '5 年' }[t] || '目标')
+const horizonLabel = (t) => ({ 1: '1 个月', 2: '3 个月', 3: '5 个月' }[t] || '目标')
 const statusText = (s) => ({ 0: '未开始', 1: '进行中', 2: '已完成', 3: '已暂停', 4: '已延期' }[s] || '未开始')
 const statusClass = (s) => ({ 0: 'todo', 1: 'doing', 2: 'done', 3: 'paused', 4: 'delay' }[s] || 'todo')
 const dateRange = (p) => {
@@ -327,4 +441,15 @@ onMounted(load)
 .tl-dot{background:#b89158}
 .timeline{border-left-color:#d4bf9d}
 .record-input input:focus,.add-task input:focus{border-color:#b89158}
+/* ===== 任务文件提交 / 难度选择 / 下一周期计划 ===== */
+.col-submit { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 6px; }
+.hidden-file { display: none; }
+.submit-file { font-size: 0.78rem; color: #1D4ED8; background: #F0F7FF; border: 1px solid #DBEAFE; border-radius: 20px; padding: 2px 10px; max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.diff-select { font: inherit; font-size: 0.8rem; padding: 4px 8px; border: 1px solid #CBD5E1; border-radius: 7px; background: #FFFFFF; color: #334155; }
+.plan-cycle { margin-top: 14px; padding-top: 12px; border-top: 1px dashed #E4EAF2; display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.cycle-progress { margin: 0; font-size: 0.85rem; color: #475569; }
+.cycle-progress b { color: #1D4ED8; }
+.cycle-progress span { color: #94A3B8; font-size: 0.8rem; }
+.cycle-actions { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+.cycle-notice { margin: 12px 0; padding: 10px 14px; font-size: 0.85rem; line-height: 1.7; color: #1D4ED8; background: #F0F7FF; border: 1px solid #DBEAFE; border-radius: 10px; }
 </style>
