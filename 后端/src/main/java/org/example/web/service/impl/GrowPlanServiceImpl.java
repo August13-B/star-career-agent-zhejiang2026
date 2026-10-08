@@ -70,7 +70,7 @@ public class GrowPlanServiceImpl implements GrowPlanService {
             }
             String horizon = str(g.get("horizon"));
             int planType = horizonToType(horizon);
-            int years = horizonToYears(horizon);
+            int months = horizonToMonths(horizon);
 
             GrowPlan plan = new GrowPlan();
             plan.setId(SnowIdCreater.generateId(30));
@@ -82,7 +82,7 @@ public class GrowPlanServiceImpl implements GrowPlanService {
             plan.setPlanContent(toJson(g));              // 结构化内容（后端用）
             plan.setPlanType(planType);
             plan.setStartDate(now);
-            plan.setEndDate(now.plusYears(years));
+            plan.setEndDate(now.plusMonths(months));
             plan.setTotalStatus(0);
             plan.setProgress(BigDecimal.ZERO);
             plan.setCreateTime(now);
@@ -104,11 +104,17 @@ public class GrowPlanServiceImpl implements GrowPlanService {
                     task.setPlanId(plan.getId());
                     task.setTaskName(truncate(action, 250));
                     task.setTaskType(1);                 // 1-技能（默认）
-                    task.setTaskDesc(str(g.get("goal")) + "｜" + str(g.get("criteria")));
+                    String goalText = str(g.get("goal"));
+                    String criteriaText = str(g.get("criteria"));
+                    String actionText = truncate(action, 200);
+                    task.setTaskDesc("行动：" + actionText
+                            + (goalText.isBlank() ? "" : "｜所属目标：" + goalText));
                     task.setTargetAbility(joinList(g.get("skills")));
-                    task.setExpectedOutcome(str(g.get("criteria")));
+                    // 逐条行动各自的验收标准：原来同一目标下所有任务都复制整段 criteria，导致"预期成果"条条一模一样
+                    task.setExpectedOutcome("完成「" + actionText + "」"
+                            + (criteriaText.isBlank() ? "" : "，并达到： " + criteriaText));
                     task.setStartDate(now);
-                    task.setEndDate(now.plusYears(years));
+                    task.setEndDate(now.plusMonths(months));
                     task.setProgress(BigDecimal.ZERO);
                     task.setStatus(0);
                     task.setCreateTime(now);
@@ -286,7 +292,7 @@ public class GrowPlanServiceImpl implements GrowPlanService {
         if (name.isBlank()) {
             name = horizonName(planType) + "自定义目标";
         }
-        int years = planType == 3 ? 5 : (planType == 2 ? 3 : 1);
+        int months = planType == 3 ? 5 : (planType == 2 ? 3 : 1);
         LocalDateTime now = LocalDateTime.now();
         GrowPlan plan = new GrowPlan();
         plan.setId(SnowIdCreater.generateId(30));
@@ -298,7 +304,7 @@ public class GrowPlanServiceImpl implements GrowPlanService {
         plan.setPlanContent(str(body.get("planContent")));
         plan.setPlanType(planType);
         plan.setStartDate(now);
-        plan.setEndDate(now.plusYears(years));
+        plan.setEndDate(now.plusMonths(months));
         plan.setTotalStatus(0);
         plan.setProgress(BigDecimal.ZERO);
         plan.setCreateTime(now);
@@ -351,9 +357,9 @@ public class GrowPlanServiceImpl implements GrowPlanService {
 
     private String horizonName(int planType) {
         return switch (planType) {
-            case 2 -> "3 年";
-            case 3 -> "5 年";
-            default -> "1 年";
+            case 2 -> "3 个月";
+            case 3 -> "5 个月";
+            default -> "1 个月";
         };
     }
 
@@ -434,10 +440,11 @@ public class GrowPlanServiceImpl implements GrowPlanService {
         };
     }
 
-    private int horizonToYears(String horizon) {
-        return switch (horizon) {
-            case "3y" -> 3;
-            case "5y" -> 5;
+    private int horizonToMonths(String horizon) {
+        // 周期口径已改为「月」：兼容 m/y 两种键，旧报告的 y 也按同档位处理
+        return switch (horizon == null ? "" : horizon.trim().toLowerCase()) {
+            case "3", "3m", "3y" -> 3;
+            case "5", "5m", "5y" -> 5;
             default -> 1;
         };
     }
