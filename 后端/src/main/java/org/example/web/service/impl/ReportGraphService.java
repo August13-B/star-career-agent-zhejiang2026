@@ -59,6 +59,31 @@ public class ReportGraphService {
 
     public JsonNode get(Long userId, Long id) { return content(owned(userId, id)).get("careerGraph"); }
 
+    /** 清空已保存的星图，页面回到「生成之前」的状态，便于重新生成。 */
+    public Map<String, Object> reset(Long userId, Long id) {
+        CareerReport report = owned(userId, id);
+        ObjectNode document = content(report);
+        Map<String, Object> result = new LinkedHashMap<>();
+        if (!document.has("careerGraph")) {
+            result.put("status", "empty");
+            result.put("message", "这份测评还没有生成过星图");
+            return result;
+        }
+        document.remove("careerGraph");
+        try {
+            if (reports.saveGraphIfUnchanged(id, userId, report.getReportContent(), json.writeValueAsString(document)) != 1) {
+                throw new IllegalArgumentException("测评内容已更新，请刷新后重试");
+            }
+        } catch (IllegalArgumentException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new IllegalArgumentException("清空星图失败，请重试");
+        }
+        result.put("status", "cleared");
+        result.put("message", "已清空星图，可以重新生成");
+        return result;
+    }
+
     public JsonNode generate(Long userId, Long id) throws Exception {
         return generate(userId, id, false);
     }
@@ -79,7 +104,25 @@ public class ReportGraphService {
         if (answer == null || answer.indexOf('{') < 0 || answer.lastIndexOf('}') <= answer.indexOf('{'))
             throw new IllegalArgumentException("AI未返回有效星图，原测评仍保留，请重试");
         JsonNode graph = json.readTree(answer.substring(answer.indexOf('{'), answer.lastIndexOf('}') + 1));
-        validate(graph, document.path("agents"));
+        try {
+            validate(graph, document.path("agents"));
+        } catch (IllegalArgumentException first) {
+            // 「依据不够」多为模型改写了引用：带纠正指令重试一次，仍失败再报错
+            String retry = ai.chatSync(userId, null, prompt
+                    + "\n【重要】上一次输出被拒绝，原因是 evidence 无法在测评原文中找到。"
+                    + "请重新输出：evidence 必须是测评原文里**连续出现**的一段话（≥10 字，可跨标点但不要改写、不要润色）。");
+            if (retry == null || retry.indexOf('{') < 0 || retry.lastIndexOf('}') <= retry.indexOf('{')) {
+                throw first;
+            }
+            JsonNode retried = json.readTree(retry.substring(retry.indexOf('{'), retry.lastIndexOf('}') + 1));
+            try {
+                validate(retried, document.path("agents"));
+                graph = retried;
+            } catch (IllegalArgumentException second) {
+                throw new IllegalArgumentException("这次没能从测评里找到足够的原文依据（可能报告内容偏简略）。"
+                        + "可以稍后重试，或先点「清空星图」再重新生成。");
+            }
+        }
         ((ObjectNode) graph).put("reportId", String.valueOf(id));
         document.set("careerGraph", graph);
         if (reports.saveGraphIfUnchanged(id, userId, report.getReportContent(), json.writeValueAsString(document)) != 1) {
@@ -132,7 +175,22 @@ public class ReportGraphService {
      * 退化只为容忍平台侧已知的「裸引号替换成「」」行为，仍然要求同一段原文，不放宽到模糊匹配。
      */
     private static boolean matches(String report, String evidence) {
-        return report.contains(evidence) || normalize(report).contains(normalize(evidence));
+        if (report.contains(evidence) || normalize(report).contains(normalize(evidence))) {
+            return true;
+        }
+        // 模型常把原文微调（加字/换标点）：只要有一段 ≥10 字与原文连续重合就认作有依据
+        String source = normalize(report);
+        String target = normalize(evidence);
+        int min = 10;
+        if (target.length() < min) {
+            return false;
+        }
+        for (int i = 0; i + min <= target.length(); i++) {
+            if (source.contains(target.substring(i, i + min))) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** 去掉常见中英文引号与全部空白。 */
