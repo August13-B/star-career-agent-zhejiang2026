@@ -28,6 +28,14 @@ public class ReportGraphController {
         try { return Result.success(graphs.get(userId, id)); }
         catch (IllegalArgumentException e) { return Result.error(e.getMessage()); }
     }
+    @DeleteMapping("/{id}")
+    public Result<?> reset(@PathVariable Long id, @RequestHeader(value="Authorization", required=false) String token) {
+        Long userId = user(token);
+        if (userId == null) return Result.unauthorized("请先登录");
+        try { return Result.success(graphs.reset(userId, id)); }
+        catch (IllegalArgumentException e) { return Result.error(e.getMessage()); }
+    }
+
     @PostMapping("/{id}")
     public Result<?> generate(@PathVariable Long id,
             @RequestParam(value = "force", required = false, defaultValue = "false") boolean force,

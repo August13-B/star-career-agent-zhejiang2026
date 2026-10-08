@@ -293,23 +293,49 @@ const deleteTask = async (task) => {
 }
 
 /** 包一层"记住并恢复滚动位置"：重新拉取列表会重建 DOM、改变页面高度，导致视角跳到最上方。 */
+/** 收集真实滚动容器：星职主内容区是 .main-content（overflow:auto），document 本身不滚动。 */
+const scrollContainers = () => {
+  const list = []
+  const push = el => { if (el && !list.includes(el)) list.push(el) }
+  push(document.scrollingElement)
+  push(document.documentElement)
+  push(document.body)
+  document.querySelectorAll('.main-content, .app-layout, .page, .growth-page').forEach(push)
+  // 兜底：扫一层可滚动祖先（页面元素不多，开销可接受）
+  document.querySelectorAll('div, main, section').forEach(el => {
+    const style = getComputedStyle(el)
+    if (/(auto|scroll|overlay)/.test(style.overflowY) && el.scrollHeight > el.clientHeight) push(el)
+  })
+  return list
+}
 const keepScroll = async (action) => {
-  const scroller = document.scrollingElement || document.documentElement
-  const top = scroller ? scroller.scrollTop : 0
+  const containers = scrollContainers()
+  const tops = containers.map(el => el.scrollTop)
+  const restore = () => containers.forEach((el, i) => { if (tops[i]) el.scrollTop = tops[i] })
   try {
     return await action()
   } finally {
     await nextTick()
-    if (scroller) scroller.scrollTop = top
+    restore()
+    if (typeof requestAnimationFrame === 'function') requestAnimationFrame(restore)
+    setTimeout(restore, 60)
   }
 }
 
 const toggleDone = async (task) => {
   const next = task.status === 2 ? 0 : 2
+  const previous = task.status
+  task.status = next                       // 就地改，先让勾选立刻生效
   try {
     await axios.patch(`/api/grow/tasks/${task.id}`, { status: next }, { headers: headers() })
-    await keepScroll(() => load())
+    // 只就地重算所属计划进度：不再整页重载，避免列表重建导致视角跳到顶部
+    const plan = plans.value.find(item => item.tasks.some(it => it.task.id === task.id))
+    if (plan) {
+      const done = plan.tasks.filter(it => it.task.status === 2).length
+      plan.plan.progress = plan.tasks.length ? Math.round((done * 100 / plan.tasks.length) * 100) / 100 : 0
+    }
   } catch (e) {
+    task.status = previous                 // 失败回滚
     alert('更新失败，请重试')
   }
 }

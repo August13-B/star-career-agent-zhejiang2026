@@ -14,6 +14,23 @@ class GrowCycleTest {
         assertEquals(3, GrowCycleService.DIFFICULTY_SCORE.size());
     }
 
+    @Test void nextCycleMonthsLadder() {
+        // 周期长度沿 1 → 3 → 5 个月递进；到 5 个月档后保持 5 个月
+        var one = new org.example.web.entity.GrowPlan();
+        one.setPlanType(1);
+        var three = new org.example.web.entity.GrowPlan();
+        three.setPlanType(2);
+        var five = new org.example.web.entity.GrowPlan();
+        five.setPlanType(3);
+
+        assertEquals(3, GrowCycleService.nextCycleMonths(one));
+        assertEquals(5, GrowCycleService.nextCycleMonths(three));
+        assertEquals(5, GrowCycleService.nextCycleMonths(five));
+        assertEquals(2, GrowCycleService.nextCyclePlanType(one));
+        assertEquals(3, GrowCycleService.nextCyclePlanType(three));
+        assertEquals(3, GrowCycleService.nextCyclePlanType(five));
+    }
+
     @Test void difficultyLabel() {
         assertEquals("太简单", GrowCycleService.difficultyLabel(5));
         assertEquals("中等", GrowCycleService.difficultyLabel(3));

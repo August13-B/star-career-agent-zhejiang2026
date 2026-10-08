@@ -6,7 +6,7 @@
     <section v-if="loading" class="wb-empty" aria-live="polite"><h2>正在读取联合测评…</h2></section>
     <section v-else-if="!reports.length" class="wb-empty graph-empty"><span class="eyebrow">从联合测评开始</span><h2>{{ error ? '测评暂时无法读取，先看看星图的样子。' : '完成联合测评，点亮你的职业星图。' }}</h2><p>{{ error ? '下方仅为视觉示意；恢复连接后可重新加载测评，生成你的专属职业分支。' : '请先完成六个智能体的联合测评。职业分支将来自你的测评结论，不会凭空生成。' }}</p><router-link class="wb-button primary" to="/multi-agent">开始联合测评 →</router-link><small>下方为视觉示意，不代表你的测评结果。</small><div class="graph-preview-map"><CareerStarMap :branches="previewBranches" :selected-index="previewSelected" preview center-action="开始联合测评" @select="previewSelected = $event" @center-click="router.push('/multi-agent')" /></div></section>
     <template v-else-if="reports.length">
-      <section class="source-bar"><div><label for="report-select">测评来源</label><select id="report-select" v-model="reportId" :disabled="generating" @change="loadGraph"><option v-for="r in reports" :key="r.id" :value="String(r.id)">{{ r.name }}</option></select></div><span class="source-date">{{ selectedReport?.createdAt }}</span><button v-if="!graph" class="wb-button primary" :disabled="generating || graphLoading" @click="generate()">{{ generating ? '正在提取分支…' : '根据测评绘制星图' }}</button><template v-else><span class="saved-mark">已保存 · 刷新可恢复</span><button class="wb-button" :disabled="generating || graphLoading" @click="regenerate">{{ generating ? '正在重新提取…' : '↻ 重新生成星图' }}</button></template></section>
+      <section class="source-bar"><div><label for="report-select">测评来源</label><select id="report-select" v-model="reportId" :disabled="generating" @change="loadGraph"><option v-for="r in reports" :key="r.id" :value="String(r.id)">{{ r.name }}</option></select></div><span class="source-date">{{ selectedReport?.createdAt }}</span><button v-if="!graph" class="wb-button primary" :disabled="generating || graphLoading" @click="generate()">{{ generating ? '正在提取分支…' : '根据测评绘制星图' }}</button><template v-else><span class="saved-mark">已保存 · 刷新可恢复</span><button class="wb-button" :disabled="generating || graphLoading" @click="regenerate">{{ generating ? '正在重新提取…' : '↻ 重新生成星图' }}</button><button class="wb-button ghost" :disabled="generating || graphLoading" @click="clearGraph">清空星图</button></template></section>
       <section v-if="!graph" class="wb-empty"><span class="eyebrow">测评已就绪</span><h2>{{ generating ? '正在整理职业路径…' : '测评已就绪，开始探索可能性。' }}</h2><p>{{ generating ? '正在提取推荐方向、发展阶段和能力差距，请保持当前页面。' : '生成后，点击岗位节点查看测评依据、待补能力与行动建议。' }}</p></section>
       <section v-else class="atlas-layout">
         <div class="atlas-panel graph-star-panel">
@@ -64,6 +64,22 @@ const generate=async(force=false)=>{
   try{const url=`/api/report-graph/${reportId.value}${force?'?force=true':''}`;const data=read(await axios.post(url,{},{headers:headers(),timeout:180000}));if(current!==request)return;graph.value=data}
   catch(e){if(current===request)error.value=e.message||'生成失败，请重试'}finally{if(current===request)generating.value=false}
 }
+// 清空星图：回到"生成之前"的状态（只删已保存的星图，不动测评本身），便于重新生成
+const clearGraph = async () => {
+  if (generating.value || graphLoading.value) return
+  if (!confirm('清空这份测评已保存的星图？清空后页面会回到生成前的状态，可以重新生成。测评报告本身不受影响。')) return
+  graphLoading.value = true; error.value = ''
+  try {
+    const res = await axios.delete(`/api/report-graph/${reportId.value}`, { headers: headers() })
+    if (res.data.code !== 200) throw new Error(res.data.message || '清空失败')
+    graph.value = null; active.value = null
+  } catch (e) {
+    error.value = e.response?.data?.message || e.message || '清空星图失败，请重试'
+  } finally {
+    graphLoading.value = false
+  }
+}
+
 // 重新生成：绕过服务端缓存重新提取并覆盖已保存星图（会调用一次 AI，先确认）
 const regenerate=()=>{if(generating.value)return;if(!confirm('重新生成会用当前测评重新提取职业分支（约 1~3 分钟，会调用一次 AI），并覆盖已保存的星图。确定继续？'))return;generate(true)}
 const selectBranch=i=>{active.value=graph.value.branches[i]}

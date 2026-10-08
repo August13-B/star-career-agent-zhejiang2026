@@ -30,6 +30,29 @@ public class GrowCycleService {
 
     private static final Logger logger = LoggerFactory.getLogger(GrowCycleService.class);
 
+    /**
+     * 下一个周期的长度（月）：沿 **1 → 3 → 5 个月** 递进。
+     * 上一周期是 1 个月档 → 下一个周期 3 个月；3 个月档 → 5 个月；5 个月档 → 仍为 5 个月。
+     */
+    static int nextCycleMonths(GrowPlan parent) {
+        int type = parent.getPlanType() == null ? 1 : parent.getPlanType();
+        return switch (type) {
+            case 1 -> 3;
+            case 2 -> 5;
+            default -> 5;
+        };
+    }
+
+    /** 下一个周期对应的档位（1=1 个月 / 2=3 个月 / 3=5 个月），用于计划徽标展示。 */
+    static int nextCyclePlanType(GrowPlan parent) {
+        int type = parent.getPlanType() == null ? 1 : parent.getPlanType();
+        return switch (type) {
+            case 1 -> 2;
+            case 2 -> 3;
+            default -> 3;
+        };
+    }
+
     /** 难度 → effect_score（越高越轻松，沿用现有字段口径）。 */
     public static final Map<String, Integer> DIFFICULTY_SCORE = Map.of("太简单", 5, "中等", 3, "困难", 1);
     private static final Set<String> ALLOWED_EXT = Set.of(
@@ -117,7 +140,9 @@ public class GrowCycleService {
         if (difficulty != null && !difficulty.isBlank() && taskId != null) {
             chooseDifficulty(userId, taskId, difficulty);
         }
-        String answer = callPlatform(userId, parent, difficulty);
+        int cycleMonths = nextCycleMonths(parent);
+        int nextPlanType = nextCyclePlanType(parent);
+        String answer = callPlatform(userId, parent, difficulty, cycleMonths);
         logger.info("【成长下一周期】平台返回长度={}，前 200 字：{}", answer == null ? 0 : answer.length(),
                 answer == null ? "null" : answer.substring(0, Math.min(200, answer.length())));
         JsonNode node = parse(answer);
@@ -153,7 +178,7 @@ public class GrowCycleService {
         LocalDate start = date(node.path("startDate").asText(""));
         LocalDate end = date(node.path("endDate").asText(""));
         Long newPlanId = writer.createNextCycle(userId, parent, planName,
-                node.path("planContent").asText("").strip(), start, end, tasks);
+                node.path("planContent").asText("").strip(), start, end, cycleMonths, nextPlanType, tasks);
         GrowPlan created = findPlan(userId, newPlanId);
         return result("created", created, "已生成下一周期计划：" + planName);
     }
@@ -246,8 +271,8 @@ public class GrowCycleService {
             """;
 
     /** 调用平台：配置了独立接口就走接口，否则回退通用对话接口。 */
-    private String callPlatform(Long userId, GrowPlan parent, String difficulty) {
-        String request = buildRequest(parent, difficulty);
+    private String callPlatform(Long userId, GrowPlan parent, String difficulty, int cycleMonths) {
+        String request = buildRequest(parent, difficulty, cycleMonths);
         if (growthPath != null && !growthPath.isBlank()) {
             try {
                 var spec = webClientBuilder.build().post().uri(growthPath)
@@ -268,7 +293,7 @@ public class GrowCycleService {
     }
 
     /** 独立接口的请求体（契约见 百宝箱/提示词-成长下一周期计划接口.md）。 */
-    private String buildRequest(GrowPlan parent, String difficulty) {
+    private String buildRequest(GrowPlan parent, String difficulty, int cycleMonths) {
         Map<String, Object> plan = new LinkedHashMap<>();
         plan.put("planName", parent.getPlanName());
         plan.put("targetJob", parent.getTargetJob());
@@ -307,7 +332,9 @@ public class GrowCycleService {
         body.put("plan", plan);
         body.put("tasks", tasks);
         // 质量要求：平台系统提示词锁定 JSON 模板，这里把"别太简陋"的硬要求随材料一起交给模型
+        body.put("cycleMonths", cycleMonths);
         body.put("requirements", java.util.List.of(
+                "本周期长度固定为 " + cycleMonths + " 个月（约 " + Math.round(cycleMonths * 4.35) + " 周）：startDate 从上一周期结束之后顺延，endDate = startDate + " + cycleMonths + " 个月 - 1 天",
                 "上一周期已完成且达标的任务不要重复安排",
                 "每条任务必须写明：怎么做（≥2 句，含工具/频率/投入时长）、可验收的产出（有数量或有地址，避免了解/熟悉这类说法）",
                 "整体周期 4~12 周，任务 3~6 条，任务之间不要重叠",

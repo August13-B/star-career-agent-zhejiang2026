@@ -114,7 +114,8 @@ public class GrowCycleWriter {
      */
     @Transactional
     public Long createNextCycle(Long userId, GrowPlan parent, String planName, String planContent,
-                                LocalDate start, LocalDate end, List<Map<String, Object>> tasks) {
+                                LocalDate start, LocalDate end, int cycleMonths, int planType,
+                                List<Map<String, Object>> tasks) {
         long planId = org.example.web.tool.SnowIdCreater.generateId(17);
         // 实体没有 cycle_round 字段（迁移 016 新增的列），这里直接查库取上一轮轮次
         Integer parentRound = null;
@@ -137,30 +138,33 @@ public class GrowCycleWriter {
         if (content == null || content.isEmpty()) {
             content = name;
         }
-        // 周期口径：一轮 2 个月；新周期从上一周期结束后**往后推**，而不是另起"第二阶段"
+        // 周期口径：一轮长度沿 1→3→5 个月递进（由调用方按上一周期档位算出 cycleMonths）；
+        // 新周期从上一周期结束后**往后推**，而不是另起"第二阶段"
         LocalDate pushStart = forwardStart(parent);
         if (start == null || start.isBefore(pushStart)) {
             start = pushStart;
         }
-        LocalDate pushEnd = start.plusMonths(2).minusDays(1);
+        int windowMonths = cycleMonths <= 0 ? 2 : cycleMonths;
+        LocalDate pushEnd = start.plusMonths(windowMonths).minusDays(1);
         if (end == null || end.isBefore(start)) {
             end = pushEnd;
         }
         boolean hasCycleColumns = hasColumn("grow_plan", "parent_plan_id") && hasColumn("grow_plan", "cycle_round");
-        Object planType = parent.getPlanType() == null || parent.getPlanType() <= 0 ? 1 : parent.getPlanType();
+        int nextPlanType = planType <= 0 ? 1 : planType;
+        Object planTypeValue = nextPlanType;
         String startText = start == null ? null : start.toString();
         String endText = end == null ? null : end.toString();
         if (hasCycleColumns) {
             jdbc.update("INSERT INTO grow_plan(id,user_id,report_id,target_job,plan_name,plan_content,plan_type,"
                             + "start_date,end_date,total_status,progress,parent_plan_id,cycle_round) "
                             + "VALUES(?,?,?,?,?,?,?,?,?,0,0,?,?)",
-                    planId, userId, parent.getReportId(), targetJob, name, content, planType, startText, endText,
+                    planId, userId, parent.getReportId(), targetJob, name, content, planTypeValue, startText, endText,
                     parent.getId(), round);
         } else {
             // 历史库未跑迁移 016：不带新列插入（来源关系改由任务的 adjustment_reason 记录）
             jdbc.update("INSERT INTO grow_plan(id,user_id,report_id,target_job,plan_name,plan_content,plan_type,"
                             + "start_date,end_date,total_status,progress) VALUES(?,?,?,?,?,?,?,?,?,0,0)",
-                    planId, userId, parent.getReportId(), targetJob, name, content, planType, startText, endText);
+                    planId, userId, parent.getReportId(), targetJob, name, content, planTypeValue, startText, endText);
         }
         int order = 1;
         for (Map<String, Object> task : tasks) {
