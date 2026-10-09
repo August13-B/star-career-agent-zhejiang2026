@@ -106,7 +106,7 @@ const route = useRoute()
 const AGENT_DEFS = [
   { key: 'profile_analysis', name: '画像分析', desc: '能力现状与优劣势诊断' },
   { key: 'career_exploration', name: '职业探索', desc: '岗位要求·薪资·行业趋势' },
-  { key: 'goal_setting', name: '目标设定', desc: '1 / 3 / 5 年职业目标' },
+  { key: 'goal_setting', name: '目标设定', desc: '1 / 3 / 5 个月职业目标' },
   { key: 'path_planning', name: '路径规划', desc: '晋升链路与关键跃迁节点' },
   { key: 'action_planning', name: '行动计划', desc: '分阶段任务与验收标准' },
   { key: 'report_composition', name: '报告整合', desc: '一致性校验与最终建议' }
