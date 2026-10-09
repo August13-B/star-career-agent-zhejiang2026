@@ -433,9 +433,10 @@ public class GrowPlanServiceImpl implements GrowPlanService {
     }
 
     private int horizonToType(String horizon) {
-        return switch (horizon) {
-            case "3y" -> 2;
-            case "5y" -> 3;
+        // 周期口径为「月」：兼容 1m/3m/5m、1/3/5，以及旧的 1y/3y/5y（同档位）
+        return switch (horizon == null ? "" : horizon.trim().toLowerCase()) {
+            case "3", "3m", "3y" -> 2;
+            case "5", "5m", "5y" -> 3;
             default -> 1;
         };
     }

@@ -329,6 +329,8 @@ function launchRecognition() {
     if (voiceIntent && !heard) voiceHint.value = '识别已启动但没检测到声音：请确认 Windows「设置 → 系统 → 声音 → 输入设备」选对了麦克风、未被静音、也没被其它软件占用。'
   }, 4000)
   recognition.onresult = event => {
+    // 换题/提交后已停止听写：忽略迟到结果，避免把上一题答案回写到新题输入框
+    if (!recognizing.value || !voiceIntent) { return }
     let interim = ''
     for (let index = event.resultIndex; index < event.results.length; index += 1) {
       const result = event.results[index]
@@ -375,8 +377,12 @@ function launchRecognition() {
 function stopVoice() {
   voiceIntent = false
   clearTimeout(voiceWatchdog)
-  try { recognition?.stop() } catch (e) { /* 停止时的异常可忽略 */ }
-  recognition = null; recognizing.value = false; voiceInterim.value = ''
+    if (recognition) {
+      try { recognition.onresult = null } catch (e) { /* 忽略 */ }
+      try { recognition.onend = null } catch (e) { /* 忽略 */ }
+      try { recognition.abort() } catch (e) { /* 忽略 */ }
+    }
+    recognition = null; recognizing.value = false; voiceInterim.value = ''; voiceBase = ''; voiceWriting = false; voiceSilent.value = 0; voiceRestarts = 0
 }
 function onDraftInput() { if (recognizing.value && !voiceWriting) stopVoice(); scheduleDraft() }
 
@@ -486,6 +492,7 @@ async function mutate(action) {
 }
 
 function sendAnswer() {
+  stopVoice()   // 提交即停止听写：识别是 continuous 模式，不停会继续把上一题内容写进下一题
   if (!canAnswer.value || !draft.value.trim() || draftConflict.value) return
   return mutate(async () => {
     await saveDraft()
