@@ -53,6 +53,45 @@ public class GrowCycleService {
         };
     }
 
+    /** 质量门：计划思路或"预期成果"过短 → 视为太简陋（触发一次强化重试）。 */
+    static boolean tooThin(JsonNode plan) {
+        if (plan == null) {
+            return true;
+        }
+        if (plan.path("planContent").asText("").strip().length() < 80) {
+            return true;
+        }
+        JsonNode tasks = plan.path("tasks");
+        if (!tasks.isArray() || tasks.isEmpty()) {
+            return true;
+        }
+        int shortCount = 0;
+        for (JsonNode task : tasks) {
+            String outcome = task.path("expectedOutcome").asText("").strip();
+            String desc = task.path("taskDesc").asText("").strip();
+            if (outcome.length() < 20 || desc.length() < 20) {
+                shortCount++;
+            }
+        }
+        return shortCount * 2 > tasks.size();
+    }
+
+    /** 两次输出取"更详细"的那个（按 planContent + 各任务 expectedOutcome 总字数比较）。 */
+    static JsonNode longer(JsonNode first, JsonNode second) {
+        return detailScore(second) >= detailScore(first) ? second : first;
+    }
+
+    private static int detailScore(JsonNode plan) {
+        if (plan == null) {
+            return -1;
+        }
+        int score = plan.path("planContent").asText("").length();
+        for (JsonNode task : plan.path("tasks")) {
+            score += task.path("expectedOutcome").asText("").length() + task.path("taskDesc").asText("").length();
+        }
+        return score;
+    }
+
     /** 难度 → effect_score（越高越轻松，沿用现有字段口径）。 */
     public static final Map<String, Integer> DIFFICULTY_SCORE = Map.of("太简单", 5, "中等", 3, "困难", 1);
     private static final Set<String> ALLOWED_EXT = Set.of(
@@ -146,6 +185,22 @@ public class GrowCycleService {
         logger.info("【成长下一周期】平台返回长度={}，前 200 字：{}", answer == null ? 0 : answer.length(),
                 answer == null ? "null" : answer.substring(0, Math.min(200, answer.length())));
         JsonNode node = parse(answer);
+        // 质量门：计划思路/预期成果过短（"太简陋"）→ 带强化要求重试一次
+        if (tooThin(node)) {
+            logger.warn("【成长下一周期】输出偏简陋（planContent/expectedOutcome 过短），带强化要求重试一次");
+            String retried = callPlatform(userId, parent, difficulty, cycleMonths, true);
+            try {
+                JsonNode again = parse(retried);
+                if (!tooThin(again)) {
+                    node = again;
+                } else {
+                    logger.warn("【成长下一周期】重试后仍偏简陋，按当前输出落库（不阻塞用户）");
+                    node = longer(node, again);
+                }
+            } catch (Exception e) {
+                logger.warn("【成长下一周期】重试解析失败，沿用首次输出：{}", e.getMessage());
+            }
+        }
         String planName = node.path("planName").asText("").strip();
         JsonNode taskNodes = node.path("tasks");
         // 平台侧不做条数硬校验（见其 growth-service 说明），这里只要求"有任务"，超出上限按 8 条截断
@@ -272,7 +327,11 @@ public class GrowCycleService {
 
     /** 调用平台：配置了独立接口就走接口，否则回退通用对话接口。 */
     private String callPlatform(Long userId, GrowPlan parent, String difficulty, int cycleMonths) {
-        String request = buildRequest(parent, difficulty, cycleMonths);
+        return callPlatform(userId, parent, difficulty, cycleMonths, false);
+    }
+
+    private String callPlatform(Long userId, GrowPlan parent, String difficulty, int cycleMonths, boolean strengthen) {
+        String request = buildRequest(parent, difficulty, cycleMonths, strengthen);
         if (growthPath != null && !growthPath.isBlank()) {
             try {
                 var spec = webClientBuilder.build().post().uri(growthPath)
@@ -297,7 +356,7 @@ public class GrowCycleService {
     }
 
     /** 独立接口的请求体（契约见 百宝箱/提示词-成长下一周期计划接口.md）。 */
-    private String buildRequest(GrowPlan parent, String difficulty, int cycleMonths) {
+    private String buildRequest(GrowPlan parent, String difficulty, int cycleMonths, boolean strengthen) {
         Map<String, Object> plan = new LinkedHashMap<>();
         plan.put("planName", parent.getPlanName());
         plan.put("targetJob", parent.getTargetJob());
@@ -337,11 +396,18 @@ public class GrowCycleService {
         body.put("tasks", tasks);
         // 质量要求：平台系统提示词锁定 JSON 模板，这里把"别太简陋"的硬要求随材料一起交给模型
         body.put("cycleMonths", cycleMonths);
+        if (strengthen) {
+            body.put("strengthen", true);   // 首次输出过短，平台侧据此加强篇幅与细节
+        }
         body.put("requirements", java.util.List.of(
                 "本周期长度固定为 " + cycleMonths + " 个月（约 " + Math.round(cycleMonths * 4.35) + " 周）：startDate 从上一周期结束之后顺延，endDate = startDate + " + cycleMonths + " 个月 - 1 天",
+                "【篇幅要求，务必满足】planContent 不少于 150 字（说清「为什么这样安排」）；"
+                        + "每条任务的 expectedOutcome 不少于 40 字，且必须包含：交付物名称 + 数量或地址 + 可验证的验收细节"
+                        + "（例如「部署到 xxx，附 README 与截图，能完成 A/B 两个操作」），禁止只写一句话式的标题（如「升级为 xx 表」）",
+                "每条任务的 taskDesc 不少于 60 字：写清工具/方法、执行频率或投入时长、关键步骤",
                 "上一周期已完成且达标的任务不要重复安排",
                 "每条任务必须写明：怎么做（≥2 句，含工具/频率/投入时长）、可验收的产出（有数量或有地址，避免了解/熟悉这类说法）",
-                "整体周期 4~12 周，任务 3~6 条，任务之间不要重叠",
+                "任务 3~6 条，任务之间不要重叠；周期严格按上面的 cycleMonths 执行（不要自行改成 4~12 周）",
                 "难度为太简单时提高目标与产出量；困难时拆小步并适当延长周期"));
         try {
             return json.writeValueAsString(body);
