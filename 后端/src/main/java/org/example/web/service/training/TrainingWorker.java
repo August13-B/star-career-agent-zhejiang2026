@@ -61,7 +61,11 @@ public class TrainingWorker {
             }
         } catch (Exception error) {
             String code = error instanceof TrainingException te ? te.code() : "TRAINING_EXECUTION_FAILED";
-            String message = error instanceof TrainingException ? error.getMessage() : "训练执行失败，已保存的回答可以重试";
+            // 兜底文案带上真实原因，便于定位（此前只说"训练执行失败"，排查成本高）
+            String message = error instanceof TrainingException ? error.getMessage()
+                    : "训练执行失败：" + (error.getMessage() == null ? error.getClass().getSimpleName() : error.getMessage())
+                      + "（已保存的回答可以重试）";
+            System.err.println("【职场训练】执行失败：" + error);
             log.warn("训练任务失败 run={} attempt={} code={}", event.runId(), event.attempt(), code);
             service.fail(event.runId(), event.attempt(), code, message);
         }

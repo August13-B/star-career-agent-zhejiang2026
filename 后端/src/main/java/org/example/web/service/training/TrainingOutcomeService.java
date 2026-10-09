@@ -76,7 +76,13 @@ public class TrainingOutcomeService {
         int placeholderCount=values.size()-2;   // 前 14 个占位对应 id/user/ability/10 维/total/comment
         jdbc.update("UPDATE student_ability_score SET is_deleted=1 WHERE id=?",old.get("id"));
         String columns=String.join(",",DIMENSIONS.stream().map(d->d+"_score").toList());
-        jdbc.update("INSERT INTO student_ability_score(id,user_id,ability_id,"+columns+",total_score,score_comment,score_type,change_source,change_detail) VALUES("+String.join(",",Collections.nCopies(placeholderCount,"?"))+",1,?,?)",values.toArray());
+        try {
+            jdbc.update("INSERT INTO student_ability_score(id,user_id,ability_id,"+columns+",total_score,score_comment,score_type,change_source,change_detail) VALUES("+String.join(",",Collections.nCopies(placeholderCount,"?"))+",1,?,?)",values.toArray());
+        } catch (Exception insertError) {
+            // 迁移 015 未执行时 change_source/change_detail 列不存在 → 降级为不带这两列写入
+            // （仅少了"最近变更来源/明细"，训练结果本身照常落库）
+            jdbc.update("INSERT INTO student_ability_score(id,user_id,ability_id,"+columns+",total_score,score_comment,score_type) VALUES("+String.join(",",Collections.nCopies(placeholderCount,"?"))+",1)",java.util.Arrays.copyOf(values.toArray(),placeholderCount));
+        }
         jdbc.update("UPDATE student_profile SET version=?,update_time=CURRENT_TIMESTAMP WHERE id=?",version,profile.get("id"));
         profile.put("version",version);
         var saved=jdbc.queryForMap("SELECT * FROM student_ability_score WHERE id=?",scoreId);

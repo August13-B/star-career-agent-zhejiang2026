@@ -886,7 +886,7 @@ const importDone = computed(() => !!(currentReport.value && currentReport.value.
 const canImport = computed(() => hasGoals.value && !importDone.value)
 const importHint = computed(() => {
   if (importDone.value) return '该报告已导入过个人成长（同一份报告只能导入一次）'
-  if (!hasGoals.value) return '该报告生成时未包含结构化 1/3/5 年目标，无法导入'
+  if (!hasGoals.value) return '该报告生成时未包含结构化 1/3/5 个月目标，无法导入（旧报告请重新生成一次）'
   return '将把该报告的 1/3/5 年目标追加为「个人成长」的规划与待办'
 })
 

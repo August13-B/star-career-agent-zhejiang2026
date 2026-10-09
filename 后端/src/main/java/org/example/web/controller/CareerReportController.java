@@ -619,7 +619,68 @@ public class CareerReportController {
             String text = (content.substring(0, s) + content.substring(e + M_END.length())).trim();
             return new String[]{json, text};
         }
+        // 容错：平台侧若改了模板/去掉了标记，自动找正文里"含 goals 数组的 JSON 对象"
+        // （否则结构化目标抓不到，前端会显示「暂无可导入目标」）
+        int from = 0;
+        while (true) {
+            int start = content.indexOf('{', from);
+            if (start < 0) {
+                break;
+            }
+            int end = matchingBrace(content, start);
+            if (end > start) {
+                String candidate = content.substring(start, end + 1);
+                if (candidate.contains("\"goals\"") && parsesAsGoals(candidate)) {
+                    String text = (content.substring(0, start) + content.substring(end + 1)).trim();
+                    return new String[]{candidate, text};
+                }
+                from = end + 1;
+            } else {
+                from = start + 1;
+            }
+        }
         return new String[]{null, content.trim()};
+    }
+
+    /** 从 start（'{'）出发找配对的 '}'（跳过字符串内的括号）。 */
+    private static int matchingBrace(String text, int start) {
+        int depth = 0;
+        boolean inString = false;
+        boolean escaped = false;
+        for (int i = start; i < text.length(); i++) {
+            char c = text.charAt(i);
+            if (inString) {
+                if (escaped) {
+                    escaped = false;
+                } else if (c == '\\') {
+                    escaped = true;
+                } else if (c == '"') {
+                    inString = false;
+                }
+                continue;
+            }
+            if (c == '"') {
+                inString = true;
+            } else if (c == '{') {
+                depth++;
+            } else if (c == '}') {
+                depth--;
+                if (depth == 0) {
+                    return i;
+                }
+            }
+        }
+        return -1;
+    }
+
+    /** 该 JSON 是否可解析且含非空 goals 数组。 */
+    private boolean parsesAsGoals(String json) {
+        try {
+            com.fasterxml.jackson.databind.JsonNode node = objectMapper.readTree(json);
+            return node.path("goals").isArray() && !node.path("goals").isEmpty();
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     /**

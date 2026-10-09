@@ -282,9 +282,13 @@ public class GrowCycleService {
                     spec = spec.header("X-Growth-Token", growthToken)
                                .header("Authorization", "Bearer " + growthToken);
                 }
-                return spec.bodyValue(request)
+                String body = spec.bodyValue(request)
                         .retrieve().bodyToMono(String.class)
                         .block(java.time.Duration.ofSeconds(180));
+                logger.info("【成长下一周期】独立接口返回长度={}，前 200 字：{}",
+                        body == null ? 0 : body.length(),
+                        body == null ? "null" : body.substring(0, Math.min(200, body.length())));
+                return body;
             } catch (Exception e) {
                 logger.warn("【成长下一周期】独立接口调用失败，回退通用对话接口：{}", e.getMessage());
             }
@@ -357,9 +361,9 @@ public class GrowCycleService {
      */
     static JsonNode parseAnswer(ObjectMapper json, String answer) {
         if (answer == null || answer.indexOf('{') < 0) {
-            throw new IllegalArgumentException("AI 未返回有效的下一周期计划，请稍后重试");
+            throw new IllegalArgumentException("平台这一次没有返回计划内容（未返回有效 JSON）。已记入后端日志，可稍后重试；若持续失败请把日志里「独立接口返回」那一行发给平台侧核对");
         }
-        String text = stripFence(answer).strip();
+        String text = stripFence(stripSse(answer)).strip();
 
         // 解包一层 {"response":"<json>"} / {"data":"…"} / {"content":"…"}
         try {
@@ -389,6 +393,27 @@ public class GrowCycleService {
         int from = text.indexOf('{');
         int to = text.lastIndexOf('}');
         return from < 0 || to <= from ? text : text.substring(from, to + 1);
+    }
+
+    /** 平台若按 SSE 下发（data: {...}）或带空行，先还原成纯 JSON 文本。 */
+    static String stripSse(String text) {
+        if (text == null || !text.contains("data:")) {
+            return text;
+        }
+        StringBuilder out = new StringBuilder();
+        for (String line : text.split("\r?\n")) {
+            String one = line.strip();
+            if (one.isEmpty()) {
+                continue;
+            }
+            if (one.startsWith("data:")) {
+                one = one.substring("data:".length()).strip();
+            }
+            if (!"[DONE]".equalsIgnoreCase(one)) {
+                out.append(one);
+            }
+        }
+        return out.length() == 0 ? text : out.toString();
     }
 
     private static String stripFence(String text) {

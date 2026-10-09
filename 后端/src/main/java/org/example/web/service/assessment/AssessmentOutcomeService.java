@@ -107,8 +107,14 @@ public class AssessmentOutcomeService {
         values.add("能力补充测评更新");
         values.add(ProfileScorePolicy.SOURCE_ASSESSMENT);
         values.add(write(ProfileChangeDetail.of(firstTime, ProfileScorePolicy.SOURCE_ASSESSMENT, changeReason, before, after)));
-        jdbc.update("INSERT INTO student_ability_score(id,user_id,ability_id," + columns + ",total_score,score_comment,score_type,change_source,change_detail)"
-                + " VALUES(" + placeholders + ",?,?,1,?,?)", values.toArray());
+        try {
+            jdbc.update("INSERT INTO student_ability_score(id,user_id,ability_id," + columns + ",total_score,score_comment,score_type,change_source,change_detail)"
+                    + " VALUES(" + placeholders + ",?,?,1,?,?)", values.toArray());
+        } catch (Exception insertError) {
+            // 迁移 015 未执行时降级：不带 change_source/change_detail 写入
+            jdbc.update("INSERT INTO student_ability_score(id,user_id,ability_id," + columns + ",total_score,score_comment,score_type)"
+                    + " VALUES(" + placeholders + ",?,?,1)", java.util.Arrays.copyOf(values.toArray(), values.size() - 2));
+        }
         jdbc.update("UPDATE student_profile SET version=?,update_time=CURRENT_TIMESTAMP WHERE id=?", version, profile.get("id"));
         Map<String, Object> snapshot = new LinkedHashMap<>(profile);
         snapshot.put("version", version);
